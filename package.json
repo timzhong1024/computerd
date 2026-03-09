@@ -1,0 +1,40 @@
+{
+  "name": "computerd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "ci": "pnpm verify",
+    "dev": "pnpm -r --parallel --filter @computerd/server --filter @computerd/web dev",
+    "dev:server": "pnpm --filter @computerd/server dev",
+    "dev:web": "pnpm --filter @computerd/web dev",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "postinstall": "node ./scripts/install-git-hooks.mjs",
+    "smoke:dev": "node ./scripts/smoke-dev.mjs",
+    "test": "pnpm -r test",
+    "test:e2e": "playwright test",
+    "test:watch": "pnpm -r test:watch",
+    "typecheck": "pnpm -r typecheck",
+    "verify:quick": "node ./scripts/verify-quick.mjs",
+    "verify": "node ./scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.0.0",
+    "oxfmt": "^0.36.0",
+    "oxlint": "^1.51.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-node": "^5.3.0",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.25.0"
+}

@@ -1,0 +1,142 @@
+import {
+  browserRuntimeSchema,
+  computerAccessSchema,
+  computerLifecycleSchema,
+  computerNetworkSchema,
+  computerProfileSchema,
+  computerResourcesSchema,
+  computerStorageSchema,
+  parseCreateComputerInput,
+} from "@computerd/core";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import type { ControlPlane } from "@computerd/control-plane";
+
+export interface ComputerdMcpContext {
+  createComputer: ControlPlane["createComputer"];
+  getComputer: ControlPlane["getComputer"];
+  listComputers: ControlPlane["listComputers"];
+  listHostUnits: ControlPlane["listHostUnits"];
+  getHostUnit: ControlPlane["getHostUnit"];
+  restartComputer: ControlPlane["restartComputer"];
+  startComputer: ControlPlane["startComputer"];
+  stopComputer: ControlPlane["stopComputer"];
+}
+
+export function createComputerdMcpServer(context: ComputerdMcpContext) {
+  const server = new McpServer({
+    name: "computerd-mcp",
+    version: "0.1.0",
+  });
+
+  server.registerTool(
+    "list_computers",
+    {
+      description: "List managed computers available through computerd.",
+    },
+    async () => createJsonToolResult(await context.listComputers()),
+  );
+
+  server.registerTool(
+    "get_computer",
+    {
+      description: "Inspect one managed computer by name.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.getComputer(name)),
+  );
+
+  server.registerTool(
+    "create_computer",
+    {
+      description: "Create a managed computer using computerd's structured schema.",
+      inputSchema: {
+        name: z.string().min(1),
+        description: z.string().optional(),
+        profile: computerProfileSchema,
+        access: computerAccessSchema.optional(),
+        resources: computerResourcesSchema.optional(),
+        storage: computerStorageSchema.optional(),
+        network: computerNetworkSchema.optional(),
+        lifecycle: computerLifecycleSchema.optional(),
+        runtime: z.object({
+          execStart: z.string().min(1).optional(),
+          workingDirectory: z.string().optional(),
+          environment: z.record(z.string(), z.string()).optional(),
+          browser: browserRuntimeSchema.shape.browser.optional(),
+          startUrl: browserRuntimeSchema.shape.startUrl.optional(),
+          persistentProfile: z.boolean().optional(),
+        }),
+      },
+    },
+    async (input) =>
+      createJsonToolResult(await context.createComputer(parseCreateComputerInput(input))),
+  );
+
+  server.registerTool(
+    "start_computer",
+    {
+      description: "Start a managed computer.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.startComputer(name)),
+  );
+
+  server.registerTool(
+    "stop_computer",
+    {
+      description: "Stop a managed computer.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.stopComputer(name)),
+  );
+
+  server.registerTool(
+    "restart_computer",
+    {
+      description: "Restart a managed computer.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.restartComputer(name)),
+  );
+
+  server.registerTool(
+    "list_host_units",
+    {
+      description: "List lightweight host inspect units visible to computerd.",
+    },
+    async () => createJsonToolResult(await context.listHostUnits()),
+  );
+
+  server.registerTool(
+    "get_host_unit",
+    {
+      description: "Inspect one host unit by unit name.",
+      inputSchema: {
+        unitName: z.string().min(1),
+      },
+    },
+    async ({ unitName }) => createJsonToolResult(await context.getHostUnit(unitName)),
+  );
+
+  return server;
+}
+
+function createJsonToolResult(payload: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+  };
+}
