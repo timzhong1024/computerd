@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { spawn as spawnProcess } from "node:child_process";
 import { createServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { spawn as spawnPty } from "@lydell/node-pty";
@@ -369,89 +368,37 @@ function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
     ...process.env,
     ...lease.env,
   });
+  const terminal = spawnPty(lease.command, lease.args, {
+    name: "xterm-256color",
+    cols: 80,
+    rows: 24,
+    cwd,
+    env,
+  });
 
-  try {
-    const terminal = spawnPty(lease.command, lease.args, {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
-      cwd,
-      env,
-    });
-
-    return {
-      kill() {
-        terminal.kill();
-      },
-      onData(listener) {
-        terminal.onData(listener);
-      },
-      onExit(listener) {
-        terminal.onExit(listener);
-      },
-      resize(cols, rows) {
-        terminal.resize(cols, rows);
-      },
-      write(data) {
-        terminal.write(data);
-      },
-    };
-  } catch (error: unknown) {
-    if (process.env.COMPUTERD_RUNTIME_MODE !== "development") {
-      throw error;
-    }
-
-    console.warn(
-      `node-pty spawn failed for ${lease.computerName}; falling back to pipe-backed shell: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-
-    const child = spawnProcess(lease.command, lease.args, {
-      cwd,
-      env,
-      stdio: "pipe",
-    });
-    const dataListeners = new Set<(data: string) => void>();
-
-    return {
-      kill() {
-        child.kill("SIGTERM");
-      },
-      onData(listener) {
-        dataListeners.add(listener);
-        child.stdout?.on("data", (chunk: Buffer | string) => listener(String(chunk)));
-        child.stderr?.on("data", (chunk: Buffer | string) => listener(String(chunk)));
-      },
-      onExit(listener) {
-        child.on("exit", (exitCode, signal) => {
-          listener({
-            exitCode: exitCode ?? undefined,
-            signal: typeof signal === "string" ? undefined : (signal ?? undefined),
-          });
-        });
-      },
-      resize() {
-        // Pipe-backed fallback does not support terminal resize semantics.
-      },
-      write(data) {
-        for (const listener of dataListeners) {
-          listener(renderFallbackInput(data));
-        }
-        child.stdin?.write(data.replaceAll("\r", "\n"));
-      },
-    };
-  }
+  return {
+    kill() {
+      terminal.kill();
+    },
+    onData(listener) {
+      terminal.onData(listener);
+    },
+    onExit(listener) {
+      terminal.onExit(listener);
+    },
+    resize(cols, rows) {
+      terminal.resize(cols, rows);
+    },
+    write(data) {
+      terminal.write(data);
+    },
+  };
 }
 
 function sanitizeSpawnEnvironment(env: NodeJS.ProcessEnv) {
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
-}
-
-function renderFallbackInput(data: string) {
-  return data.replaceAll("\r", "\r\n").replaceAll("\u007f", "\b \b");
 }
 
 function parseConsoleWireMessage(value: string) {
