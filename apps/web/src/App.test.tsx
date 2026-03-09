@@ -45,6 +45,7 @@ const hostUnits = [
 ];
 
 let computers: FakeComputer[];
+let openSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   computers = [
@@ -100,6 +101,8 @@ beforeEach(() => {
   vi.mocked(connectConsoleClient).mockImplementation(() => ({
     dispose: vi.fn(),
   }));
+  openSpy = vi.fn(() => ({ focus: vi.fn() }));
+  vi.stubGlobal("open", openSpy);
 
   vi.stubGlobal(
     "fetch",
@@ -261,6 +264,12 @@ test("renders computer inventory, host inspect, and monitor action links", async
   expect(screen.getByTestId("create-automation-session")).toBeEnabled();
   expect(screen.getByTestId("capture-screenshot")).toBeEnabled();
   expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("open-monitor-link"));
+  expect(openSpy).toHaveBeenCalledWith(
+    "/computers/research-browser/monitor",
+    "computerd-browser-research-browser",
+    expect.stringContaining("width=1472"),
+  );
 });
 
 test("creates a browser computer and refreshes inventory", async () => {

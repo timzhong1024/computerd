@@ -217,6 +217,40 @@ export function HomePage() {
     }
   }
 
+  function handleOpenBrowserWindow() {
+    if (selectedComputer === null || selectedComputer.profile !== "browser") {
+      return;
+    }
+
+    const viewport = selectedComputer.runtime.display.viewport;
+    const width = viewport.width + 32;
+    const height = viewport.height + 120;
+    const left = Math.max(Math.round((window.screen.width - width) / 2), 0);
+    const top = Math.max(Math.round((window.screen.height - height) / 2), 0);
+    const url = `/computers/${encodeURIComponent(selectedComputer.name)}/monitor`;
+    const features = [
+      "popup=yes",
+      "toolbar=no",
+      "location=no",
+      "status=no",
+      "menubar=no",
+      "scrollbars=yes",
+      "resizable=yes",
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+    ].join(",");
+
+    const popup = window.open(url, `computerd-browser-${selectedComputer.name}`, features);
+    if (popup === null) {
+      window.location.assign(url);
+      return;
+    }
+
+    popup.focus();
+  }
+
   return (
     <main className="app-shell">
       <section className="hero">
@@ -402,14 +436,15 @@ export function HomePage() {
             </div>
             <div className="surface-actions">
               {selectedComputer.access.display?.mode === "virtual-display" ? (
-                <Link
+                <button
+                  type="button"
                   className="surface-link"
                   data-testid="open-monitor-link"
-                  to="/computers/$name/monitor"
-                  params={{ name: selectedComputer.name }}
+                  disabled={!selectedComputer.capabilities.browserAvailable}
+                  onClick={handleOpenBrowserWindow}
                 >
                   Open browser
-                </Link>
+                </button>
               ) : null}
               {selectedComputer.access.console?.mode === "pty" ? (
                 <Link
