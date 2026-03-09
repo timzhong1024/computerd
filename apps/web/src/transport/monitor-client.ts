@@ -21,7 +21,6 @@ export function connectMonitorClient({
   onStateChange("connecting");
   target.replaceChildren(createMonitorPlaceholder(websocketUrl));
   let disposed = false;
-  let fallbackSocket: WebSocket | null = null;
   let rfb: NoVncRfbLike | null = null;
 
   void loadNoVnc()
@@ -42,29 +41,20 @@ export function connectMonitorClient({
         onStateChange("unavailable");
       });
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       if (disposed) {
         return;
       }
 
-      fallbackSocket = new WebSocket(websocketUrl);
-      fallbackSocket.binaryType = "arraybuffer";
-      fallbackSocket.addEventListener("open", () => {
-        onStateChange("connected");
-      });
-      fallbackSocket.addEventListener("close", () => {
-        onStateChange("unavailable");
-      });
-      fallbackSocket.addEventListener("error", () => {
-        onStateChange("unavailable");
-      });
+      console.error("Failed to initialize noVNC monitor client.", error);
+      onStateChange("unavailable");
+      target.replaceChildren(createMonitorUnavailable(websocketUrl));
     });
 
   return {
     dispose() {
       disposed = true;
       rfb?.disconnect();
-      fallbackSocket?.close();
       target.replaceChildren();
     },
   };
@@ -113,6 +103,21 @@ function createMonitorPlaceholder(websocketUrl: string) {
 
   const copy = document.createElement("p");
   copy.textContent = `Waiting for backend WebSocket bridge at ${websocketUrl}.`;
+  placeholder.append(copy);
+
+  return placeholder;
+}
+
+function createMonitorUnavailable(websocketUrl: string) {
+  const placeholder = document.createElement("div");
+  placeholder.className = "novnc-placeholder";
+
+  const title = document.createElement("strong");
+  title.textContent = "noVNC failed to initialize";
+  placeholder.append(title);
+
+  const copy = document.createElement("p");
+  copy.textContent = `The browser monitor could not load its noVNC client for ${websocketUrl}. Check the browser console and Vite dev server logs.`;
   placeholder.append(copy);
 
   return placeholder;
