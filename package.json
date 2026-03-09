@@ -6,8 +6,10 @@
   "scripts": {
     "build": "pnpm -r build",
     "ci": "pnpm verify",
-    "dev": "COMPUTERD_RUNTIME_MODE=development pnpm -r --parallel --filter @computerd/server --filter @computerd/web dev",
-    "dev:server": "COMPUTERD_RUNTIME_MODE=development pnpm --filter @computerd/server dev",
+    "dev": "node ./scripts/run-dev.mjs",
+    "dev:development": "COMPUTERD_RUNTIME_MODE=development node ./scripts/run-dev.mjs",
+    "dev:server": "node ./scripts/run-dev-server.mjs",
+    "dev:server:development": "COMPUTERD_RUNTIME_MODE=development node ./scripts/run-dev-server.mjs",
     "dev:server:runtime": "pnpm --filter @computerd/server dev",
     "dev:web": "pnpm --filter @computerd/web dev",
     "format": "oxfmt --write .",

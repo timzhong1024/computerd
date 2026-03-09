@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -597,6 +598,10 @@ function createDevelopmentControlPlane(): ControlPlane {
       return runtimeStates.get(computer.unitName)!;
     },
     async deletePersistentUnit(unitName) {
+      const record = [...records.values()].find((entry) => entry.unitName === unitName);
+      if (record?.profile === "terminal") {
+        await cleanupDevelopmentConsoleRuntime(consoleRuntimePaths, record);
+      }
       runtimeStates.delete(unitName);
     },
     async getRuntimeState(unitName) {
@@ -652,7 +657,7 @@ function createDevelopmentControlPlane(): ControlPlane {
       state.subState = "dead";
       const record = [...records.values()].find((entry) => entry.unitName === unitName);
       if (record?.profile === "terminal") {
-        await consoleRuntimePaths.cleanupComputerDirectory(record);
+        await cleanupDevelopmentConsoleRuntime(consoleRuntimePaths, record);
       }
       return state;
     },
@@ -697,6 +702,7 @@ function createDevelopmentControlPlane(): ControlPlane {
         );
       }
 
+      await ensureDevelopmentConsoleSocket(consoleRuntimePaths, record);
       return createConsoleSession(record.name);
     },
     async openConsoleAttach(name) {
@@ -717,6 +723,21 @@ function createDevelopmentControlPlane(): ControlPlane {
       }
 
       activeConsoleAttaches.add(name);
+      if (process.platform !== "darwin") {
+        await ensureDevelopmentConsoleSocket(consoleRuntimePaths, record);
+        const spec = consoleRuntimePaths.specForComputer(record);
+        return {
+          command: "tmux",
+          args: ["-S", spec.socketPath, "attach-session", "-t", spec.sessionName],
+          computerName: name,
+          cwd: record.runtime.workingDirectory,
+          env: record.runtime.environment,
+          release() {
+            activeConsoleAttaches.delete(name);
+          },
+        };
+      }
+
       return {
         command: "/bin/bash",
         args: ["-i", "-l"],
@@ -733,10 +754,72 @@ function createDevelopmentControlPlane(): ControlPlane {
 
 async function ensureDevelopmentConsoleSocket(
   consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>,
-  computer: Pick<PersistedTerminalComputer, "name">,
+  computer: PersistedTerminalComputer,
 ) {
   const spec = await consoleRuntimePaths.ensureComputerDirectory(computer);
+  if (process.platform !== "darwin") {
+    ensureDevelopmentTmuxSession(spec, computer);
+    return;
+  }
+
   await writeFile(spec.socketPath, "");
+}
+
+async function cleanupDevelopmentConsoleRuntime(
+  consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>,
+  computer: PersistedTerminalComputer,
+) {
+  const spec = consoleRuntimePaths.specForComputer(computer);
+  if (process.platform !== "darwin") {
+    try {
+      execFileSync("tmux", ["-S", spec.socketPath, "kill-session", "-t", spec.sessionName], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Ignore missing development tmux sessions during cleanup.
+    }
+  }
+
+  await consoleRuntimePaths.cleanupComputerDirectory(computer);
+}
+
+function ensureDevelopmentTmuxSession(
+  spec: ReturnType<ReturnType<typeof createConsoleRuntimePaths>["specForComputer"]>,
+  computer: PersistedTerminalComputer,
+) {
+  try {
+    execFileSync("tmux", ["-S", spec.socketPath, "has-session", "-t", spec.sessionName], {
+      stdio: "ignore",
+    });
+    return;
+  } catch {
+    // Create the session below when it does not exist yet.
+  }
+
+  const command = buildDevelopmentTmuxCommand(computer);
+  execFileSync("tmux", ["-S", spec.socketPath, "new-session", "-d", "-s", spec.sessionName, command], {
+    stdio: "ignore",
+  });
+}
+
+function buildDevelopmentTmuxCommand(computer: PersistedTerminalComputer) {
+  const segments = ["set -eu"];
+  if (computer.runtime.workingDirectory) {
+    segments.push(`cd ${escapeShellToken(computer.runtime.workingDirectory)}`);
+  }
+
+  if (computer.runtime.environment) {
+    for (const [key, value] of Object.entries(computer.runtime.environment)) {
+      segments.push(`export ${key}=${escapeShellToken(value)}`);
+    }
+  }
+
+  segments.push(`exec ${computer.runtime.execStart}`);
+  return segments.join("; ");
+}
+
+function escapeShellToken(value: string) {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
 }
 
 export type {
