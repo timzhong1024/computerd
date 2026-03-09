@@ -4,17 +4,13 @@ const runtimeMode =
   process.env.COMPUTERD_RUNTIME_MODE ?? (process.platform === "darwin" ? "development" : "systemd");
 
 const children = [
-  spawn(
-    "pnpm",
-    ["--filter", "@computerd/server", "dev"],
-    {
-      env: {
-        ...process.env,
-        COMPUTERD_RUNTIME_MODE: runtimeMode,
-      },
-      stdio: "inherit",
+  spawn("pnpm", ["--filter", "@computerd/server", "dev"], {
+    env: {
+      ...process.env,
+      COMPUTERD_RUNTIME_MODE: runtimeMode,
     },
-  ),
+    stdio: "inherit",
+  }),
   spawn("pnpm", ["--filter", "@computerd/web", "dev"], {
     env: process.env,
     stdio: "inherit",

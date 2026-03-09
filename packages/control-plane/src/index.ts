@@ -797,9 +797,13 @@ function ensureDevelopmentTmuxSession(
   }
 
   const command = buildDevelopmentTmuxCommand(computer);
-  execFileSync("tmux", ["-S", spec.socketPath, "new-session", "-d", "-s", spec.sessionName, command], {
-    stdio: "ignore",
-  });
+  execFileSync(
+    "tmux",
+    ["-S", spec.socketPath, "new-session", "-d", "-s", spec.sessionName, command],
+    {
+      stdio: "ignore",
+    },
+  );
 }
 
 function buildDevelopmentTmuxCommand(computer: PersistedTerminalComputer) {
