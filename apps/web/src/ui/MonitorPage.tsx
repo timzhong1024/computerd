@@ -73,9 +73,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
         </div>
       ) : null}
 
-      <section className="browser-stage-viewport">
-        <div ref={shellRef} className="novnc-shell novnc-stage" data-testid="novnc-shell" />
-      </section>
+      <div ref={shellRef} className="browser-stage-canvas-shell" data-testid="novnc-shell" />
       <span className="browser-stage-status" data-testid="monitor-state">
         {formatMonitorStateLabel(state, session)}
       </span>
