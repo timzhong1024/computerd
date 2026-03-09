@@ -14,6 +14,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
   const [session, setSession] = useState<ComputerMonitorSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<MonitorConnectionState>("connecting");
+  const viewport = session?.viewport ?? { width: 1440, height: 900 };
 
   useEffect(() => {
     let cancelled = false;
@@ -60,66 +61,47 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
   }, [session]);
 
   return (
-    <main className="app-shell monitor-shell">
-      <section className="hero monitor-hero">
-        <div>
-          <p className="eyebrow">Computer monitor</p>
+    <main className="browser-stage-shell">
+      <header className="browser-stage-toolbar">
+        <div className="browser-stage-meta">
+          <p className="eyebrow">Browser stage</p>
           <h1>{computerName}</h1>
-          <p className="lede">Live browser surface backed by a noVNC session.</p>
+          <p className="browser-stage-copy">
+            {session === null
+              ? "Loading browser session."
+              : `${viewport.width}x${viewport.height} remote surface over noVNC.`}
+          </p>
         </div>
-        <div className="surface-actions">
+        <div className="browser-stage-actions">
           <Link className="surface-link surface-link-secondary" to="/">
             Back to inventory
           </Link>
-          <Link
-            className="surface-link surface-link-secondary"
-            to="/computers/$name/console"
-            params={{ name: computerName }}
-          >
-            Open console
-          </Link>
-        </div>
-      </section>
-
-      {error ? (
-        <div className="alert" role="alert">
-          {error}
-        </div>
-      ) : null}
-
-      <section className="panel monitor-panel">
-        <div className="panel-header">
-          <h2>Monitor session</h2>
           <span className={`status-pill status-${state}`} data-testid="monitor-state">
             {formatMonitorStateLabel(state, session)}
           </span>
         </div>
-        <p className="monitor-copy">
-          {session === null
-            ? "Loading monitor session."
-            : "Browser session connected through the noVNC bridge."}
-        </p>
-        <div ref={shellRef} className="novnc-shell" data-testid="novnc-shell" />
-        {session ? (
-          <dl className="detail-grid session-grid">
-            <div>
-              <dt>Protocol</dt>
-              <dd>{session.protocol}</dd>
-            </div>
-            <div>
-              <dt>Connect mode</dt>
-              <dd>{session.connect.mode}</dd>
-            </div>
-            <div>
-              <dt>Connect target</dt>
-              <dd>{session.connect.url}</dd>
-            </div>
-            <div>
-              <dt>Authorization</dt>
-              <dd>{session.authorization.mode}</dd>
-            </div>
-          </dl>
-        ) : null}
+      </header>
+
+      {error ? (
+        <div className="alert browser-stage-alert" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="browser-stage-viewport">
+        <div
+          className="browser-stage-frame"
+          style={
+            session === null
+              ? undefined
+              : {
+                  width: `${viewport.width}px`,
+                  height: `${viewport.height}px`,
+                }
+          }
+        >
+          <div ref={shellRef} className="novnc-shell novnc-stage" data-testid="novnc-shell" />
+        </div>
       </section>
     </main>
   );
