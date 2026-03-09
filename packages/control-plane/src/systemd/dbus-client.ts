@@ -8,6 +8,7 @@ const SYSTEMD_MANAGER_INTERFACE = "org.freedesktop.systemd1.Manager";
 const SYSTEMD_UNIT_INTERFACE = "org.freedesktop.systemd1.Unit";
 const SYSTEMD_SERVICE_INTERFACE = "org.freedesktop.systemd1.Service";
 const DBUS_PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties";
+const SYSTEMD_UNSET_UINT64 = BigInt("18446744073709551615");
 
 // `ListUnits()` returns `(name, description, loadState, activeState, subState, followed, path, jobId, jobType, jobPath)`.
 type UnitListEntry = [
@@ -325,7 +326,7 @@ function createNoSuchUnitError(unitName: string) {
 function createUnitPropertyRangeError(
   unitName: string,
   propertyName: string,
-  value: number,
+  value: number | string,
   expected: string,
 ) {
   const error = new Error(
@@ -377,16 +378,42 @@ function getMemoryMaxMiB(props: Record<string, Variant>) {
 }
 
 function getCpuWeight(unitName: string, props: Record<string, Variant>) {
-  const value = getBigIntLike(props, "CPUWeight");
-  if (value === undefined) {
+  const rawValue = props.CPUWeight?.value;
+  if (rawValue === undefined) {
     return undefined;
   }
 
-  if (!Number.isSafeInteger(value) || value < 1 || value > 10_000) {
-    throw createUnitPropertyRangeError(unitName, "CPUWeight", value, "1..10000 safe integer");
+  if (typeof rawValue === "bigint") {
+    if (rawValue === SYSTEMD_UNSET_UINT64) {
+      return undefined;
+    }
+
+    if (rawValue > BigInt(Number.MAX_SAFE_INTEGER) || rawValue < 1n) {
+      throw createUnitPropertyRangeError(
+        unitName,
+        "CPUWeight",
+        rawValue.toString(),
+        "1..10000 or uint64 max sentinel",
+      );
+    }
+
+    const value = Number(rawValue);
+    if (value > 10_000) {
+      throw createUnitPropertyRangeError(unitName, "CPUWeight", value, "1..10000 safe integer");
+    }
+
+    return value;
   }
 
-  return value;
+  if (typeof rawValue !== "number") {
+    return undefined;
+  }
+
+  if (!Number.isSafeInteger(rawValue) || rawValue < 1 || rawValue > 10_000) {
+    throw createUnitPropertyRangeError(unitName, "CPUWeight", rawValue, "1..10000 safe integer");
+  }
+
+  return rawValue;
 }
 
 function getString(props: Record<string, Variant>, key: string) {
