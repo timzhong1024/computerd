@@ -16,7 +16,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        `HOST=127.0.0.1 PORT=${serverPort} COMPUTERD_USE_FIXTURE=1 ` +
+        `HOST=127.0.0.1 PORT=${serverPort} COMPUTERD_RUNTIME_MODE=development ` +
         `pnpm --filter @computerd/server dev`,
       url: `http://127.0.0.1:${serverPort}/healthz`,
       reuseExistingServer: !process.env.CI,

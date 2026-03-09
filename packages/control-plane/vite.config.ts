@@ -1,3 +1,4 @@
+import { builtinModules } from "node:module";
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
@@ -15,6 +16,13 @@ export default defineConfig({
     },
     outDir: "dist",
     emptyOutDir: false,
+    rollupOptions: {
+      external: [
+        ...builtinModules,
+        ...builtinModules.map((moduleName) => `node:${moduleName}`),
+        "dbus-next",
+      ],
+    },
     target: "es2023",
   },
   test: {

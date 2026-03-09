@@ -21,6 +21,43 @@ export const computerDisplayAccessSchema = z.object({
   mode: z.enum(["none", "virtual-display"]),
 });
 
+export const computerSessionConnectSchema = z.object({
+  mode: z.enum(["websocket-url", "relative-websocket-path"]),
+  url: z.string().min(1),
+});
+
+export const computerSessionAuthorizationSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("none"),
+  }),
+  z.object({
+    mode: z.literal("ticket"),
+    ticket: z.string().min(1),
+  }),
+]);
+
+export const computerMonitorSessionSchema = z.object({
+  computerName: z.string().min(1),
+  protocol: z.literal("vnc"),
+  connect: computerSessionConnectSchema,
+  authorization: computerSessionAuthorizationSchema,
+  expiresAt: z.string().datetime().optional(),
+  viewport: z
+    .object({
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+    })
+    .optional(),
+});
+
+export const computerConsoleSessionSchema = z.object({
+  computerName: z.string().min(1),
+  protocol: z.literal("ttyd"),
+  connect: computerSessionConnectSchema,
+  authorization: computerSessionAuthorizationSchema,
+  expiresAt: z.string().datetime().optional(),
+});
+
 export const computerAccessSchema = z.object({
   console: computerConsoleAccessSchema.optional(),
   display: computerDisplayAccessSchema.optional(),
@@ -161,11 +198,15 @@ export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
+export type ComputerConsoleSession = z.infer<typeof computerConsoleSessionSchema>;
 export type ComputerDetail = z.infer<typeof computerDetailSchema>;
 export type ComputerLifecycle = z.infer<typeof computerLifecycleSchema>;
+export type ComputerMonitorSession = z.infer<typeof computerMonitorSessionSchema>;
 export type ComputerNetwork = z.infer<typeof computerNetworkSchema>;
 export type ComputerProfile = z.infer<typeof computerProfileSchema>;
 export type ComputerResources = z.infer<typeof computerResourcesSchema>;
+export type ComputerSessionAuthorization = z.infer<typeof computerSessionAuthorizationSchema>;
+export type ComputerSessionConnect = z.infer<typeof computerSessionConnectSchema>;
 export type ComputerState = z.infer<typeof computerStateSchema>;
 export type ComputerStorage = z.infer<typeof computerStorageSchema>;
 export type ComputerSummary = z.infer<typeof computerSummarySchema>;
@@ -183,6 +224,14 @@ export function parseComputerSummaries(value: unknown) {
 
 export function parseComputerDetail(value: unknown) {
   return computerDetailSchema.parse(value);
+}
+
+export function parseComputerMonitorSession(value: unknown) {
+  return computerMonitorSessionSchema.parse(value);
+}
+
+export function parseComputerConsoleSession(value: unknown) {
+  return computerConsoleSessionSchema.parse(value);
 }
 
 export function parseCreateComputerInput(value: unknown) {

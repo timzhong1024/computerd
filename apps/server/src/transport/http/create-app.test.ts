@@ -25,11 +25,29 @@ afterEach(async () => {
 });
 
 test("serves computer and host unit APIs", async () => {
-  const controlPlane = createControlPlane();
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
+    createConsoleSession: controlPlane.createConsoleSession,
+    openConsoleAttach: controlPlane.openConsoleAttach,
     listComputers: controlPlane.listComputers,
+    createMonitorSession: async (name) =>
+      name === "research-browser"
+        ? {
+            computerName: name,
+            protocol: "vnc",
+            connect: {
+              mode: "relative-websocket-path",
+              url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
+            },
+            authorization: {
+              mode: "ticket",
+              ticket: "stub-ticket",
+            },
+          }
+        : await controlPlane.createMonitorSession(name),
     getComputer: controlPlane.getComputer,
     createComputer: controlPlane.createComputer,
+    deleteComputer: controlPlane.deleteComputer,
     startComputer: controlPlane.startComputer,
     stopComputer: controlPlane.stopComputer,
     restartComputer: controlPlane.restartComputer,
@@ -85,4 +103,51 @@ test("serves computer and host unit APIs", async () => {
   await expect(hostUnitsResponse.json()).resolves.toEqual(
     expect.arrayContaining([expect.objectContaining({ unitName: "docker.service" })]),
   );
+
+  const monitorSessionResponse = await fetch(
+    `${baseUrl}/api/computers/starter-terminal/monitor-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(monitorSessionResponse.status).toBe(409);
+
+  const supportedMonitorSessionResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/monitor-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(supportedMonitorSessionResponse.status).toBe(200);
+  await expect(supportedMonitorSessionResponse.json()).resolves.toMatchObject({
+    computerName: "research-browser",
+    protocol: "vnc",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/monitor/ws",
+    },
+  });
+
+  const consoleSessionResponse = await fetch(
+    `${baseUrl}/api/computers/starter-terminal/console-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(consoleSessionResponse.status).toBe(200);
+  await expect(consoleSessionResponse.json()).resolves.toMatchObject({
+    computerName: "starter-terminal",
+    protocol: "ttyd",
+  });
+
+  const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-terminal/console/ws`);
+  expect(consoleWsResponse.status).toBe(426);
+
+  const monitorWsResponse = await fetch(`${baseUrl}/api/computers/research-browser/monitor/ws`);
+  expect(monitorWsResponse.status).toBe(501);
+
+  const deleteResponse = await fetch(`${baseUrl}/api/computers/lab-terminal`, {
+    method: "DELETE",
+  });
+  expect(deleteResponse.status).toBe(204);
 });

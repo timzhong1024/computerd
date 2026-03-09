@@ -14,6 +14,7 @@ import type { ControlPlane } from "@computerd/control-plane";
 
 export interface ComputerdMcpContext {
   createComputer: ControlPlane["createComputer"];
+  deleteComputer: ControlPlane["deleteComputer"];
   getComputer: ControlPlane["getComputer"];
   listComputers: ControlPlane["listComputers"];
   listHostUnits: ControlPlane["listHostUnits"];
@@ -87,6 +88,17 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
   );
 
   server.registerTool(
+    "delete_computer",
+    {
+      description: "Delete a managed computer and its persistent unit.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.deleteComputer(name)),
+  );
+
+  server.registerTool(
     "stop_computer",
     {
       description: "Stop a managed computer.",
@@ -135,7 +147,7 @@ function createJsonToolResult(payload: unknown) {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(payload, null, 2),
+        text: JSON.stringify(payload ?? null, null, 2),
       },
     ],
   };

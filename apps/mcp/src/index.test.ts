@@ -83,6 +83,7 @@ test("registers computer and host inspect tools", async () => {
     listComputers: vi.fn().mockResolvedValue([] as ComputerSummary[]),
     getComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+    deleteComputer: vi.fn().mockResolvedValue(undefined),
     startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),
@@ -104,6 +105,7 @@ test("registers computer and host inspect tools", async () => {
 
   expect(toolNames).toEqual([
     "create_computer",
+    "delete_computer",
     "get_computer",
     "get_host_unit",
     "list_computers",
@@ -120,6 +122,7 @@ test("invokes handlers and returns JSON payloads", async () => {
     listComputers: vi.fn().mockResolvedValue([] as ComputerSummary[]),
     getComputer,
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+    deleteComputer: vi.fn().mockResolvedValue(undefined),
     startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),

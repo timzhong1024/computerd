@@ -1,6 +1,21 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
+import { connectConsoleClient } from "./transport/console-client";
+import { connectMonitorClient } from "./transport/monitor-client";
+
+vi.mock("./transport/monitor-client", () => ({
+  connectMonitorClient: vi.fn((_options: { onStateChange: (state: string) => void }) => ({
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("./transport/console-client", () => ({
+  connectConsoleClient: vi.fn(() => ({
+    dispose: vi.fn(),
+  })),
+}));
 
 interface FakeComputer {
   name: string;
@@ -42,7 +57,32 @@ beforeEach(() => {
         execStart: "/usr/bin/bash",
       },
     },
+    {
+      name: "research-browser",
+      unitName: "computerd-research-browser.service",
+      profile: "browser",
+      state: "running",
+      runtime: {
+        browser: "chromium",
+        persistentProfile: true,
+        startUrl: "https://example.com",
+      },
+    },
   ];
+
+  vi.mocked(connectMonitorClient).mockReset();
+  vi.mocked(connectMonitorClient).mockImplementation(
+    ({ onStateChange }: { onStateChange: (state: "connected" | "unavailable") => void }) => {
+      onStateChange("unavailable");
+      return {
+        dispose: vi.fn(),
+      };
+    },
+  );
+  vi.mocked(connectConsoleClient).mockReset();
+  vi.mocked(connectConsoleClient).mockImplementation(() => ({
+    dispose: vi.fn(),
+  }));
 
   vi.stubGlobal(
     "fetch",
@@ -64,6 +104,50 @@ beforeEach(() => {
             capabilities: unit.capabilities,
           })),
         );
+      }
+
+      if (
+        url.startsWith("/api/computers/") &&
+        url.endsWith("/monitor-sessions") &&
+        method === "POST"
+      ) {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/monitor-sessions".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          protocol: "vnc",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
+          },
+          authorization: {
+            mode: "ticket",
+            ticket: "stub-ticket",
+          },
+        });
+      }
+
+      if (
+        url.startsWith("/api/computers/") &&
+        url.endsWith("/console-sessions") &&
+        method === "POST"
+      ) {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/console-sessions".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          protocol: "ttyd",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/console/ws`,
+          },
+          authorization: {
+            mode: "ticket",
+            ticket: "stub-ticket",
+          },
+        });
       }
 
       if (url.startsWith("/api/computers/") && method === "GET") {
@@ -111,8 +195,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("renders computer inventory, host inspect, and details", async () => {
-  render(<App />);
+test("renders computer inventory, host inspect, and monitor action links", async () => {
+  renderApp("/");
 
   expect(await screen.findAllByText("starter-terminal")).toHaveLength(2);
   expect(await screen.findAllByText("docker.service")).toHaveLength(1);
@@ -120,13 +204,17 @@ test("renders computer inventory, host inspect, and details", async () => {
     screen.getByText("A computer control plane for homelab and agent workflows."),
   ).toBeInTheDocument();
   expect(await screen.findByText("computerd-starter-terminal.service")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /research-browser/i }));
+  expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
+  expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
 });
 
 test("creates a browser computer and refreshes inventory", async () => {
-  render(<App />);
+  renderApp("/");
 
-  fireEvent.change(screen.getByLabelText("Name"), {
-    target: { value: "research-browser" },
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "lab-browser" },
   });
   fireEvent.change(screen.getByLabelText("Profile"), {
     target: { value: "browser" },
@@ -136,25 +224,60 @@ test("creates a browser computer and refreshes inventory", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Create computer" }));
 
-  expect(await screen.findAllByText("research-browser")).toHaveLength(2);
+  expect(await screen.findAllByText("lab-browser")).toHaveLength(2);
   await waitFor(() => {
     expect(screen.getByText(/chromium -> https:\/\/openai.com/i)).toBeInTheDocument();
   });
 });
 
-test("surfaces runtime payload validation errors", async () => {
+test("renders monitor session shell and unavailable websocket state", async () => {
+  renderApp("/computers/research-browser/monitor");
+
+  expect(await screen.findByText("research-browser")).toBeInTheDocument();
+  expect(await screen.findByTestId("novnc-shell")).toBeInTheDocument();
+  expect(await screen.findByTestId("monitor-state")).toHaveTextContent("websocket unavailable");
+  expect(connectMonitorClient).toHaveBeenCalled();
+});
+
+test("surfaces monitor session request failures", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => [{ name: "broken" }],
+    vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === "/api/computers/missing/monitor-sessions") {
+        return jsonResponse({ error: 'Computer "missing" was not found.' }, 404);
+      }
+
+      return jsonResponse({ error: `Unhandled request GET ${url}` }, 500);
     }),
   );
 
-  render(<App />);
+  renderApp("/computers/missing/monitor");
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/profile/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/missing/i);
 });
+
+test("renders console placeholder route", async () => {
+  renderApp("/computers/starter-terminal/console");
+
+  expect(await screen.findByText("Console shell")).toBeInTheDocument();
+  expect(await screen.findByTestId("console-shell")).toBeInTheDocument();
+  expect(screen.getByTestId("console-state")).toHaveTextContent("connecting");
+  expect(connectConsoleClient).toHaveBeenCalledWith(
+    expect.objectContaining({
+      computerName: "starter-terminal",
+      onStateChange: expect.any(Function),
+    }),
+  );
+});
+
+function renderApp(initialPath: string) {
+  const history = createMemoryHistory({
+    initialEntries: [initialPath],
+  });
+
+  return render(<App history={history} />);
+}
 
 function createComputerSummary(computer: FakeComputer) {
   return {

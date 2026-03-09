@@ -20,6 +20,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@computerd/core": "workspace:*"
+    "@computerd/core": "workspace:*",
+    "dbus-next": "^0.10.2"
   }
 }

@@ -1,7 +1,9 @@
 import { expect, test } from "vitest";
 import {
   createComputerCapabilities,
+  parseComputerConsoleSession,
   parseComputerDetail,
+  parseComputerMonitorSession,
   parseCreateComputerInput,
   parseHostUnitDetail,
 } from "./index";
@@ -64,6 +66,79 @@ test("parses browser computer details", () => {
   }
 
   expect(detail.runtime.browser).toBe("chromium");
+});
+
+test("parses computer monitor sessions", () => {
+  const session = parseComputerMonitorSession({
+    computerName: "research-browser",
+    protocol: "vnc",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/monitor/ws",
+    },
+    authorization: {
+      mode: "ticket",
+      ticket: "stub-ticket",
+    },
+    viewport: {
+      width: 1440,
+      height: 900,
+    },
+  });
+
+  expect(session.protocol).toBe("vnc");
+  expect(session.authorization).toEqual({
+    mode: "ticket",
+    ticket: "stub-ticket",
+  });
+});
+
+test("parses computer console sessions", () => {
+  const session = parseComputerConsoleSession({
+    computerName: "starter-terminal",
+    protocol: "ttyd",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/starter-terminal/console/ws",
+    },
+    authorization: {
+      mode: "none",
+    },
+  });
+
+  expect(session.protocol).toBe("ttyd");
+  expect(session.authorization.mode).toBe("none");
+});
+
+test("rejects invalid session payloads", () => {
+  expect(() =>
+    parseComputerMonitorSession({
+      computerName: "research-browser",
+      protocol: "spice",
+      connect: {
+        mode: "relative-websocket-path",
+        url: "/api/computers/research-browser/monitor/ws",
+      },
+      authorization: {
+        mode: "ticket",
+        ticket: "stub-ticket",
+      },
+    }),
+  ).toThrow(/vnc/i);
+
+  expect(() =>
+    parseComputerConsoleSession({
+      computerName: "starter-terminal",
+      protocol: "ttyd",
+      connect: {
+        mode: "tcp",
+        url: "/api/computers/starter-terminal/console/ws",
+      },
+      authorization: {
+        mode: "none",
+      },
+    }),
+  ).toThrow(/websocket-url|relative-websocket-path/i);
 });
 
 test("parses host unit detail payloads", () => {

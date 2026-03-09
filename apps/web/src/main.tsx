@@ -1,7 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { createBrowserHistory } from "@tanstack/react-router";
 import { App } from "./App";
 import "./styles.css";
+import "@xterm/xterm/css/xterm.css";
 
 const rootElement = document.getElementById("root");
 
@@ -11,6 +13,6 @@ if (rootElement === null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <App history={createBrowserHistory()} />
   </StrictMode>,
 );

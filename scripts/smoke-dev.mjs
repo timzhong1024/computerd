@@ -7,7 +7,7 @@ const webUrl = "http://127.0.0.1:4173";
 
 const server = spawn(resolve(process.cwd(), "node_modules/.bin/vite-node"), ["src/index.ts"], {
   cwd: resolve(process.cwd(), "apps/server"),
-  env: { ...process.env, HOST: "127.0.0.1", PORT: "3000", COMPUTERD_USE_FIXTURE: "1" },
+  env: { ...process.env, HOST: "127.0.0.1", PORT: "3000", COMPUTERD_RUNTIME_MODE: "development" },
   stdio: "inherit",
 });
 
