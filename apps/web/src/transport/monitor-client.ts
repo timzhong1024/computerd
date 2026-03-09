@@ -69,7 +69,7 @@ type NoVncRfbLike = {
 };
 
 async function loadNoVnc(): Promise<new (target: HTMLDivElement, url: string) => NoVncRfbLike> {
-  const module = (await import("@novnc/novnc")) as {
+  const module = (await import("./novnc-rfb")) as {
     default: new (target: HTMLDivElement, url: string) => NoVncRfbLike;
   };
   return module.default;

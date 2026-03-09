@@ -4,9 +4,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  optimizeDeps: {
-    exclude: ["@novnc/novnc"],
-  },
   resolve: {
     alias: {
       "@computerd/core": resolve(import.meta.dirname, "../../packages/core/src/index.ts"),
