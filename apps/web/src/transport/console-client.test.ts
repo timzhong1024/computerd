@@ -175,7 +175,9 @@ test("connects xterm to websocket transport and reacts to session events", async
 
   fakeSockets[0]?.open();
   expect(fakeTerminal.focus).toHaveBeenCalled();
-  expect(fakeSockets[0]?.sentMessages).toContain(JSON.stringify({ type: "resize", cols: 80, rows: 24 }));
+  expect(fakeSockets[0]?.sentMessages).toContain(
+    JSON.stringify({ type: "resize", cols: 80, rows: 24 }),
+  );
 
   fakeSockets[0]?.message(JSON.stringify({ type: "ready" }));
   expect(states).toEqual(["connecting", "connected"]);

@@ -301,10 +301,7 @@ async function handleUpgradeRequest({
   });
 }
 
-function bridgeConsoleWebSocket(
-  websocket: WebSocket,
-  lease: ConsoleAttachLease,
-) {
+function bridgeConsoleWebSocket(websocket: WebSocket, lease: ConsoleAttachLease) {
   const terminal = createTerminalProcess(lease);
   let closed = false;
 
@@ -430,7 +427,7 @@ function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
         child.on("exit", (exitCode, signal) => {
           listener({
             exitCode: exitCode ?? undefined,
-            signal: typeof signal === "string" ? undefined : signal ?? undefined,
+            signal: typeof signal === "string" ? undefined : (signal ?? undefined),
           });
         });
       },
@@ -454,9 +451,7 @@ function sanitizeSpawnEnvironment(env: NodeJS.ProcessEnv) {
 }
 
 function renderFallbackInput(data: string) {
-  return data
-    .replaceAll("\r", "\r\n")
-    .replaceAll("\u007f", "\b \b");
+  return data.replaceAll("\r", "\r\n").replaceAll("\u007f", "\b \b");
 }
 
 function parseConsoleWireMessage(value: string) {

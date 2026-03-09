@@ -1,6 +1,19 @@
-import type { HostUnitDetail, HostUnitSummary, PersistedTerminalComputer, UnitRuntimeState } from "./types";
-import { createFileUnitStore, type FileUnitStoreOptions, type UnitFileStore } from "./unit-file-store";
-import { createSystemdDbusClient, type SystemdDbusClient, type SystemdDbusClientOptions } from "./dbus-client";
+import type {
+  HostUnitDetail,
+  HostUnitSummary,
+  PersistedTerminalComputer,
+  UnitRuntimeState,
+} from "./types";
+import {
+  createFileUnitStore,
+  type FileUnitStoreOptions,
+  type UnitFileStore,
+} from "./unit-file-store";
+import {
+  createSystemdDbusClient,
+  type SystemdDbusClient,
+  type SystemdDbusClientOptions,
+} from "./dbus-client";
 
 export interface SystemdRuntime {
   createPersistentUnit: (computer: PersistedTerminalComputer) => Promise<UnitRuntimeState>;
@@ -33,20 +46,25 @@ export function createSystemdRuntime({
     async createPersistentUnit(computer) {
       await resolvedUnitFileStore.writeTerminalUnitFile(computer);
       await resolvedDbusClient.reloadDaemon();
-      await resolvedDbusClient.setUnitEnabled(computer.unitName, computer.lifecycle.autostart === true);
-      return (await resolvedDbusClient.getRuntimeState(computer.unitName)) ?? {
-        unitName: computer.unitName,
-        description: computer.description,
-        unitType: "service",
-        loadState: "loaded",
-        activeState: "inactive",
-        subState: "dead",
-        execStart: computer.runtime.execStart,
-        workingDirectory: computer.runtime.workingDirectory,
-        environment: computer.runtime.environment,
-        cpuWeight: computer.resources.cpuWeight,
-        memoryMaxMiB: computer.resources.memoryMaxMiB,
-      };
+      await resolvedDbusClient.setUnitEnabled(
+        computer.unitName,
+        computer.lifecycle.autostart === true,
+      );
+      return (
+        (await resolvedDbusClient.getRuntimeState(computer.unitName)) ?? {
+          unitName: computer.unitName,
+          description: computer.description,
+          unitType: "service",
+          loadState: "loaded",
+          activeState: "inactive",
+          subState: "dead",
+          execStart: computer.runtime.execStart,
+          workingDirectory: computer.runtime.workingDirectory,
+          environment: computer.runtime.environment,
+          cpuWeight: computer.resources.cpuWeight,
+          memoryMaxMiB: computer.resources.memoryMaxMiB,
+        }
+      );
     },
     async deletePersistentUnit(unitName) {
       await resolvedDbusClient.deletePersistentUnit(unitName);

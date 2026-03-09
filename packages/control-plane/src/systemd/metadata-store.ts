@@ -32,7 +32,10 @@ export function createFileComputerMetadataStore({
     },
     async putComputer(computer) {
       await mkdir(directory, { recursive: true });
-      await writeFile(metadataFilePath(directory, computer.unitName), `${JSON.stringify(computer, null, 2)}\n`);
+      await writeFile(
+        metadataFilePath(directory, computer.unitName),
+        `${JSON.stringify(computer, null, 2)}\n`,
+      );
     },
     async deleteComputer(name) {
       const computer = await this.getComputer(name);

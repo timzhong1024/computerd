@@ -39,18 +39,18 @@
 
 ## Capability Matrix
 
-| Capability | `systemctl` CLI | DBus manager API | `systemd-run` transient |
-| --- | --- | --- | --- |
-| 启停/restart | 强 | 强 | 强 |
-| 读取 unit 属性 | 强，靠 `systemctl show` | 强，直接读 properties | 中，仍要回到 unit 属性读取 |
-| enable/disable/autostart | 强 | 强 | 弱，不是主模型 |
-| 持久 unit 定义管理 | 中，需要自己写 unit file | 中，需要自己写 unit file | 弱，天然偏临时单元 |
-| 状态追踪 | 中，轮询 `show` / `is-active` | 强，可拿 job/unit 对象与 signal | 弱到中 |
-| 错误结构化 | 弱，主要靠 exit code + stderr | 强，DBus 错误更结构化 | 中 |
-| 日志读取 | 强，`journalctl` | 弱到中，通常还得配 journald API | 中 |
-| Node 侧接入复杂度 | 低 | 中到高 | 低 |
-| 可测试性 | 中，适合 fake CLI port | 中，需 mock bus 或抽更细 | 中 |
-| 与持久 `computer` 语义匹配 | 强 | 强 | 弱 |
+| Capability                 | `systemctl` CLI               | DBus manager API                | `systemd-run` transient    |
+| -------------------------- | ----------------------------- | ------------------------------- | -------------------------- |
+| 启停/restart               | 强                            | 强                              | 强                         |
+| 读取 unit 属性             | 强，靠 `systemctl show`       | 强，直接读 properties           | 中，仍要回到 unit 属性读取 |
+| enable/disable/autostart   | 强                            | 强                              | 弱，不是主模型             |
+| 持久 unit 定义管理         | 中，需要自己写 unit file      | 中，需要自己写 unit file        | 弱，天然偏临时单元         |
+| 状态追踪                   | 中，轮询 `show` / `is-active` | 强，可拿 job/unit 对象与 signal | 弱到中                     |
+| 错误结构化                 | 弱，主要靠 exit code + stderr | 强，DBus 错误更结构化           | 中                         |
+| 日志读取                   | 强，`journalctl`              | 弱到中，通常还得配 journald API | 中                         |
+| Node 侧接入复杂度          | 低                            | 中到高                          | 低                         |
+| 可测试性                   | 中，适合 fake CLI port        | 中，需 mock bus 或抽更细        | 中                         |
+| 与持久 `computer` 语义匹配 | 强                            | 强                              | 弱                         |
 
 ## Analysis
 
@@ -221,13 +221,13 @@ interface ComputerRuntimePort {
 第一阶段建议继续拆成两个 adapter，而不是一个大而全对象：
 
 1. `UnitFileStore`
-负责 render/write/remove unit file，与 `daemon-reload`
+   负责 render/write/remove unit file，与 `daemon-reload`
 
 2. `SystemdManager`
-负责 `systemctl` 生命周期与属性读取
+   负责 `systemctl` 生命周期与属性读取
 
 3. `JournalReader`
-负责最近日志读取
+   负责最近日志读取
 
 这样第二阶段如果切 DBus，只需要替换 `SystemdManager`，不用重写 unit file 与日志侧。
 上面的最小 DBus 面清单只用于第二阶段实现或并行原型验证，不改变第一阶段仍优先采用 CLI adapter 的推荐结论。

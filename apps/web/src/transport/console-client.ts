@@ -109,7 +109,9 @@ export function connectConsoleClient({
       websocket = new WebSocket(buildConsoleWebSocketUrl(session));
       websocket.addEventListener("open", () => {
         terminal.focus();
-        websocket?.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
+        websocket?.send(
+          JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
+        );
       });
       websocket.addEventListener("message", (event) => {
         const payload = parseConsoleWireMessage(String(event.data));

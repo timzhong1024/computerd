@@ -24,11 +24,7 @@ type UnitListEntry = [
 ];
 
 // `EnableUnitFiles()` / `DisableUnitFiles()` returns `(type, file, destination)`.
-type UnitFileChangeEntry = [
-  changeType: string,
-  fileName: string,
-  destination: string,
-];
+type UnitFileChangeEntry = [changeType: string, fileName: string, destination: string];
 
 // `Service.ExecStart` is `a(sasbttttuii)`.
 // We only consume the command path at index 0 today, but name the full tuple for readability.
@@ -41,7 +37,7 @@ type ServiceExecCommandEntry = [
   pid: number,
   code: number,
   status: number,
- ];
+];
 
 interface SystemdManagerInterface extends ClientInterface {
   DisableUnitFiles(files: string[], runtime: boolean): Promise<UnitFileChangeEntry[]>;
@@ -217,7 +213,7 @@ export function createSystemdDbusClient({
   }
 
   async function requireRuntimeState(unitName: string) {
-    return (await getRuntimeStateOrThrow(unitName, getUnitProxy, runtimeCache));
+    return await getRuntimeStateOrThrow(unitName, getUnitProxy, runtimeCache);
   }
 }
 
@@ -269,15 +265,20 @@ async function getRuntimeStateOrThrow(
   return state;
 }
 
-async function readRuntimeState(unitName: string, properties: PropertiesInterface): Promise<UnitRuntimeState> {
+async function readRuntimeState(
+  unitName: string,
+  properties: PropertiesInterface,
+): Promise<UnitRuntimeState> {
   const unitProps = await properties.GetAll(SYSTEMD_UNIT_INTERFACE);
-  const serviceProps = await properties.GetAll(SYSTEMD_SERVICE_INTERFACE).catch((error: unknown) => {
-    if (isUnknownInterfaceError(error)) {
-      return {};
-    }
+  const serviceProps = await properties
+    .GetAll(SYSTEMD_SERVICE_INTERFACE)
+    .catch((error: unknown) => {
+      if (isUnknownInterfaceError(error)) {
+        return {};
+      }
 
-    throw error;
-  });
+      throw error;
+    });
 
   return {
     unitName,
