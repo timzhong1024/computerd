@@ -292,9 +292,11 @@ test("creates a browser computer and refreshes inventory", async () => {
 test("renders monitor session shell and unavailable websocket state", async () => {
   renderApp("/computers/research-browser/monitor");
 
-  expect(await screen.findByText("research-browser")).toBeInTheDocument();
   expect(await screen.findByTestId("novnc-shell")).toBeInTheDocument();
   expect(await screen.findByTestId("monitor-state")).toHaveTextContent("websocket unavailable");
+  await waitFor(() => {
+    expect(document.title).toBe("research-browser - Computerd Browser");
+  });
   expect(connectMonitorClient).toHaveBeenCalled();
 });
 

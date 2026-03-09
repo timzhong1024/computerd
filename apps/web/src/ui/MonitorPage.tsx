@@ -15,6 +15,13 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
   const [state, setState] = useState<MonitorConnectionState>("connecting");
 
   useEffect(() => {
+    document.title = `${computerName} - Computerd Browser`;
+    return () => {
+      document.title = "Computerd";
+    };
+  }, [computerName]);
+
+  useEffect(() => {
     let cancelled = false;
 
     setSession(null);
@@ -60,11 +67,6 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
 
   return (
     <main className="browser-stage-shell">
-      <header className="browser-stage-toolbar">
-        <p className="eyebrow">Browser stage</p>
-        <h1>{computerName}</h1>
-      </header>
-
       {error ? (
         <div className="alert browser-stage-alert" role="alert">
           {error}
