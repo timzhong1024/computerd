@@ -78,20 +78,65 @@ test("throws when CPUWeight is a non-sentinel uint64 overflow value", async () =
   );
 });
 
+test("startUnit waits until the unit is no longer activating", async () => {
+  const client = createSystemdDbusClient({
+    bus: createFakeBus({
+      unitProperties: {
+        ActiveState: variant("s", "activating"),
+        Description: variant("s", "Browser"),
+        LoadState: variant("s", "loaded"),
+        SubState: variant("s", "start"),
+      },
+      unitPropertiesSequence: [
+        {
+          ActiveState: variant("s", "activating"),
+          Description: variant("s", "Browser"),
+          LoadState: variant("s", "loaded"),
+          SubState: variant("s", "start"),
+        },
+        {
+          ActiveState: variant("s", "failed"),
+          Description: variant("s", "Browser"),
+          LoadState: variant("s", "loaded"),
+          SubState: variant("s", "failed"),
+        },
+      ],
+      serviceProperties: {
+        Result: variant("s", "exit-code"),
+      },
+    }),
+  });
+
+  await expect(client.startUnit("computerd-browser.service")).resolves.toMatchObject({
+    activeState: "failed",
+    subState: "failed",
+  });
+});
+
 function createFakeBus({
   serviceProperties,
   unitProperties,
+  unitPropertiesSequence,
 }: {
   serviceProperties: Record<string, { signature: string; value: unknown }>;
   unitProperties: Record<string, { signature: string; value: unknown }>;
+  unitPropertiesSequence?: Array<Record<string, { signature: string; value: unknown }>>;
 }) {
+  let unitStateIndex = 0;
   const properties = {
     Get() {
       throw new Error("Get is not implemented in this fake.");
     },
     async GetAll(interfaceName: string) {
       if (interfaceName === "org.freedesktop.systemd1.Unit") {
-        return unitProperties;
+        if (!unitPropertiesSequence) {
+          return unitProperties;
+        }
+
+        const nextState =
+          unitPropertiesSequence[Math.min(unitStateIndex, unitPropertiesSequence.length - 1)];
+        unitStateIndex += 1;
+        return nextState;
       }
       if (interfaceName === "org.freedesktop.systemd1.Service") {
         return serviceProperties;

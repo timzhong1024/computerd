@@ -108,19 +108,19 @@ export function createSystemdDbusClient({
       const manager = await managerPromise;
       await ensureSubscribed();
       await manager.StartUnit(unitName, "replace");
-      return await requireRuntimeState(unitName);
+      return await waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
     },
     async stopUnit(unitName) {
       const manager = await managerPromise;
       await ensureSubscribed();
       await manager.StopUnit(unitName, "replace");
-      return await requireRuntimeState(unitName);
+      return await waitForRuntimeState(unitName, (state) => state.activeState !== "deactivating");
     },
     async restartUnit(unitName) {
       const manager = await managerPromise;
       await ensureSubscribed();
       await manager.RestartUnit(unitName, "replace");
-      return await requireRuntimeState(unitName);
+      return await waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
     },
     async deletePersistentUnit(unitName) {
       const state = await this.getRuntimeState(unitName);
@@ -217,8 +217,28 @@ export function createSystemdDbusClient({
     subscribed = true;
   }
 
-  async function requireRuntimeState(unitName: string) {
-    return await getRuntimeStateOrThrow(unitName, getUnitProxy, runtimeCache);
+  async function waitForRuntimeState(
+    unitName: string,
+    predicate: (state: UnitRuntimeState) => boolean,
+  ) {
+    const startedAt = Date.now();
+    while (true) {
+      const proxy = await getUnitProxy(unitName);
+      const state = await readRuntimeState(unitName, proxy.properties);
+      if (state === null) {
+        throw createNoSuchUnitError(unitName);
+      }
+      runtimeCache.set(unitName, state);
+      if (predicate(state)) {
+        return state;
+      }
+
+      if (Date.now() - startedAt > 5_000) {
+        throw new Error(`Timed out waiting for unit ${unitName} to reach a stable state.`);
+      }
+
+      await delay(100);
+    }
   }
 }
 
@@ -257,25 +277,6 @@ async function createUnitProxy(
   });
 
   return { properties };
-}
-
-async function getRuntimeStateOrThrow(
-  unitName: string,
-  getUnitProxy: (unitName: string) => Promise<CachedUnitProxy>,
-  runtimeCache: Map<string, UnitRuntimeState>,
-) {
-  const cached = runtimeCache.get(unitName);
-  if (cached) {
-    return cached;
-  }
-
-  const proxy = await getUnitProxy(unitName);
-  const state = await readRuntimeState(unitName, proxy.properties);
-  if (state === null) {
-    throw createNoSuchUnitError(unitName);
-  }
-  runtimeCache.set(unitName, state);
-  return state;
 }
 
 async function readRuntimeState(
@@ -451,4 +452,10 @@ function isUnknownUnitError(error: unknown) {
 
 function isUnknownInterfaceError(error: unknown) {
   return error instanceof Error && error.message.includes("UnknownInterface");
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
