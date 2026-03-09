@@ -223,10 +223,20 @@ export function HomePage() {
     }
 
     const viewport = selectedComputer.runtime.display.viewport;
-    const width = viewport.width + 32;
-    const height = viewport.height + 120;
-    const left = Math.max(Math.round((window.screen.width - width) / 2), 0);
-    const top = Math.max(Math.round((window.screen.height - height) / 2), 0);
+    const chromeWidth = 32;
+    const chromeHeight = 96;
+    const fullWidth = viewport.width + chromeWidth;
+    const fullHeight = viewport.height + chromeHeight;
+    const availableWidth = window.screen.availWidth || window.screen.width || 0;
+    const availableHeight = window.screen.availHeight || window.screen.height || 0;
+    const needsFallback =
+      availableWidth > 0 &&
+      availableHeight > 0 &&
+      (fullWidth > availableWidth || fullHeight > availableHeight);
+    const width = needsFallback ? Math.round(viewport.width / 2) + chromeWidth : fullWidth;
+    const height = needsFallback ? Math.round(viewport.height / 2) + chromeHeight : fullHeight;
+    const left = Math.max(Math.round(((availableWidth || width) - width) / 2), 0);
+    const top = Math.max(Math.round(((availableHeight || height) - height) / 2), 0);
     const url = `/computers/${encodeURIComponent(selectedComputer.name)}/monitor`;
     const features = [
       "popup=yes",
