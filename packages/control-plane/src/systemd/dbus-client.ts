@@ -308,7 +308,7 @@ async function readRuntimeState(
     execStart: getExecStart(serviceProps),
     workingDirectory: getString(serviceProps, "WorkingDirectory"),
     environment: getEnvironment(serviceProps),
-    cpuWeight: getNumber(serviceProps, "CPUWeight"),
+    cpuWeight: getCpuWeight(unitName, serviceProps),
     memoryMaxMiB: getMemoryMaxMiB(serviceProps),
     execMainPid: getNumber(serviceProps, "ExecMainPID"),
     execMainStatus: getNumber(serviceProps, "ExecMainStatus"),
@@ -319,6 +319,19 @@ async function readRuntimeState(
 function createNoSuchUnitError(unitName: string) {
   const error = new Error(`Unit ${unitName} was not found.`);
   error.name = "org.freedesktop.systemd1.NoSuchUnit";
+  return error;
+}
+
+function createUnitPropertyRangeError(
+  unitName: string,
+  propertyName: string,
+  value: number,
+  expected: string,
+) {
+  const error = new Error(
+    `Unit ${unitName} returned unsupported ${propertyName}=${value}. Expected ${expected}.`,
+  );
+  error.name = "SystemdUnitPropertyRangeError";
   return error;
 }
 
@@ -361,6 +374,19 @@ function getMemoryMaxMiB(props: Record<string, Variant>) {
   }
 
   return Math.floor(value / (1024 * 1024));
+}
+
+function getCpuWeight(unitName: string, props: Record<string, Variant>) {
+  const value = getBigIntLike(props, "CPUWeight");
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isSafeInteger(value) || value < 1 || value > 10_000) {
+    throw createUnitPropertyRangeError(unitName, "CPUWeight", value, "1..10000 safe integer");
+  }
+
+  return value;
 }
 
 function getString(props: Record<string, Variant>, key: string) {

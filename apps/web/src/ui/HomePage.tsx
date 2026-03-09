@@ -34,7 +34,7 @@ export function HomePage() {
   const [form, setForm] = useState({
     name: "",
     profile: "terminal",
-    execStart: "/usr/bin/bash -lc 'echo ready && sleep infinity'",
+    execStart: "/usr/bin/bash -i -l",
     workingDirectory: "",
     browser: "chromium",
     startUrl: "https://example.com",
@@ -312,20 +312,22 @@ export function HomePage() {
 
         <div className="panel">
           <h2>Host inspect</h2>
-          <ul className="item-list">
-            {hostUnits.map((unit) => (
-              <li key={unit.unitName}>
-                <button
-                  type="button"
-                  className="item-button"
-                  onClick={() => void loadHostUnit(unit.unitName)}
-                >
-                  <span>{unit.unitName}</span>
-                  <span className="meta">{unit.state}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="scroll-list">
+            <ul className="item-list">
+              {hostUnits.map((unit) => (
+                <li key={unit.unitName}>
+                  <button
+                    type="button"
+                    className="item-button"
+                    onClick={() => void loadHostUnit(unit.unitName)}
+                  >
+                    <span>{unit.unitName}</span>
+                    <span className="meta">{unit.state}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 

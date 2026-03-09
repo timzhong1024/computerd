@@ -546,7 +546,7 @@ function createDevelopmentControlPlane(): ControlPlane {
     profile: "terminal",
     description: "Development terminal computer for local coding and smoke tests.",
     runtime: {
-      execStart: "/usr/bin/bash -lc 'echo ready && sleep infinity'",
+      execStart: "/usr/bin/bash -i -l",
     },
     access: {
       console: {

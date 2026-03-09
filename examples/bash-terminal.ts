@@ -17,7 +17,7 @@ async function main() {
       autostart: true,
     },
     runtime: {
-      execStart: "/usr/bin/bash -lc 'exec sleep infinity'",
+      execStart: "/usr/bin/bash -i -l",
     },
   });
 

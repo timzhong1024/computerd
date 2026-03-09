@@ -135,6 +135,16 @@ button:disabled {
   gap: 10px;
 }
 
+.scroll-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.scroll-list .item-list {
+  margin-top: 0;
+}
+
 .item-button {
   width: 100%;
   display: flex;

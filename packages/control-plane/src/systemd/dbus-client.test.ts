@@ -18,6 +18,26 @@ test("treats LoadState=not-found as a missing unit", async () => {
   await expect(client.getRuntimeState("computerd-missing.service")).resolves.toBeNull();
 });
 
+test("throws the unit name when CPUWeight is out of range", async () => {
+  const client = createSystemdDbusClient({
+    bus: createFakeBus({
+      unitProperties: {
+        ActiveState: variant("s", "active"),
+        Description: variant("s", "Terminal"),
+        LoadState: variant("s", "loaded"),
+        SubState: variant("s", "running"),
+      },
+      serviceProperties: {
+        CPUWeight: variant("t", BigInt("18446744073709551615")),
+      },
+    }),
+  });
+
+  await expect(client.getRuntimeState("computerd-terminal.service")).rejects.toThrow(
+    "Unit computerd-terminal.service returned unsupported CPUWeight=",
+  );
+});
+
 function createFakeBus({
   serviceProperties,
   unitProperties,
