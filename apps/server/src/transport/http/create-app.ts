@@ -69,6 +69,7 @@ export function createApp({
 }: CreateAppOptions) {
   const websocketServer = new WebSocketServer({ noServer: true });
   const server = createServer(async (request, response) => {
+    const requestLog = createRequestLogContext(request);
     try {
       if (request.url === "/healthz") {
         sendJson(response, 200, { status: "ok" });
@@ -191,6 +192,8 @@ export function createApp({
 
       sendJson(response, 404, { error: "Not Found" });
     } catch (error: unknown) {
+      logHttpRequestError(requestLog, error);
+
       if (error instanceof ZodError) {
         sendJson(response, 400, { error: error.message });
         return;
@@ -224,6 +227,8 @@ export function createApp({
       sendJson(response, 500, {
         error: error instanceof Error ? error.message : "Internal Server Error",
       });
+    } finally {
+      logHttpRequestComplete(requestLog, response);
     }
   });
 
@@ -247,6 +252,44 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
   response.statusCode = statusCode;
   response.setHeader("content-type", "application/json");
   response.end(JSON.stringify(payload));
+}
+
+interface RequestLogContext {
+  method: string;
+  path: string;
+  startedAt: number;
+}
+
+function createRequestLogContext(request: IncomingMessage): RequestLogContext {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  return {
+    method: request.method ?? "UNKNOWN",
+    path: url.pathname,
+    startedAt: Date.now(),
+  };
+}
+
+function logHttpRequestComplete(context: RequestLogContext, response: ServerResponse) {
+  console.info(
+    JSON.stringify({
+      type: "http_request",
+      method: context.method,
+      path: context.path,
+      statusCode: response.statusCode,
+      durationMs: Date.now() - context.startedAt,
+    }),
+  );
+}
+
+function logHttpRequestError(context: RequestLogContext, error: unknown) {
+  console.error(
+    JSON.stringify({
+      type: "http_request_error",
+      method: context.method,
+      path: context.path,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }),
+  );
 }
 
 async function readJsonBody(request: IncomingMessage) {
@@ -280,9 +323,11 @@ async function handleUpgradeRequest({
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
   websocketServer: WebSocketServer;
 }) {
+  const requestLog = createRequestLogContext(request);
   const url = new URL(request.url ?? "/", "http://localhost");
   const consoleMatch = /^\/api\/computers\/(?<name>[^/]+)\/console\/ws$/.exec(url.pathname);
   if (!consoleMatch?.groups?.name) {
+    logUpgradeRequestComplete(requestLog, 404);
     writeUpgradeError(socket, 404, "Not Found");
     return;
   }
@@ -291,13 +336,40 @@ async function handleUpgradeRequest({
   try {
     lease = await openConsoleAttach(decodeURIComponent(consoleMatch.groups.name));
   } catch (error: unknown) {
-    writeUpgradeError(socket, mapUpgradeStatusCode(error), errorMessage(error));
+    const statusCode = mapUpgradeStatusCode(error);
+    logUpgradeRequestError(requestLog, error, statusCode);
+    writeUpgradeError(socket, statusCode, errorMessage(error));
     return;
   }
 
   websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
+    logUpgradeRequestComplete(requestLog, 101);
     bridgeConsoleWebSocket(websocket, lease);
   });
+}
+
+function logUpgradeRequestComplete(context: RequestLogContext, statusCode: number) {
+  console.info(
+    JSON.stringify({
+      type: "ws_upgrade",
+      method: context.method,
+      path: context.path,
+      statusCode,
+      durationMs: Date.now() - context.startedAt,
+    }),
+  );
+}
+
+function logUpgradeRequestError(context: RequestLogContext, error: unknown, statusCode: number) {
+  console.error(
+    JSON.stringify({
+      type: "ws_upgrade_error",
+      method: context.method,
+      path: context.path,
+      statusCode,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }),
+  );
 }
 
 function bridgeConsoleWebSocket(websocket: WebSocket, lease: ConsoleAttachLease) {

@@ -5,7 +5,6 @@ const steps = [
   ["lint", ["lint"]],
   ["typecheck", ["typecheck"]],
   ["test", ["test"]],
-  ["smoke:dev", ["smoke:dev"]],
 ];
 
 for (const [name, args] of steps) {

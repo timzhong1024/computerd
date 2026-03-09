@@ -1,9 +1,16 @@
 import { once } from "node:events";
 import { createControlPlane } from "@computerd/control-plane";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "./create-app";
 
 const servers: Array<ReturnType<typeof createApp>> = [];
+let infoSpy: ReturnType<typeof vi.spyOn>;
+let errorSpy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -22,6 +29,8 @@ afterEach(async () => {
     ),
   );
   servers.length = 0;
+  infoSpy.mockRestore();
+  errorSpy.mockRestore();
 });
 
 test("serves computer and host unit APIs", async () => {
@@ -150,4 +159,83 @@ test("serves computer and host unit APIs", async () => {
     method: "DELETE",
   });
   expect(deleteResponse.status).toBe(204);
+
+  const infoLogs = infoSpy.mock.calls
+    .map((call: unknown[]) => call[0])
+    .filter((value: unknown): value is string => typeof value === "string")
+    .map((value: string) => JSON.parse(value) as Record<string, unknown>);
+
+  expect(infoLogs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers",
+        statusCode: 201,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/computers",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/lab-terminal/start",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/host-units",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/research-browser/monitor-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/starter-terminal/console-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/computers/starter-terminal/console/ws",
+        statusCode: 426,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/computers/research-browser/monitor/ws",
+        statusCode: 501,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "DELETE",
+        path: "/api/computers/lab-terminal",
+        statusCode: 204,
+      }),
+    ]),
+  );
+
+  const errorLogs = errorSpy.mock.calls
+    .map((call: unknown[]) => call[0])
+    .filter((value: unknown): value is string => typeof value === "string")
+    .map((value: string) => JSON.parse(value) as Record<string, unknown>);
+
+  expect(errorLogs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "http_request_error",
+        method: "POST",
+        path: "/api/computers/starter-terminal/monitor-sessions",
+      }),
+    ]),
+  );
 });
