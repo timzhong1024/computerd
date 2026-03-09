@@ -221,7 +221,11 @@ button:disabled {
 }
 
 .novnc-shell {
+  display: flex;
+  align-items: stretch;
+  height: min(70vh, 720px);
   min-height: 420px;
+  overflow: hidden;
   border: 1px solid rgba(31, 37, 33, 0.12);
   border-radius: 18px;
   background:

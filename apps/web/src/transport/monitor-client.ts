@@ -32,7 +32,7 @@ export function connectMonitorClient({
       target.replaceChildren();
       rfb = new RFB(target, websocketUrl);
       rfb.scaleViewport = true;
-      rfb.resizeSession = true;
+      rfb.resizeSession = false;
       rfb.viewOnly = false;
       rfb.addEventListener("connect", () => {
         onStateChange("connected");
