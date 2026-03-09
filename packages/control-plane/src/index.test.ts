@@ -231,6 +231,76 @@ test("creates stub monitor and console sessions from seeded capabilities", async
   });
 });
 
+test("waits for terminal console runtime readiness during start", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const terminalRecord = createTerminalComputerRecord();
+  await metadataStore.putComputer(terminalRecord);
+  const runtimeDirectory = "/tmp/computerd-delayed-terminals";
+  await cleanupSocket(runtimeDirectory, terminalRecord.name);
+
+  const runtime: ComputerRuntimePort = {
+    async createPersistentUnit(computer) {
+      return {
+        unitName: computer.unitName,
+        description: computer.description,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "dead",
+        execStart: computer.runtime.execStart,
+      };
+    },
+    async deletePersistentUnit() {},
+    async getRuntimeState() {
+      return runtimeState;
+    },
+    async getHostUnit() {
+      return null;
+    },
+    async listHostUnits() {
+      return [];
+    },
+    async restartUnit() {
+      return runtimeState;
+    },
+    async startUnit() {
+      setTimeout(() => {
+        void ensureSocket(runtimeDirectory, terminalRecord.name);
+      }, 150);
+
+      return runtimeState;
+    },
+    async stopUnit() {
+      return runtimeState;
+    },
+  };
+  const runtimeState: UnitRuntimeState = {
+    unitName: terminalRecord.unitName,
+    description: terminalRecord.description,
+    unitType: "service",
+    loadState: "loaded",
+    activeState: "active",
+    subState: "running",
+    execStart: terminalRecord.runtime.execStart,
+  };
+
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_TERMINAL_RUNTIME_DIR: runtimeDirectory,
+    },
+    { metadataStore, runtime },
+  );
+
+  const started = await controlPlane.startComputer("starter-terminal");
+
+  expect(started.state).toBe("running");
+  await expect(controlPlane.createConsoleSession("starter-terminal")).resolves.toMatchObject({
+    computerName: "starter-terminal",
+  });
+});
+
 test("rejects sessions for unsupported capabilities", async () => {
   const metadataStore = createMemoryMetadataStore();
   await metadataStore.putComputer(createTerminalComputerRecord());

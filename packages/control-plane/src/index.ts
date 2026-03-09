@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   createComputerCapabilities,
   type BrowserRuntime,
@@ -215,6 +216,9 @@ export function createControlPlane(
     async startComputer(name) {
       const record = await requireComputer(metadataStore, name);
       await runtime.startUnit(record.unitName);
+      if (record.profile === "terminal") {
+        await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths);
+      }
       const updated = {
         ...record,
         lastActionAt: new Date().toISOString(),
@@ -235,6 +239,9 @@ export function createControlPlane(
     async restartComputer(name) {
       const record = await requireComputer(metadataStore, name);
       await runtime.restartUnit(record.unitName);
+      if (record.profile === "terminal") {
+        await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths);
+      }
       const updated = {
         ...record,
         lastActionAt: new Date().toISOString(),
@@ -323,19 +330,43 @@ async function requireConsoleAvailable(
   runtime: ComputerRuntimePort,
   consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>,
 ) {
-  const runtimeState = await runtime.getRuntimeState(record.unitName);
-  if (mapComputerState(runtimeState) !== "running") {
-    throw new ComputerConsoleUnavailableError(
-      `Computer "${record.name}" must be running before opening a console.`,
-    );
-  }
+  const isReady = await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths, 3_000);
+  if (!isReady) {
+    const runtimeState = await runtime.getRuntimeState(record.unitName);
+    if (mapComputerState(runtimeState) !== "running") {
+      throw new ComputerConsoleUnavailableError(
+        `Computer "${record.name}" must be running before opening a console.`,
+      );
+    }
 
-  const hasSocket = await consoleRuntimePaths.hasSocket(record);
-  if (!hasSocket) {
     throw new ComputerConsoleUnavailableError(
       `Computer "${record.name}" console runtime is not ready yet.`,
     );
   }
+}
+
+async function waitForConsoleRuntimeReady(
+  record: PersistedTerminalComputer,
+  runtime: ComputerRuntimePort,
+  consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>,
+  timeoutMs = 5_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const runtimeState = await runtime.getRuntimeState(record.unitName);
+    if (mapComputerState(runtimeState) !== "running") {
+      return false;
+    }
+
+    if (await consoleRuntimePaths.hasSocket(record)) {
+      return true;
+    }
+
+    await delay(100);
+  }
+
+  return false;
 }
 
 async function toComputerSummary(
