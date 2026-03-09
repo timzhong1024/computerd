@@ -1,26 +1,33 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
+import { createConnection } from "node:net";
 import type { Duplex } from "node:stream";
 import { spawn as spawnPty } from "@lydell/node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { ZodError } from "zod";
 import {
+  parseComputerAutomationSession,
   parseComputerConsoleSession,
   parseComputerDetail,
   parseComputerMonitorSession,
+  parseComputerScreenshot,
   parseComputerSummaries,
   parseCreateComputerInput,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  type ComputerAutomationSession,
   type ComputerConsoleSession,
   type ComputerDetail,
   type ComputerMonitorSession,
+  type ComputerScreenshot,
   type ComputerSummary,
   type CreateComputerInput,
   type HostUnitDetail,
   type HostUnitSummary,
 } from "@computerd/core";
 import {
+  type BrowserAutomationLease,
+  type BrowserMonitorLease,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
@@ -37,11 +44,15 @@ class InvalidJsonBodyError extends Error {
 }
 
 interface CreateAppOptions {
+  createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
+  openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   listComputers: () => Promise<ComputerSummary[]>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
+  openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
+  createScreenshot: (name: string) => Promise<ComputerScreenshot>;
   getComputer: (name: string) => Promise<ComputerDetail>;
   createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
   deleteComputer: (name: string) => Promise<void>;
@@ -53,11 +64,15 @@ interface CreateAppOptions {
 }
 
 export function createApp({
+  createAutomationSession,
   handleMcpRequest,
   createConsoleSession,
   openConsoleAttach,
+  openAutomationAttach,
   listComputers,
   createMonitorSession,
+  openMonitorAttach,
+  createScreenshot,
   getComputer,
   createComputer,
   deleteComputer,
@@ -101,14 +116,11 @@ export function createApp({
 
       if (request.method === "GET" && url.pathname.startsWith("/api/computers/")) {
         const websocketStubMatch =
-          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console)\/ws$/.exec(url.pathname);
+          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)\/ws$/.exec(
+            url.pathname,
+          );
         if (websocketStubMatch) {
-          if (websocketStubMatch.groups?.surface === "console") {
-            sendJson(response, 426, { error: "Console websocket endpoint requires upgrade." });
-            return;
-          }
-
-          sendJson(response, 501, { error: "Realtime websocket bridge not implemented yet." });
+          sendJson(response, 426, { error: "Websocket endpoint requires upgrade." });
           return;
         }
 
@@ -157,7 +169,7 @@ export function createApp({
       }
 
       const computerSessionMatch =
-        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console)-sessions$/.exec(
+        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)-sessions$/.exec(
           url.pathname,
         );
       if (request.method === "POST" && computerSessionMatch?.groups) {
@@ -175,7 +187,25 @@ export function createApp({
           return;
         }
 
+        if (matchedSurface === "automation") {
+          sendJson(
+            response,
+            200,
+            parseComputerAutomationSession(await createAutomationSession(name)),
+          );
+          return;
+        }
+
         sendJson(response, 200, parseComputerConsoleSession(await createConsoleSession(name)));
+        return;
+      }
+
+      const computerScreenshotMatch = /^\/api\/computers\/(?<name>[^/]+)\/screenshots$/.exec(
+        url.pathname,
+      );
+      if (request.method === "POST" && computerScreenshotMatch?.groups?.name) {
+        const name = decodeURIComponent(computerScreenshotMatch.groups.name);
+        sendJson(response, 200, parseComputerScreenshot(await createScreenshot(name)));
         return;
       }
 
@@ -238,6 +268,8 @@ export function createApp({
       socket,
       head,
       openConsoleAttach,
+      openAutomationAttach,
+      openMonitorAttach,
       websocketServer,
     });
   });
@@ -315,37 +347,62 @@ async function handleUpgradeRequest({
   socket,
   head,
   openConsoleAttach,
+  openAutomationAttach,
+  openMonitorAttach,
   websocketServer,
 }: {
   request: IncomingMessage;
   socket: Duplex;
   head: Buffer;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
+  openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
+  openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   websocketServer: WebSocketServer;
 }) {
   const requestLog = createRequestLogContext(request);
   const url = new URL(request.url ?? "/", "http://localhost");
-  const consoleMatch = /^\/api\/computers\/(?<name>[^/]+)\/console\/ws$/.exec(url.pathname);
-  if (!consoleMatch?.groups?.name) {
+  const upgradeMatch =
+    /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>console|monitor|automation)\/ws$/.exec(
+      url.pathname,
+    );
+  if (!upgradeMatch?.groups?.name || !upgradeMatch.groups.surface) {
     logUpgradeRequestComplete(requestLog, 404);
     writeUpgradeError(socket, 404, "Not Found");
     return;
   }
 
-  let lease: ConsoleAttachLease;
+  const computerName = decodeURIComponent(upgradeMatch.groups.name);
+  const surface = upgradeMatch.groups.surface;
+
   try {
-    lease = await openConsoleAttach(decodeURIComponent(consoleMatch.groups.name));
+    if (surface === "console") {
+      const lease = await openConsoleAttach(computerName);
+      websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
+        logUpgradeRequestComplete(requestLog, 101);
+        bridgeConsoleWebSocket(websocket, lease);
+      });
+      return;
+    }
+
+    if (surface === "monitor") {
+      const lease = await openMonitorAttach(computerName);
+      websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
+        logUpgradeRequestComplete(requestLog, 101);
+        bridgeMonitorWebSocket(websocket, lease);
+      });
+      return;
+    }
+
+    const lease = await openAutomationAttach(computerName);
+    websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
+      logUpgradeRequestComplete(requestLog, 101);
+      bridgeAutomationWebSocket(websocket, lease);
+    });
   } catch (error: unknown) {
     const statusCode = mapUpgradeStatusCode(error);
     logUpgradeRequestError(requestLog, error, statusCode);
     writeUpgradeError(socket, statusCode, errorMessage(error));
-    return;
   }
-
-  websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
-    logUpgradeRequestComplete(requestLog, 101);
-    bridgeConsoleWebSocket(websocket, lease);
-  });
 }
 
 function logUpgradeRequestComplete(context: RequestLogContext, statusCode: number) {
@@ -423,6 +480,75 @@ function bridgeConsoleWebSocket(websocket: WebSocket, lease: ConsoleAttachLease)
       // node-pty throws if the child already exited.
     }
     lease.release();
+  }
+}
+
+function bridgeMonitorWebSocket(websocket: WebSocket, lease: BrowserMonitorLease) {
+  const upstream = createConnection({
+    host: lease.host,
+    port: lease.port,
+  });
+  let closed = false;
+
+  upstream.on("data", (chunk: Buffer) => {
+    if (websocket.readyState === WebSocket.OPEN) {
+      websocket.send(chunk, { binary: true });
+    }
+  });
+  upstream.on("error", cleanup);
+  upstream.on("close", cleanup);
+
+  websocket.on("message", (message: WebSocket.RawData) => {
+    upstream.write(message as Buffer);
+  });
+  websocket.on("close", cleanup);
+  websocket.on("error", cleanup);
+
+  function cleanup() {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    upstream.destroy();
+    lease.release();
+    if (websocket.readyState === WebSocket.OPEN) {
+      websocket.close();
+    }
+  }
+}
+
+function bridgeAutomationWebSocket(websocket: WebSocket, lease: BrowserAutomationLease) {
+  const upstream = new WebSocket(lease.url);
+  let closed = false;
+
+  upstream.on("message", (message, isBinary) => {
+    if (websocket.readyState === WebSocket.OPEN) {
+      websocket.send(message, { binary: isBinary });
+    }
+  });
+  upstream.on("close", cleanup);
+  upstream.on("error", cleanup);
+
+  websocket.on("message", (message, isBinary) => {
+    if (upstream.readyState === WebSocket.OPEN) {
+      upstream.send(message, { binary: isBinary });
+    }
+  });
+  websocket.on("close", cleanup);
+  websocket.on("error", cleanup);
+
+  function cleanup() {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    upstream.close();
+    lease.release();
+    if (websocket.readyState === WebSocket.OPEN) {
+      websocket.close();
+    }
   }
 }
 

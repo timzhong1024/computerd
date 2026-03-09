@@ -10,6 +10,8 @@ export const computerCapabilitiesSchema = z.object({
   canRestart: z.boolean(),
   consoleAvailable: z.boolean(),
   browserAvailable: z.boolean(),
+  automationAvailable: z.boolean(),
+  screenshotAvailable: z.boolean(),
 });
 
 export const computerConsoleAccessSchema = z.object({
@@ -48,6 +50,24 @@ export const computerMonitorSessionSchema = z.object({
       height: z.number().int().positive(),
     })
     .optional(),
+});
+
+export const computerAutomationSessionSchema = z.object({
+  computerName: z.string().min(1),
+  protocol: z.literal("cdp"),
+  connect: computerSessionConnectSchema,
+  authorization: computerSessionAuthorizationSchema,
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const computerScreenshotSchema = z.object({
+  computerName: z.string().min(1),
+  format: z.literal("png"),
+  mimeType: z.literal("image/png"),
+  capturedAt: z.string().datetime(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  dataBase64: z.string().min(1),
 });
 
 export const computerConsoleSessionSchema = z.object({
@@ -91,10 +111,30 @@ export const terminalRuntimeSchema = z.object({
   environment: z.record(z.string(), z.string()).optional(),
 });
 
-export const browserRuntimeSchema = z.object({
-  browser: z.enum(["chromium", "chrome", "firefox"]),
-  startUrl: z.string().url().optional(),
+export const createBrowserRuntimeSchema = z.object({
+  browser: z.literal("chromium"),
   persistentProfile: z.boolean(),
+});
+
+export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
+  profileDirectory: z.string().min(1),
+  runtimeDirectory: z.string().min(1),
+  display: z.object({
+    protocol: z.literal("x11"),
+    mode: z.literal("virtual-display"),
+    viewport: z.object({
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+    }),
+  }),
+  automation: z.object({
+    protocol: z.literal("cdp"),
+    available: z.boolean(),
+  }),
+  screenshot: z.object({
+    format: z.literal("png"),
+    available: z.boolean(),
+  }),
 });
 
 const computerSummaryBaseSchema = z.object({
@@ -164,7 +204,7 @@ export const createTerminalComputerInputSchema = createComputerBaseSchema.extend
 
 export const createBrowserComputerInputSchema = createComputerBaseSchema.extend({
   profile: z.literal("browser"),
-  runtime: browserRuntimeSchema,
+  runtime: createBrowserRuntimeSchema,
 });
 
 export const createComputerInputSchema = z.discriminatedUnion("profile", [
@@ -196,6 +236,7 @@ export const hostUnitDetailSchema = hostUnitSummarySchema.extend({
 
 export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
+export type ComputerAutomationSession = z.infer<typeof computerAutomationSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
 export type ComputerConsoleSession = z.infer<typeof computerConsoleSessionSchema>;
@@ -207,9 +248,11 @@ export type ComputerProfile = z.infer<typeof computerProfileSchema>;
 export type ComputerResources = z.infer<typeof computerResourcesSchema>;
 export type ComputerSessionAuthorization = z.infer<typeof computerSessionAuthorizationSchema>;
 export type ComputerSessionConnect = z.infer<typeof computerSessionConnectSchema>;
+export type ComputerScreenshot = z.infer<typeof computerScreenshotSchema>;
 export type ComputerState = z.infer<typeof computerStateSchema>;
 export type ComputerStorage = z.infer<typeof computerStorageSchema>;
 export type ComputerSummary = z.infer<typeof computerSummarySchema>;
+export type CreateBrowserRuntime = z.infer<typeof createBrowserRuntimeSchema>;
 export type CreateBrowserComputerInput = z.infer<typeof createBrowserComputerInputSchema>;
 export type CreateComputerInput = z.infer<typeof createComputerInputSchema>;
 export type CreateTerminalComputerInput = z.infer<typeof createTerminalComputerInputSchema>;
@@ -230,8 +273,16 @@ export function parseComputerMonitorSession(value: unknown) {
   return computerMonitorSessionSchema.parse(value);
 }
 
+export function parseComputerAutomationSession(value: unknown) {
+  return computerAutomationSessionSchema.parse(value);
+}
+
 export function parseComputerConsoleSession(value: unknown) {
   return computerConsoleSessionSchema.parse(value);
+}
+
+export function parseComputerScreenshot(value: unknown) {
+  return computerScreenshotSchema.parse(value);
 }
 
 export function parseCreateComputerInput(value: unknown) {
@@ -254,5 +305,7 @@ export function createComputerCapabilities(profile: ComputerProfile, state: Comp
     canRestart: state === "running",
     consoleAvailable: profile === "terminal",
     browserAvailable: profile === "browser",
+    automationAvailable: profile === "browser" && state === "running",
+    screenshotAvailable: profile === "browser" && state === "running",
   } satisfies ComputerCapabilities;
 }

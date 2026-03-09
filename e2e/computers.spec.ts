@@ -13,18 +13,25 @@ test("creates and starts a terminal computer", async ({ page }) => {
   await page.getByTestId("computer-action-start").click();
 
   await expect(page.getByTestId("computer-state")).toHaveText("running");
-  await expect(page.getByText("docker.service")).toBeVisible();
+  await expect(page.getByTestId("open-console-link")).toBeVisible();
 });
 
-test("rejects browser computer creation in the current runtime", async ({ page }) => {
+test("creates and opens a browser computer", async ({ page }) => {
   await page.goto("/");
+  const computerName = `research-browser-${Date.now()}`;
 
-  await page.getByLabel("Name").fill("research-browser");
+  await page.getByLabel("Name").fill(computerName);
   await page.getByLabel("Profile").selectOption("browser");
-  await page.getByLabel("Start URL").fill("https://example.com");
   await page.getByRole("button", { name: "Create computer" }).click();
 
-  await expect(page.getByRole("alert")).toContainText(
-    'Computer profile "browser" is not supported in the DBus runtime yet.',
-  );
+  const computerButton = page.getByRole("button", { name: new RegExp(computerName, "i") });
+  await expect(computerButton).toBeVisible();
+  await computerButton.click();
+  await page.getByTestId("computer-action-start").click();
+
+  await expect(page.getByTestId("computer-state")).toHaveText("running");
+  await expect(page.getByTestId("open-monitor-link")).toContainText("Open browser");
+  await page.getByTestId("open-monitor-link").click();
+  await expect(page.getByRole("heading", { name: computerName })).toBeVisible();
+  await expect(page.getByTestId("novnc-shell")).toBeVisible();
 });

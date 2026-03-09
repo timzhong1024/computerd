@@ -6,11 +6,14 @@ import {
   parseComputerSummaries,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  type ComputerAutomationSession,
   type ComputerDetail,
+  type ComputerScreenshot,
   type ComputerSummary,
   type HostUnitDetail,
   type HostUnitSummary,
 } from "@computerd/core";
+import { createAutomationSession, createScreenshot } from "../transport/computer-sessions";
 import { formatError, getJson, postJson } from "../transport/http";
 
 type SelectedItem =
@@ -29,6 +32,10 @@ export function HomePage() {
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [selectedComputer, setSelectedComputer] = useState<ComputerDetail | null>(null);
   const [selectedHostUnit, setSelectedHostUnit] = useState<HostUnitDetail | null>(null);
+  const [automationSession, setAutomationSession] = useState<ComputerAutomationSession | null>(
+    null,
+  );
+  const [screenshot, setScreenshot] = useState<ComputerScreenshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [form, setForm] = useState({
@@ -37,7 +44,6 @@ export function HomePage() {
     execStart: "/usr/bin/bash -i -l",
     workingDirectory: "",
     browser: "chromium",
-    startUrl: "https://example.com",
   });
 
   useEffect(() => {
@@ -85,6 +91,8 @@ export function HomePage() {
     });
     setSelectedComputer(detail);
     setSelectedHostUnit(null);
+    setAutomationSession(null);
+    setScreenshot(null);
   }
 
   async function loadHostUnit(unitName: string) {
@@ -98,6 +106,8 @@ export function HomePage() {
     });
     setSelectedHostUnit(detail);
     setSelectedComputer(null);
+    setAutomationSession(null);
+    setScreenshot(null);
   }
 
   async function handleCreateComputer(event: FormEvent<HTMLFormElement>) {
@@ -122,9 +132,8 @@ export function HomePage() {
               name: form.name,
               profile: "browser" as const,
               runtime: {
-                browser: form.browser as "chromium" | "chrome" | "firefox",
+                browser: form.browser as "chromium",
                 persistentProfile: true,
-                startUrl: form.startUrl,
               },
             };
 
@@ -140,6 +149,8 @@ export function HomePage() {
       });
       setSelectedComputer(detail);
       setSelectedHostUnit(null);
+      setAutomationSession(null);
+      setScreenshot(null);
     } catch (caughtError) {
       setError(formatError(caughtError));
     } finally {
@@ -162,7 +173,43 @@ export function HomePage() {
         parseComputerDetail,
       );
       setSelectedComputer(detail);
+      setAutomationSession(null);
+      setScreenshot(null);
       await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleCreateAutomationSession() {
+    if (selectedComputer === null || selectedComputer.profile !== "browser") {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      setAutomationSession(await createAutomationSession(selectedComputer.name));
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleCaptureScreenshot() {
+    if (selectedComputer === null || selectedComputer.profile !== "browser") {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      setScreenshot(await createScreenshot(selectedComputer.name));
     } catch (caughtError) {
       setError(formatError(caughtError));
     } finally {
@@ -261,20 +308,7 @@ export function HomePage() {
                     }
                   >
                     <option value="chromium">chromium</option>
-                    <option value="chrome">chrome</option>
-                    <option value="firefox">firefox</option>
                   </select>
-                </label>
-                <label>
-                  Start URL
-                  <input
-                    name="startUrl"
-                    value={form.startUrl}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, startUrl: event.target.value }))
-                    }
-                    required
-                  />
                 </label>
               </>
             )}
@@ -374,7 +408,7 @@ export function HomePage() {
                   to="/computers/$name/monitor"
                   params={{ name: selectedComputer.name }}
                 >
-                  Open monitor
+                  Open browser
                 </Link>
               ) : null}
               {selectedComputer.access.console?.mode === "pty" ? (
@@ -386,6 +420,28 @@ export function HomePage() {
                 >
                   Open console
                 </Link>
+              ) : null}
+              {selectedComputer.profile === "browser" ? (
+                <button
+                  type="button"
+                  className="surface-link surface-link-secondary"
+                  data-testid="create-automation-session"
+                  disabled={!selectedComputer.capabilities.automationAvailable || isBusy}
+                  onClick={() => void handleCreateAutomationSession()}
+                >
+                  Create automation session
+                </button>
+              ) : null}
+              {selectedComputer.profile === "browser" ? (
+                <button
+                  type="button"
+                  className="surface-link surface-link-secondary"
+                  data-testid="capture-screenshot"
+                  disabled={!selectedComputer.capabilities.screenshotAvailable || isBusy}
+                  onClick={() => void handleCaptureScreenshot()}
+                >
+                  Capture screenshot
+                </button>
               ) : null}
             </div>
             <dl className="detail-grid">
@@ -414,10 +470,65 @@ export function HomePage() {
                 <dd>
                   {selectedComputer.profile === "terminal"
                     ? selectedComputer.runtime.execStart
-                    : `${selectedComputer.runtime.browser} -> ${selectedComputer.runtime.startUrl ?? "about:blank"}`}
+                    : `${selectedComputer.runtime.browser} · profile ${selectedComputer.runtime.persistentProfile ? "persistent" : "ephemeral"}`}
                 </dd>
               </div>
+              {selectedComputer.profile === "browser" ? (
+                <>
+                  <div>
+                    <dt>Profile directory</dt>
+                    <dd>{selectedComputer.runtime.profileDirectory}</dd>
+                  </div>
+                  <div>
+                    <dt>Automation</dt>
+                    <dd>{selectedComputer.runtime.automation.protocol}</dd>
+                  </div>
+                  <div>
+                    <dt>Screenshot</dt>
+                    <dd>{selectedComputer.runtime.screenshot.format}</dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
+            {selectedComputer.profile === "browser" && automationSession ? (
+              <section className="panel">
+                <div className="panel-header">
+                  <h3>Automation session</h3>
+                  <span className="status-pill status-connected">ready</span>
+                </div>
+                <dl className="detail-grid session-grid">
+                  <div>
+                    <dt>Protocol</dt>
+                    <dd>{automationSession.protocol}</dd>
+                  </div>
+                  <div>
+                    <dt>Connect target</dt>
+                    <dd data-testid="automation-connect-url">{automationSession.connect.url}</dd>
+                  </div>
+                  <div>
+                    <dt>Authorization</dt>
+                    <dd>{automationSession.authorization.mode}</dd>
+                  </div>
+                </dl>
+              </section>
+            ) : null}
+            {selectedComputer.profile === "browser" && screenshot ? (
+              <section className="panel">
+                <div className="panel-header">
+                  <h3>Screenshot</h3>
+                  <span className="status-pill status-connected">captured</span>
+                </div>
+                <p className="monitor-copy">
+                  Captured at {new Date(screenshot.capturedAt).toLocaleString()}.
+                </p>
+                <img
+                  alt={`${selectedComputer.name} screenshot`}
+                  data-testid="browser-screenshot-preview"
+                  className="novnc-shell"
+                  src={`data:${screenshot.mimeType};base64,${screenshot.dataBase64}`}
+                />
+              </section>
+            ) : null}
           </>
         ) : null}
 

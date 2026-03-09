@@ -65,7 +65,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
         <div>
           <p className="eyebrow">Computer monitor</p>
           <h1>{computerName}</h1>
-          <p className="lede">Browser monitor surface backed by a VNC session handshake.</p>
+          <p className="lede">Live browser surface backed by a noVNC session.</p>
         </div>
         <div className="surface-actions">
           <Link className="surface-link surface-link-secondary" to="/">
@@ -76,7 +76,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
             to="/computers/$name/console"
             params={{ name: computerName }}
           >
-            Open console placeholder
+            Open console
           </Link>
         </div>
       </section>
@@ -97,7 +97,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
         <p className="monitor-copy">
           {session === null
             ? "Loading monitor session."
-            : "Session handshake complete. WebSocket bridge is still a backend integration point."}
+            : "Browser session connected through the noVNC bridge."}
         </p>
         <div ref={shellRef} className="novnc-shell" data-testid="novnc-shell" />
         {session ? (

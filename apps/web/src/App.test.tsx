@@ -65,7 +65,24 @@ beforeEach(() => {
       runtime: {
         browser: "chromium",
         persistentProfile: true,
-        startUrl: "https://example.com",
+        profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
+        runtimeDirectory: "/run/computerd/computers/research-browser",
+        display: {
+          protocol: "x11",
+          mode: "virtual-display",
+          viewport: {
+            width: 1440,
+            height: 900,
+          },
+        },
+        automation: {
+          protocol: "cdp",
+          available: true,
+        },
+        screenshot: {
+          format: "png",
+          available: true,
+        },
       },
     },
   ];
@@ -122,8 +139,7 @@ beforeEach(() => {
             url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
           },
           authorization: {
-            mode: "ticket",
-            ticket: "stub-ticket",
+            mode: "none",
           },
         });
       }
@@ -144,9 +160,44 @@ beforeEach(() => {
             url: `/api/computers/${encodeURIComponent(name)}/console/ws`,
           },
           authorization: {
-            mode: "ticket",
-            ticket: "stub-ticket",
+            mode: "none",
           },
+        });
+      }
+
+      if (
+        url.startsWith("/api/computers/") &&
+        url.endsWith("/automation-sessions") &&
+        method === "POST"
+      ) {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/automation-sessions".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          protocol: "cdp",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/automation/ws`,
+          },
+          authorization: {
+            mode: "none",
+          },
+        });
+      }
+
+      if (url.startsWith("/api/computers/") && url.endsWith("/screenshots") && method === "POST") {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/screenshots".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          format: "png",
+          mimeType: "image/png",
+          capturedAt: "2026-03-09T08:00:00.000Z",
+          width: 1440,
+          height: 900,
+          dataBase64: "c2NyZWVuc2hvdA==",
         });
       }
 
@@ -206,7 +257,9 @@ test("renders computer inventory, host inspect, and monitor action links", async
   expect(await screen.findByText("computerd-starter-terminal.service")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /research-browser/i }));
-  expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
+  expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open browser");
+  expect(screen.getByTestId("create-automation-session")).toBeEnabled();
+  expect(screen.getByTestId("capture-screenshot")).toBeEnabled();
   expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
 });
 
@@ -219,14 +272,11 @@ test("creates a browser computer and refreshes inventory", async () => {
   fireEvent.change(screen.getByLabelText("Profile"), {
     target: { value: "browser" },
   });
-  fireEvent.change(screen.getByLabelText("Start URL"), {
-    target: { value: "https://openai.com" },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Create computer" }));
 
   expect(await screen.findAllByText("lab-browser")).toHaveLength(2);
   await waitFor(() => {
-    expect(screen.getByText(/chromium -> https:\/\/openai.com/i)).toBeInTheDocument();
+    expect(screen.getByText(/chromium · profile persistent/i)).toBeInTheDocument();
   });
 });
 
@@ -237,6 +287,22 @@ test("renders monitor session shell and unavailable websocket state", async () =
   expect(await screen.findByTestId("novnc-shell")).toBeInTheDocument();
   expect(await screen.findByTestId("monitor-state")).toHaveTextContent("websocket unavailable");
   expect(connectMonitorClient).toHaveBeenCalled();
+});
+
+test("creates browser automation sessions and screenshot previews from the detail page", async () => {
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /research-browser/i }));
+  fireEvent.click(await screen.findByTestId("create-automation-session"));
+  expect(await screen.findByTestId("automation-connect-url")).toHaveTextContent(
+    "/api/computers/research-browser/automation/ws",
+  );
+
+  fireEvent.click(screen.getByTestId("capture-screenshot"));
+  expect(await screen.findByTestId("browser-screenshot-preview")).toHaveAttribute(
+    "src",
+    "data:image/png;base64,c2NyZWVuc2hvdA==",
+  );
 });
 
 test("surfaces monitor session request failures", async () => {
@@ -308,11 +374,43 @@ function createComputerSummary(computer: FakeComputer) {
       canRestart: computer.state === "running",
       consoleAvailable: computer.profile === "terminal",
       browserAvailable: computer.profile === "browser",
+      automationAvailable: computer.profile === "browser" && computer.state === "running",
+      screenshotAvailable: computer.profile === "browser" && computer.state === "running",
     },
   };
 }
 
 function createComputerDetail(computer: FakeComputer) {
+  const runtime =
+    computer.profile === "browser"
+      ? {
+          browser: "chromium",
+          persistentProfile: true,
+          profileDirectory:
+            (computer.runtime.profileDirectory as string | undefined) ??
+            `/var/lib/computerd/computers/${computer.name}/profile`,
+          runtimeDirectory:
+            (computer.runtime.runtimeDirectory as string | undefined) ??
+            `/run/computerd/computers/${computer.name}`,
+          display: {
+            protocol: "x11",
+            mode: "virtual-display",
+            viewport: {
+              width: 1440,
+              height: 900,
+            },
+          },
+          automation: {
+            protocol: "cdp",
+            available: true,
+          },
+          screenshot: {
+            format: "png",
+            available: true,
+          },
+        }
+      : computer.runtime;
+
   return {
     ...createComputerSummary(computer),
     resources: {},
@@ -327,7 +425,7 @@ function createComputerDetail(computer: FakeComputer) {
       lastActionAt: "2026-03-09T08:00:00.000Z",
       primaryUnit: computer.unitName,
     },
-    runtime: computer.runtime,
+    runtime,
   };
 }
 

@@ -3,10 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   createComputerCapabilities,
-  type BrowserRuntime,
+  type ComputerAutomationSession,
   type ComputerConsoleSession,
   type ComputerDetail,
   type ComputerMonitorSession,
+  type ComputerScreenshot,
   type ComputerSummary,
   type CreateBrowserComputerInput,
   type CreateComputerInput,
@@ -15,10 +16,13 @@ import {
   type HostUnitSummary,
   type TerminalRuntime,
 } from "@computerd/core";
+import { createBrowserRuntimePaths, toBrowserRuntimeDetail } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
 import { createFileComputerMetadataStore } from "./systemd/metadata-store";
 import { createSystemdRuntime } from "./systemd/runtime";
 import type {
+  BrowserAutomationLease,
+  BrowserMonitorLease,
   ConsoleAttachLease,
   ComputerMetadataStore,
   ComputerRuntimePort,
@@ -64,15 +68,19 @@ export class ComputerConsoleUnavailableError extends Error {
 }
 
 export interface ControlPlane {
+  createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
   createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
+  createScreenshot: (name: string) => Promise<ComputerScreenshot>;
   deleteComputer: (name: string) => Promise<void>;
   getComputer: (name: string) => Promise<ComputerDetail>;
   listComputers: () => Promise<ComputerSummary[]>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
+  openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   restartComputer: (name: string) => Promise<ComputerDetail>;
+  openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   startComputer: (name: string) => Promise<ComputerDetail>;
   stopComputer: (name: string) => Promise<ComputerDetail>;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
@@ -103,11 +111,19 @@ export function createControlPlane(
   const consoleRuntimePaths = createConsoleRuntimePaths({
     runtimeDirectory: environment.COMPUTERD_TERMINAL_RUNTIME_DIR ?? "/run/computerd/terminals",
   });
+  const browserRuntimePaths = createBrowserRuntimePaths({
+    runtimeRootDirectory: environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
+    stateRootDirectory: environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
+  });
   const runtime =
     options.runtime ??
     createSystemdRuntime({
       unitFileStoreOptions: {
         directory: environment.COMPUTERD_UNIT_DIR ?? "/etc/systemd/system",
+        browserRuntimeDirectory:
+          environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
+        browserStateDirectory:
+          environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
         terminalRuntimeDirectory: consoleRuntimePaths.runtimeDirectory,
       },
     });
@@ -123,7 +139,7 @@ export function createControlPlane(
     },
     async getComputer(name) {
       const record = await requireComputer(metadataStore, name);
-      return await toComputerDetail(record, runtime);
+      return await toComputerDetail(record, runtime, browserRuntimePaths);
     },
     async createComputer(input) {
       assertSupportedCreateInput(input);
@@ -140,24 +156,39 @@ export function createControlPlane(
       }
 
       const record = createPersistedComputer(input);
-      if (record.profile !== "terminal") {
-        throw new UnsupportedComputerFeatureError(
-          `Computer profile "${record.profile}" is not supported in the DBus runtime yet.`,
-        );
-      }
       await runtime.createPersistentUnit(record);
       await metadataStore.putComputer(record);
-      return await toComputerDetail(record, runtime);
+      return await toComputerDetail(record, runtime, browserRuntimePaths);
     },
     async createMonitorSession(name) {
       const record = await requireComputer(metadataStore, name);
-      if (record.access.display?.mode !== "virtual-display") {
-        throw new UnsupportedComputerFeatureError(
-          `Computer "${name}" does not support monitor sessions.`,
-        );
-      }
-
-      return createStubMonitorSession(record.name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "monitor sessions");
+      return await runtime.createMonitorSession(browserRecord);
+    },
+    async openMonitorAttach(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "monitor sessions");
+      return await runtime.openMonitorAttach(browserRecord);
+    },
+    async createAutomationSession(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "automation sessions");
+      return await runtime.createAutomationSession(browserRecord);
+    },
+    async openAutomationAttach(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "automation sessions");
+      return await runtime.openAutomationAttach(browserRecord);
+    },
+    async createScreenshot(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "screenshots");
+      return await runtime.createScreenshot(browserRecord);
     },
     async createConsoleSession(name) {
       const record = await requireComputer(metadataStore, name);
@@ -225,7 +256,7 @@ export function createControlPlane(
         lastActionAt: new Date().toISOString(),
       } satisfies PersistedComputer;
       await metadataStore.putComputer(updated);
-      return await toComputerDetail(updated, runtime);
+      return await toComputerDetail(updated, runtime, browserRuntimePaths);
     },
     async stopComputer(name) {
       const record = await requireComputer(metadataStore, name);
@@ -235,7 +266,7 @@ export function createControlPlane(
         lastActionAt: new Date().toISOString(),
       } satisfies PersistedComputer;
       await metadataStore.putComputer(updated);
-      return await toComputerDetail(updated, runtime);
+      return await toComputerDetail(updated, runtime, browserRuntimePaths);
     },
     async restartComputer(name) {
       const record = await requireComputer(metadataStore, name);
@@ -248,7 +279,7 @@ export function createControlPlane(
         lastActionAt: new Date().toISOString(),
       } satisfies PersistedComputer;
       await metadataStore.putComputer(updated);
-      return await toComputerDetail(updated, runtime);
+      return await toComputerDetail(updated, runtime, browserRuntimePaths);
     },
     async listHostUnits() {
       return await runtime.listHostUnits();
@@ -390,6 +421,7 @@ async function toComputerSummary(
 async function toComputerDetail(
   record: PersistedComputer,
   runtime: ComputerRuntimePort,
+  browserRuntimePaths: ReturnType<typeof createBrowserRuntimePaths>,
 ): Promise<ComputerDetail> {
   const runtimeState = await runtime.getRuntimeState(record.unitName);
   const summary = await toComputerSummary(record, runtime);
@@ -423,7 +455,10 @@ async function toComputerDetail(
   return {
     ...common,
     profile: "browser",
-    runtime: record.runtime,
+    runtime: toBrowserRuntimeDetail(record, {
+      runtimeRootDirectory: browserRuntimePaths.runtimeRootDirectory,
+      stateRootDirectory: browserRuntimePaths.stateRootDirectory,
+    }),
   };
 }
 
@@ -433,13 +468,7 @@ function mapComputerState(runtimeState: UnitRuntimeState | null) {
 
 function assertSupportedCreateInput(
   input: CreateComputerInput,
-): asserts input is CreateTerminalComputerInput {
-  if (input.profile !== "terminal") {
-    throw new UnsupportedComputerFeatureError(
-      `Computer profile "${input.profile}" is not supported in the DBus runtime yet.`,
-    );
-  }
-
+): asserts input is CreateTerminalComputerInput | CreateBrowserComputerInput {
   if (input.storage?.rootMode === "ephemeral") {
     throw new UnsupportedComputerFeatureError(
       '`storage.rootMode="ephemeral"` is not supported yet.',
@@ -457,6 +486,29 @@ function assertSupportedCreateInput(
   }
 }
 
+function requireBrowserRecord(record: PersistedComputer): PersistedBrowserComputer {
+  if (record.profile !== "browser" || record.access.display?.mode !== "virtual-display") {
+    throw new UnsupportedComputerFeatureError(
+      `Computer "${record.name}" does not support browser sessions.`,
+    );
+  }
+
+  return record;
+}
+
+async function requireBrowserRunning(
+  record: PersistedBrowserComputer,
+  runtime: ComputerRuntimePort,
+  capability: string,
+) {
+  const runtimeState = await runtime.getRuntimeState(record.unitName);
+  if (mapComputerState(runtimeState) !== "running") {
+    throw new UnsupportedComputerFeatureError(
+      `Computer "${record.name}" must be running before opening ${capability}.`,
+    );
+  }
+}
+
 function toUnitName(name: string) {
   return `computerd-${slugify(name)}.service`;
 }
@@ -470,26 +522,6 @@ function slugify(value: string) {
 
 function compareByName(left: ComputerSummary, right: ComputerSummary) {
   return left.name.localeCompare(right.name);
-}
-
-function createStubMonitorSession(name: string): ComputerMonitorSession {
-  return {
-    computerName: name,
-    protocol: "vnc",
-    connect: {
-      mode: "relative-websocket-path",
-      url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
-    },
-    authorization: {
-      mode: "ticket",
-      ticket: "stub-ticket",
-    },
-    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-    viewport: {
-      width: 1440,
-      height: 900,
-    },
-  };
 }
 
 function createConsoleSession(name: string): ComputerConsoleSession {
@@ -510,6 +542,8 @@ function createConsoleSession(name: string): ComputerConsoleSession {
 async function ensureDirectories(environment: NodeJS.ProcessEnv) {
   const paths = [
     environment.COMPUTERD_METADATA_DIR ?? "/var/lib/computerd/computers",
+    environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
+    environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
     environment.COMPUTERD_UNIT_DIR ?? "/etc/systemd/system",
     environment.COMPUTERD_TERMINAL_RUNTIME_DIR ?? "/run/computerd/terminals",
   ];
@@ -560,6 +594,19 @@ function createDevelopmentControlPlane(): ControlPlane {
     throw new TypeError("Expected development seed to be terminal.");
   }
   records.set(seeded.name, seeded);
+  const browserSeed = createPersistedComputer({
+    name: "research-browser",
+    profile: "browser",
+    description: "Development browser computer for noVNC and CDP smoke tests.",
+    runtime: {
+      browser: "chromium",
+      persistentProfile: true,
+    },
+  });
+  if (browserSeed.profile !== "browser") {
+    throw new TypeError("Expected development seed to be browser.");
+  }
+  records.set(browserSeed.name, browserSeed);
   const runtimeStates = new Map<string, UnitRuntimeState>([
     [
       seeded.unitName,
@@ -573,15 +620,95 @@ function createDevelopmentControlPlane(): ControlPlane {
         execStart: seeded.runtime.execStart,
       },
     ],
+    [
+      browserSeed.unitName,
+      {
+        unitName: browserSeed.unitName,
+        description: browserSeed.description,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "dead",
+        execStart: "/usr/bin/bash -lc",
+      },
+    ],
   ]);
   const consoleRuntimePaths = createConsoleRuntimePaths({
     runtimeDirectory: "/tmp/computerd-development-terminals",
   });
+  const browserRuntimePaths = createBrowserRuntimePaths({
+    runtimeRootDirectory: "/tmp/computerd-development-browsers",
+    stateRootDirectory: "/tmp/computerd-development-browser-state",
+  });
   const activeConsoleAttaches = new Set<string>();
 
   const runtime: ComputerRuntimePort = {
+    async createMonitorSession(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        protocol: "vnc",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+        viewport: spec.viewport,
+      };
+    },
+    async openMonitorAttach(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        host: "127.0.0.1",
+        port: spec.vncPort,
+        release() {},
+      };
+    },
+    async createAutomationSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "cdp",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      };
+    },
+    async openAutomationAttach(computer) {
+      return {
+        computerName: computer.name,
+        url: `ws://127.0.0.1:${browserRuntimePaths.specForComputer(computer).devtoolsPort}/devtools/browser/development`,
+        release() {},
+      };
+    },
+    async createScreenshot(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        format: "png",
+        mimeType: "image/png",
+        capturedAt: new Date().toISOString(),
+        width: spec.viewport.width,
+        height: spec.viewport.height,
+        dataBase64: Buffer.from(`development-screenshot:${computer.name}`).toString("base64"),
+      };
+    },
     async createPersistentUnit(computer) {
-      await ensureDevelopmentConsoleSocket(consoleRuntimePaths, computer);
+      if (computer.profile === "terminal") {
+        await ensureDevelopmentConsoleSocket(consoleRuntimePaths, computer);
+      } else {
+        const spec = browserRuntimePaths.specForComputer(computer);
+        await mkdir(spec.profileDirectory, { recursive: true });
+        await mkdir(spec.runtimeDirectory, { recursive: true });
+      }
       runtimeStates.set(computer.unitName, {
         unitName: computer.unitName,
         description: computer.description,
@@ -589,9 +716,13 @@ function createDevelopmentControlPlane(): ControlPlane {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart: computer.runtime.execStart,
-        workingDirectory: computer.runtime.workingDirectory,
-        environment: computer.runtime.environment,
+        execStart:
+          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        workingDirectory:
+          computer.profile === "terminal"
+            ? computer.runtime.workingDirectory
+            : browserRuntimePaths.specForComputer(computer).stateDirectory,
+        environment: computer.profile === "terminal" ? computer.runtime.environment : undefined,
         cpuWeight: computer.resources.cpuWeight,
         memoryMaxMiB: computer.resources.memoryMaxMiB,
       });
@@ -601,6 +732,9 @@ function createDevelopmentControlPlane(): ControlPlane {
       const record = [...records.values()].find((entry) => entry.unitName === unitName);
       if (record?.profile === "terminal") {
         await cleanupDevelopmentConsoleRuntime(consoleRuntimePaths, record);
+      } else if (record?.profile === "browser") {
+        const spec = browserRuntimePaths.specForComputer(record);
+        await writeFile(`${spec.runtimeDirectory}/stopped`, "");
       }
       runtimeStates.delete(unitName);
     },
@@ -630,6 +764,9 @@ function createDevelopmentControlPlane(): ControlPlane {
       const record = [...records.values()].find((entry) => entry.unitName === unitName);
       if (record?.profile === "terminal") {
         await ensureDevelopmentConsoleSocket(consoleRuntimePaths, record);
+      } else if (record?.profile === "browser") {
+        const spec = browserRuntimePaths.specForComputer(record);
+        await mkdir(spec.runtimeDirectory, { recursive: true });
       }
       return state;
     },
@@ -644,6 +781,9 @@ function createDevelopmentControlPlane(): ControlPlane {
       const record = [...records.values()].find((entry) => entry.unitName === unitName);
       if (record?.profile === "terminal") {
         await ensureDevelopmentConsoleSocket(consoleRuntimePaths, record);
+      } else if (record?.profile === "browser") {
+        const spec = browserRuntimePaths.specForComputer(record);
+        await mkdir(spec.runtimeDirectory, { recursive: true });
       }
       return state;
     },
@@ -658,6 +798,9 @@ function createDevelopmentControlPlane(): ControlPlane {
       const record = [...records.values()].find((entry) => entry.unitName === unitName);
       if (record?.profile === "terminal") {
         await cleanupDevelopmentConsoleRuntime(consoleRuntimePaths, record);
+      } else if (record?.profile === "browser") {
+        const spec = browserRuntimePaths.specForComputer(record);
+        await writeFile(`${spec.runtimeDirectory}/stopped`, "");
       }
       return state;
     },
@@ -681,6 +824,8 @@ function createDevelopmentControlPlane(): ControlPlane {
     {
       ...process.env,
       COMPUTERD_RUNTIME_MODE: "systemd",
+      COMPUTERD_BROWSER_RUNTIME_DIR: browserRuntimePaths.runtimeRootDirectory,
+      COMPUTERD_BROWSER_STATE_DIR: browserRuntimePaths.stateRootDirectory,
       COMPUTERD_TERMINAL_RUNTIME_DIR: consoleRuntimePaths.runtimeDirectory,
     },
     {
@@ -823,11 +968,12 @@ function buildDevelopmentTmuxCommand(computer: PersistedTerminalComputer) {
 }
 
 function escapeShellToken(value: string) {
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export type {
-  BrowserRuntime,
+  BrowserAutomationLease,
+  BrowserMonitorLease,
   ConsoleAttachLease,
   ComputerConsoleSession,
   ComputerDetail,

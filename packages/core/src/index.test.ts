@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import {
   createComputerCapabilities,
+  parseComputerAutomationSession,
   parseComputerConsoleSession,
   parseComputerDetail,
   parseComputerMonitorSession,
+  parseComputerScreenshot,
   parseCreateComputerInput,
   parseHostUnitDetail,
 } from "./index";
@@ -56,7 +58,24 @@ test("parses browser computer details", () => {
     runtime: {
       browser: "chromium",
       persistentProfile: true,
-      startUrl: "https://example.com",
+      profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
+      runtimeDirectory: "/run/computerd/computers/research-browser",
+      display: {
+        protocol: "x11",
+        mode: "virtual-display",
+        viewport: {
+          width: 1440,
+          height: 900,
+        },
+      },
+      automation: {
+        protocol: "cdp",
+        available: true,
+      },
+      screenshot: {
+        format: "png",
+        available: true,
+      },
     },
   });
 
@@ -66,6 +85,7 @@ test("parses browser computer details", () => {
   }
 
   expect(detail.runtime.browser).toBe("chromium");
+  expect(detail.runtime.profileDirectory).toContain("research-browser");
 });
 
 test("parses computer monitor sessions", () => {
@@ -77,8 +97,7 @@ test("parses computer monitor sessions", () => {
       url: "/api/computers/research-browser/monitor/ws",
     },
     authorization: {
-      mode: "ticket",
-      ticket: "stub-ticket",
+      mode: "none",
     },
     viewport: {
       width: 1440,
@@ -87,10 +106,39 @@ test("parses computer monitor sessions", () => {
   });
 
   expect(session.protocol).toBe("vnc");
-  expect(session.authorization).toEqual({
-    mode: "ticket",
-    ticket: "stub-ticket",
+  expect(session.authorization.mode).toBe("none");
+});
+
+test("parses computer automation sessions", () => {
+  const session = parseComputerAutomationSession({
+    computerName: "research-browser",
+    protocol: "cdp",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/automation/ws",
+    },
+    authorization: {
+      mode: "none",
+    },
   });
+
+  expect(session.protocol).toBe("cdp");
+  expect(session.authorization.mode).toBe("none");
+});
+
+test("parses computer screenshots", () => {
+  const screenshot = parseComputerScreenshot({
+    computerName: "research-browser",
+    format: "png",
+    mimeType: "image/png",
+    capturedAt: "2026-03-09T08:00:00.000Z",
+    width: 1440,
+    height: 900,
+    dataBase64: "c2NyZWVuc2hvdA==",
+  });
+
+  expect(screenshot.mimeType).toBe("image/png");
+  expect(screenshot.dataBase64).toBe("c2NyZWVuc2hvdA==");
 });
 
 test("parses computer console sessions", () => {
@@ -170,5 +218,7 @@ test("derives computer capabilities from profile and state", () => {
     canRestart: false,
     consoleAvailable: true,
     browserAvailable: false,
+    automationAvailable: false,
+    screenshotAvailable: false,
   });
 });

@@ -1,5 +1,5 @@
 import {
-  browserRuntimeSchema,
+  createBrowserRuntimeSchema,
   computerAccessSchema,
   computerLifecycleSchema,
   computerNetworkSchema,
@@ -13,7 +13,10 @@ import { z } from "zod";
 import type { ControlPlane } from "@computerd/control-plane";
 
 export interface ComputerdMcpContext {
+  createAutomationSession: ControlPlane["createAutomationSession"];
   createComputer: ControlPlane["createComputer"];
+  createMonitorSession: ControlPlane["createMonitorSession"];
+  createScreenshot: ControlPlane["createScreenshot"];
   deleteComputer: ControlPlane["deleteComputer"];
   getComputer: ControlPlane["getComputer"];
   listComputers: ControlPlane["listComputers"];
@@ -66,14 +69,46 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
           execStart: z.string().min(1).optional(),
           workingDirectory: z.string().optional(),
           environment: z.record(z.string(), z.string()).optional(),
-          browser: browserRuntimeSchema.shape.browser.optional(),
-          startUrl: browserRuntimeSchema.shape.startUrl.optional(),
+          browser: createBrowserRuntimeSchema.shape.browser.optional(),
           persistentProfile: z.boolean().optional(),
         }),
       },
     },
     async (input) =>
       createJsonToolResult(await context.createComputer(parseCreateComputerInput(input))),
+  );
+
+  server.registerTool(
+    "create_browser_monitor_session",
+    {
+      description: "Create a browser monitor session for a managed computer.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.createMonitorSession(name)),
+  );
+
+  server.registerTool(
+    "create_browser_automation_session",
+    {
+      description: "Create a browser automation session that returns a CDP websocket endpoint.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.createAutomationSession(name)),
+  );
+
+  server.registerTool(
+    "capture_browser_screenshot",
+    {
+      description: "Capture a fullscreen PNG screenshot from a running browser computer.",
+      inputSchema: {
+        name: z.string().min(1),
+      },
+    },
+    async ({ name }) => createJsonToolResult(await context.createScreenshot(name)),
   );
 
   server.registerTool(

@@ -1,7 +1,11 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createBrowserRuntimePaths } from "./browser-runtime";
 import type {
+  PersistedBrowserComputer,
   HostUnitDetail,
   HostUnitSummary,
-  PersistedTerminalComputer,
+  PersistedComputer,
   UnitRuntimeState,
 } from "./types";
 import {
@@ -16,11 +20,26 @@ import {
 } from "./dbus-client";
 
 export interface SystemdRuntime {
-  createPersistentUnit: (computer: PersistedTerminalComputer) => Promise<UnitRuntimeState>;
+  createAutomationSession: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").ComputerAutomationSession>;
+  createMonitorSession: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").ComputerMonitorSession>;
+  createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
+  createScreenshot: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").ComputerScreenshot>;
   deletePersistentUnit: (unitName: string) => Promise<void>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
   getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
+  openAutomationAttach: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").BrowserAutomationLease>;
+  openMonitorAttach: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
@@ -33,6 +52,8 @@ export interface CreateSystemdRuntimeOptions {
   unitFileStoreOptions: FileUnitStoreOptions;
 }
 
+const execFileAsync = promisify(execFile);
+
 export function createSystemdRuntime({
   dbusClientOptions,
   unitFileStoreOptions,
@@ -41,30 +62,106 @@ export function createSystemdRuntime({
 }: CreateSystemdRuntimeOptions): SystemdRuntime {
   const resolvedDbusClient = dbusClient ?? createSystemdDbusClient(dbusClientOptions);
   const resolvedUnitFileStore = unitFileStore ?? createFileUnitStore(unitFileStoreOptions);
+  const browserRuntimePaths = createBrowserRuntimePaths({
+    runtimeRootDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+    stateRootDirectory: unitFileStoreOptions.browserStateDirectory,
+  });
 
   return {
+    async createMonitorSession(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        protocol: "vnc",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+        viewport: spec.viewport,
+      };
+    },
+    async openMonitorAttach(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        host: "127.0.0.1",
+        port: spec.vncPort,
+        release() {},
+      };
+    },
+    async createAutomationSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "cdp",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      };
+    },
+    async openAutomationAttach(computer) {
+      const websocketUrl = await resolveAutomationWebSocketUrl(
+        browserRuntimePaths.specForComputer(computer).devtoolsPort,
+      );
+      return {
+        computerName: computer.name,
+        url: websocketUrl,
+        release() {},
+      };
+    },
+    async createScreenshot(computer) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      const { stdout } = await execFileAsync("/usr/bin/bash", [
+        "-lc",
+        `DISPLAY=${quoteShell(spec.xvfbDisplay)} import -window root png:- | base64`,
+      ]);
+      return {
+        computerName: computer.name,
+        format: "png",
+        mimeType: "image/png",
+        capturedAt: new Date().toISOString(),
+        width: spec.viewport.width,
+        height: spec.viewport.height,
+        dataBase64: stdout.trim(),
+      };
+    },
     async createPersistentUnit(computer) {
-      await resolvedUnitFileStore.writeTerminalUnitFile(computer);
+      await resolvedUnitFileStore.writeUnitFile(computer);
       await resolvedDbusClient.reloadDaemon();
       await resolvedDbusClient.setUnitEnabled(
         computer.unitName,
         computer.lifecycle.autostart === true,
       );
-      return (
-        (await resolvedDbusClient.getRuntimeState(computer.unitName)) ?? {
-          unitName: computer.unitName,
-          description: computer.description,
-          unitType: "service",
-          loadState: "loaded",
-          activeState: "inactive",
-          subState: "dead",
-          execStart: computer.runtime.execStart,
-          workingDirectory: computer.runtime.workingDirectory,
-          environment: computer.runtime.environment,
-          cpuWeight: computer.resources.cpuWeight,
-          memoryMaxMiB: computer.resources.memoryMaxMiB,
-        }
-      );
+      const runtimeState = await resolvedDbusClient.getRuntimeState(computer.unitName);
+      if (runtimeState !== null) {
+        return runtimeState;
+      }
+
+      return {
+        unitName: computer.unitName,
+        description: computer.description,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "dead",
+        execStart:
+          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        workingDirectory:
+          computer.profile === "terminal"
+            ? computer.runtime.workingDirectory
+            : browserRuntimePaths.specForComputer(computer).stateDirectory,
+        environment: undefined,
+        cpuWeight: computer.resources.cpuWeight,
+        memoryMaxMiB: computer.resources.memoryMaxMiB,
+      };
     },
     async deletePersistentUnit(unitName) {
       await resolvedDbusClient.deletePersistentUnit(unitName);
@@ -78,4 +175,25 @@ export function createSystemdRuntime({
     listHostUnits: resolvedDbusClient.listHostUnits,
     getHostUnit: resolvedDbusClient.getHostUnit,
   };
+}
+
+async function resolveAutomationWebSocketUrl(port: number) {
+  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+  if (!response.ok) {
+    throw new Error(`Chromium DevTools endpoint is unavailable on port ${port}.`);
+  }
+
+  const payload = (await response.json()) as { webSocketDebuggerUrl?: unknown };
+  if (
+    typeof payload.webSocketDebuggerUrl !== "string" ||
+    payload.webSocketDebuggerUrl.length === 0
+  ) {
+    throw new Error(`Chromium DevTools endpoint on port ${port} did not return a websocket URL.`);
+  }
+
+  return payload.webSocketDebuggerUrl;
+}
+
+function quoteShell(value: string) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }

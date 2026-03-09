@@ -12,7 +12,6 @@ import {
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
-  UnsupportedComputerFeatureError,
   createControlPlane,
 } from "./index";
 
@@ -78,11 +77,13 @@ test("creates and manages a terminal computer with persisted metadata", async ()
   );
 });
 
-test("rejects unsupported browser computers", async () => {
+test("creates and manages a browser computer with persisted metadata", async () => {
   const controlPlane = createControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_BROWSER_RUNTIME_DIR: "/tmp/computerd-test-browsers",
+      COMPUTERD_BROWSER_STATE_DIR: "/tmp/computerd-test-browser-state",
     },
     {
       metadataStore: createMemoryMetadataStore(),
@@ -90,16 +91,21 @@ test("rejects unsupported browser computers", async () => {
     },
   );
 
-  await expect(
-    controlPlane.createComputer({
-      name: "research-browser",
-      profile: "browser",
-      runtime: {
-        browser: "chromium",
-        persistentProfile: true,
-      },
-    }),
-  ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
+  const created = await controlPlane.createComputer({
+    name: "research-browser",
+    profile: "browser",
+    runtime: {
+      browser: "chromium",
+      persistentProfile: true,
+    },
+  });
+
+  expect(created.profile).toBe("browser");
+  if (created.profile !== "browser") {
+    throw new TypeError("Expected browser detail");
+  }
+  expect(created.runtime.browser).toBe("chromium");
+  expect(created.runtime.profileDirectory).toContain("research-browser");
 });
 
 test("deletes a running computer by stopping runtime and removing metadata", async () => {
@@ -191,12 +197,13 @@ test("rejects duplicate names and unknown computers", async () => {
   await expect(controlPlane.getComputer("missing")).rejects.toBeInstanceOf(ComputerNotFoundError);
 });
 
-test("creates stub monitor and console sessions from seeded capabilities", async () => {
+test("creates browser automation, monitor, screenshot, and console sessions from seeded capabilities", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
   await metadataStore.putComputer(createBrowserComputerRecord());
   const terminalRecord = createTerminalComputerRecord();
   await metadataStore.putComputer(terminalRecord);
+  await runtime.createPersistentUnit(createBrowserComputerRecord());
   await runtime.createPersistentUnit(terminalRecord);
 
   const controlPlane = createControlPlane(
@@ -208,7 +215,10 @@ test("creates stub monitor and console sessions from seeded capabilities", async
     { metadataStore, runtime },
   );
 
+  await controlPlane.startComputer("research-browser");
   const monitorSession = await controlPlane.createMonitorSession("research-browser");
+  const automationSession = await controlPlane.createAutomationSession("research-browser");
+  const screenshot = await controlPlane.createScreenshot("research-browser");
   await controlPlane.startComputer("starter-terminal");
   await ensureSocket("/tmp/computerd-test-terminals", "starter-terminal");
   const consoleSession = await controlPlane.createConsoleSession("starter-terminal");
@@ -220,6 +230,19 @@ test("creates stub monitor and console sessions from seeded capabilities", async
       mode: "relative-websocket-path",
       url: "/api/computers/research-browser/monitor/ws",
     },
+  });
+  expect(automationSession).toMatchObject({
+    computerName: "research-browser",
+    protocol: "cdp",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/automation/ws",
+    },
+  });
+  expect(screenshot).toMatchObject({
+    computerName: "research-browser",
+    format: "png",
+    mimeType: "image/png",
   });
   expect(consoleSession).toMatchObject({
     computerName: "starter-terminal",
@@ -239,6 +262,32 @@ test("waits for terminal console runtime readiness during start", async () => {
   await cleanupSocket(runtimeDirectory, terminalRecord.name);
 
   const runtime: ComputerRuntimePort = {
+    async createAutomationSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "cdp",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+      };
+    },
+    async createMonitorSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "vnc",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+      };
+    },
     async createPersistentUnit(computer) {
       return {
         unitName: computer.unitName,
@@ -247,7 +296,19 @@ test("waits for terminal console runtime readiness during start", async () => {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart: computer.runtime.execStart,
+        execStart:
+          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+      };
+    },
+    async createScreenshot(computer) {
+      return {
+        computerName: computer.name,
+        format: "png",
+        mimeType: "image/png",
+        capturedAt: new Date().toISOString(),
+        width: 1440,
+        height: 900,
+        dataBase64: Buffer.from("screenshot").toString("base64"),
       };
     },
     async deletePersistentUnit() {},
@@ -259,6 +320,21 @@ test("waits for terminal console runtime readiness during start", async () => {
     },
     async listHostUnits() {
       return [];
+    },
+    async openAutomationAttach(computer) {
+      return {
+        computerName: computer.name,
+        url: "ws://127.0.0.1:9222/devtools/browser/test",
+        release() {},
+      };
+    },
+    async openMonitorAttach(computer) {
+      return {
+        computerName: computer.name,
+        host: "127.0.0.1",
+        port: 5900,
+        release() {},
+      };
     },
     async restartUnit() {
       return runtimeState;
@@ -312,9 +388,7 @@ test("rejects sessions for unsupported capabilities", async () => {
     { metadataStore, runtime: createMemoryRuntime("/tmp/computerd-test-terminals") },
   );
 
-  await expect(controlPlane.createMonitorSession("starter-terminal")).rejects.toBeInstanceOf(
-    UnsupportedComputerFeatureError,
-  );
+  await expect(controlPlane.createMonitorSession("starter-terminal")).rejects.toBeInstanceOf(Error);
   await expect(controlPlane.createConsoleSession("starter-terminal")).rejects.toBeInstanceOf(
     ComputerConsoleUnavailableError,
   );
@@ -392,7 +466,6 @@ function createBrowserComputerRecord(): PersistedComputer {
     runtime: {
       browser: "chromium",
       persistentProfile: true,
-      startUrl: "https://example.com",
     },
   };
 }
@@ -430,8 +503,37 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
 
   return {
+    async createAutomationSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "cdp",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+      };
+    },
+    async createMonitorSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "vnc",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        viewport: {
+          width: 1440,
+          height: 900,
+        },
+      };
+    },
     async createPersistentUnit(computer) {
-      await ensureSocket(runtimeDirectory, computer.name);
       const state: UnitRuntimeState = {
         unitName: computer.unitName,
         description: computer.description,
@@ -439,14 +541,27 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart: computer.runtime.execStart,
-        workingDirectory: computer.runtime.workingDirectory,
-        environment: computer.runtime.environment,
+        execStart:
+          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        workingDirectory:
+          computer.profile === "terminal" ? computer.runtime.workingDirectory : runtimeDirectory,
+        environment: computer.profile === "terminal" ? computer.runtime.environment : undefined,
         cpuWeight: computer.resources.cpuWeight,
         memoryMaxMiB: computer.resources.memoryMaxMiB,
       };
       states.set(computer.unitName, state);
       return state;
+    },
+    async createScreenshot(computer) {
+      return {
+        computerName: computer.name,
+        format: "png",
+        mimeType: "image/png",
+        capturedAt: new Date().toISOString(),
+        width: 1440,
+        height: 900,
+        dataBase64: Buffer.from(`screenshot:${computer.name}`).toString("base64"),
+      };
     },
     async deletePersistentUnit(unitName) {
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
@@ -461,16 +576,35 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async listHostUnits() {
       return [];
     },
+    async openAutomationAttach(computer) {
+      return {
+        computerName: computer.name,
+        url: `ws://127.0.0.1:9222/devtools/browser/${computer.name}`,
+        release() {},
+      };
+    },
+    async openMonitorAttach(computer) {
+      return {
+        computerName: computer.name,
+        host: "127.0.0.1",
+        port: 5900,
+        release() {},
+      };
+    },
     async restartUnit(unitName) {
       const state = requireState(states, unitName);
-      await ensureSocket(runtimeDirectory, unitNameToComputerName(unitName));
+      if (state.execStart !== "/usr/bin/bash -lc") {
+        await ensureSocket(runtimeDirectory, unitNameToComputerName(unitName));
+      }
       state.activeState = "active";
       state.subState = "running";
       return state;
     },
     async startUnit(unitName) {
       const state = requireState(states, unitName);
-      await ensureSocket(runtimeDirectory, unitNameToComputerName(unitName));
+      if (state.execStart !== "/usr/bin/bash -lc") {
+        await ensureSocket(runtimeDirectory, unitNameToComputerName(unitName));
+      }
       state.activeState = "active";
       state.subState = "running";
       return state;

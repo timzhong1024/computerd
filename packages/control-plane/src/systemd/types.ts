@@ -1,15 +1,18 @@
 import type {
   BrowserRuntime,
+  ComputerAutomationSession,
   ComputerConsoleSession,
   ComputerAccess,
   ComputerDetail,
   ComputerLifecycle,
+  ComputerMonitorSession,
   ComputerNetwork,
   ComputerProfile,
   ComputerResources,
-  ComputerState,
+  ComputerScreenshot,
   ComputerStorage,
   ComputerSummary,
+  CreateBrowserRuntime,
   CreateBrowserComputerInput,
   CreateComputerInput,
   CreateTerminalComputerInput,
@@ -39,7 +42,7 @@ export interface PersistedTerminalComputer extends PersistedComputerBase {
 
 export interface PersistedBrowserComputer extends PersistedComputerBase {
   profile: "browser";
-  runtime: BrowserRuntime;
+  runtime: CreateBrowserRuntime;
 }
 
 export type PersistedComputer = PersistedTerminalComputer | PersistedBrowserComputer;
@@ -70,11 +73,18 @@ export interface TerminalConsoleRuntimeSpec {
 }
 
 export interface ComputerRuntimePort {
-  createPersistentUnit: (computer: PersistedTerminalComputer) => Promise<UnitRuntimeState>;
+  createAutomationSession: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<ComputerAutomationSession>;
+  createMonitorSession: (computer: PersistedBrowserComputer) => Promise<ComputerMonitorSession>;
+  createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
+  createScreenshot: (computer: PersistedBrowserComputer) => Promise<ComputerScreenshot>;
   deletePersistentUnit: (unitName: string) => Promise<void>;
   getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
+  openAutomationAttach: (computer: PersistedBrowserComputer) => Promise<BrowserAutomationLease>;
+  openMonitorAttach: (computer: PersistedBrowserComputer) => Promise<BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
@@ -89,6 +99,19 @@ export interface ConsoleAttachLease {
   release: () => void;
 }
 
+export interface BrowserMonitorLease {
+  computerName: string;
+  host: string;
+  port: number;
+  release: () => void;
+}
+
+export interface BrowserAutomationLease {
+  computerName: string;
+  url: string;
+  release: () => void;
+}
+
 export interface ComputerMetadataStore {
   deleteComputer: (name: string) => Promise<void>;
   getComputer: (name: string) => Promise<PersistedComputer | null>;
@@ -98,9 +121,12 @@ export interface ComputerMetadataStore {
 
 export type {
   BrowserRuntime,
+  ComputerAutomationSession,
   ComputerConsoleSession,
   ComputerDetail,
+  ComputerMonitorSession,
   ComputerSummary,
+  ComputerScreenshot,
   CreateBrowserComputerInput,
   CreateComputerInput,
   CreateTerminalComputerInput,

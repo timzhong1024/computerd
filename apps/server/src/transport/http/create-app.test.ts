@@ -36,8 +36,10 @@ afterEach(async () => {
 test("serves computer and host unit APIs", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
+    createAutomationSession: controlPlane.createAutomationSession,
     createConsoleSession: controlPlane.createConsoleSession,
     openConsoleAttach: controlPlane.openConsoleAttach,
+    openAutomationAttach: controlPlane.openAutomationAttach,
     listComputers: controlPlane.listComputers,
     createMonitorSession: async (name) =>
       name === "research-browser"
@@ -49,11 +51,12 @@ test("serves computer and host unit APIs", async () => {
               url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
             },
             authorization: {
-              mode: "ticket",
-              ticket: "stub-ticket",
+              mode: "none",
             },
           }
         : await controlPlane.createMonitorSession(name),
+    openMonitorAttach: controlPlane.openMonitorAttach,
+    createScreenshot: controlPlane.createScreenshot,
     getComputer: controlPlane.getComputer,
     createComputer: controlPlane.createComputer,
     deleteComputer: controlPlane.deleteComputer,
@@ -149,11 +152,44 @@ test("serves computer and host unit APIs", async () => {
     protocol: "ttyd",
   });
 
+  const automationSessionResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/automation-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(automationSessionResponse.status).toBe(409);
+
+  await fetch(`${baseUrl}/api/computers/research-browser/start`, {
+    method: "POST",
+  });
+
+  const startedAutomationSessionResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/automation-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(startedAutomationSessionResponse.status).toBe(200);
+  await expect(startedAutomationSessionResponse.json()).resolves.toMatchObject({
+    computerName: "research-browser",
+    protocol: "cdp",
+  });
+
+  const screenshotResponse = await fetch(`${baseUrl}/api/computers/research-browser/screenshots`, {
+    method: "POST",
+  });
+  expect(screenshotResponse.status).toBe(200);
+  await expect(screenshotResponse.json()).resolves.toMatchObject({
+    computerName: "research-browser",
+    format: "png",
+  });
+
   const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-terminal/console/ws`);
   expect(consoleWsResponse.status).toBe(426);
 
   const monitorWsResponse = await fetch(`${baseUrl}/api/computers/research-browser/monitor/ws`);
-  expect(monitorWsResponse.status).toBe(501);
+  expect(monitorWsResponse.status).toBe(426);
 
   const deleteResponse = await fetch(`${baseUrl}/api/computers/lab-terminal`, {
     method: "DELETE",
@@ -205,6 +241,18 @@ test("serves computer and host unit APIs", async () => {
       }),
       expect.objectContaining({
         type: "http_request",
+        method: "POST",
+        path: "/api/computers/research-browser/automation-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/research-browser/screenshots",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
         method: "GET",
         path: "/api/computers/starter-terminal/console/ws",
         statusCode: 426,
@@ -213,7 +261,7 @@ test("serves computer and host unit APIs", async () => {
         type: "http_request",
         method: "GET",
         path: "/api/computers/research-browser/monitor/ws",
-        statusCode: 501,
+        statusCode: 426,
       }),
       expect.objectContaining({
         type: "http_request",
@@ -235,6 +283,11 @@ test("serves computer and host unit APIs", async () => {
         type: "http_request_error",
         method: "POST",
         path: "/api/computers/starter-terminal/monitor-sessions",
+      }),
+      expect.objectContaining({
+        type: "http_request_error",
+        method: "POST",
+        path: "/api/computers/research-browser/automation-sessions",
       }),
     ]),
   );

@@ -1,4 +1,4 @@
-declare module "@novnc/novnc/lib/rfb" {
+declare module "@novnc/novnc" {
   export default class RFB extends EventTarget {
     constructor(target: HTMLDivElement, url: string);
 
@@ -6,6 +6,7 @@ declare module "@novnc/novnc/lib/rfb" {
     resizeSession: boolean;
     viewOnly: boolean;
 
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
     disconnect(): void;
   }
 }

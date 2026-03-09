@@ -82,8 +82,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
       '@novnc/novnc':
-        specifier: ^1.6.0
-        version: 1.6.0
+        specifier: 1.7.0-beta
+        version: 1.7.0-beta
       '@tanstack/react-router':
         specifier: ^1.166.3
         version: 1.166.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -503,8 +503,8 @@ packages:
     resolution: {integrity: sha512-ugvXJjwF5ldtUpa7D95kruNJ41yFQDEKyF5CW4TgKJnh+W/zmlBzXXeKTyqIgwMFrkePN2JqOBqcF0M0oOunow==}
     engines: {node: '>=0.3.0'}
 
-  '@novnc/novnc@1.6.0':
-    resolution: {integrity: sha512-CJrmdSe9Yt2ZbLsJpVFoVkEu0KICEvnr3njW25Nz0jodaiFJtg8AYLGZogRYy0/N5HUWkGUsCmegKXYBSqwygw==}
+  '@novnc/novnc@1.7.0-beta':
+    resolution: {integrity: sha512-h1NihPIO1bo023eL5b8OCSJarVOngWmCYQIN0jZfjgvP/s9ZKQZVsrH8pwVqB8zCkqmqzSSEOTN0mHtLp7u7gg==}
 
   '@oxfmt/binding-android-arm-eabi@0.36.0':
     resolution: {integrity: sha512-Z4yVHJWx/swHHjtr0dXrBZb6LxS+qNz1qdza222mWwPTUK4L790+5i3LTgjx3KYGBzcYpjaiZBw4vOx94dH7MQ==}
@@ -2557,7 +2557,7 @@ snapshots:
 
   '@nornagon/put@0.0.8': {}
 
-  '@novnc/novnc@1.6.0': {}
+  '@novnc/novnc@1.7.0-beta': {}
 
   '@oxfmt/binding-android-arm-eabi@0.36.0':
     optional: true

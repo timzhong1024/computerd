@@ -33,6 +33,8 @@ function createComputerDetail(name = "lab-terminal"): ComputerDetail {
       canRestart: true,
       consoleAvailable: true,
       browserAvailable: false,
+      automationAvailable: false,
+      screenshotAvailable: false,
     },
     resources: {},
     storage: {
@@ -80,7 +82,34 @@ afterEach(async () => {
 
 test("registers computer and host inspect tools", async () => {
   const server = createComputerdMcpServer({
+    createAutomationSession: vi.fn().mockResolvedValue({
+      computerName: "research-browser",
+      protocol: "cdp",
+      connect: {
+        mode: "relative-websocket-path",
+        url: "/api/computers/research-browser/automation/ws",
+      },
+      authorization: { mode: "none" },
+    }),
     listComputers: vi.fn().mockResolvedValue([] as ComputerSummary[]),
+    createMonitorSession: vi.fn().mockResolvedValue({
+      computerName: "research-browser",
+      protocol: "vnc",
+      connect: {
+        mode: "relative-websocket-path",
+        url: "/api/computers/research-browser/monitor/ws",
+      },
+      authorization: { mode: "none" },
+    }),
+    createScreenshot: vi.fn().mockResolvedValue({
+      computerName: "research-browser",
+      format: "png",
+      mimeType: "image/png",
+      capturedAt: "2026-03-09T08:00:00.000Z",
+      width: 1440,
+      height: 900,
+      dataBase64: "c2NyZWVu",
+    }),
     getComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     deleteComputer: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +133,9 @@ test("registers computer and host inspect tools", async () => {
   const toolNames = result.tools.map((tool) => tool.name).sort();
 
   expect(toolNames).toEqual([
+    "capture_browser_screenshot",
+    "create_browser_automation_session",
+    "create_browser_monitor_session",
     "create_computer",
     "delete_computer",
     "get_computer",
@@ -119,7 +151,10 @@ test("registers computer and host inspect tools", async () => {
 test("invokes handlers and returns JSON payloads", async () => {
   const getComputer = vi.fn().mockResolvedValue(createComputerDetail());
   const server = createComputerdMcpServer({
+    createAutomationSession: vi.fn(),
     listComputers: vi.fn().mockResolvedValue([] as ComputerSummary[]),
+    createMonitorSession: vi.fn(),
+    createScreenshot: vi.fn(),
     getComputer,
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     deleteComputer: vi.fn().mockResolvedValue(undefined),

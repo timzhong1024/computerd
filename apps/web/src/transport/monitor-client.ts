@@ -20,17 +20,69 @@ export function connectMonitorClient({
   const websocketUrl = buildMonitorWebSocketUrl(session);
   onStateChange("connecting");
   target.replaceChildren(createMonitorPlaceholder(websocketUrl));
+  let disposed = false;
+  let fallbackSocket: WebSocket | null = null;
+  let rfb: NoVncRfbLike | null = null;
 
-  const unavailableTimer = window.setTimeout(() => {
-    onStateChange("unavailable");
-  }, 0);
+  void loadNoVnc()
+    .then((RFB) => {
+      if (disposed) {
+        return;
+      }
+
+      target.replaceChildren();
+      rfb = new RFB(target, websocketUrl);
+      rfb.scaleViewport = true;
+      rfb.resizeSession = true;
+      rfb.viewOnly = false;
+      rfb.addEventListener("connect", () => {
+        onStateChange("connected");
+      });
+      rfb.addEventListener("disconnect", () => {
+        onStateChange("unavailable");
+      });
+    })
+    .catch(() => {
+      if (disposed) {
+        return;
+      }
+
+      fallbackSocket = new WebSocket(websocketUrl);
+      fallbackSocket.binaryType = "arraybuffer";
+      fallbackSocket.addEventListener("open", () => {
+        onStateChange("connected");
+      });
+      fallbackSocket.addEventListener("close", () => {
+        onStateChange("unavailable");
+      });
+      fallbackSocket.addEventListener("error", () => {
+        onStateChange("unavailable");
+      });
+    });
 
   return {
     dispose() {
-      window.clearTimeout(unavailableTimer);
+      disposed = true;
+      rfb?.disconnect();
+      fallbackSocket?.close();
       target.replaceChildren();
     },
   };
+}
+
+type NoVncRfbLike = {
+  scaleViewport: boolean;
+  resizeSession: boolean;
+  viewOnly: boolean;
+  addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+  disconnect: () => void;
+};
+
+async function loadNoVnc(): Promise<new (target: HTMLDivElement, url: string) => NoVncRfbLike> {
+  const module = (await import("@novnc/novnc")) as {
+    default: new (target: HTMLDivElement, url: string) => NoVncRfbLike;
+  };
+  return module.default;
 }
 
 function buildMonitorWebSocketUrl(session: ComputerMonitorSession) {
