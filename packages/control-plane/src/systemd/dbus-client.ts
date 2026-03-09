@@ -139,6 +139,10 @@ export function createSystemdDbusClient({
       try {
         const proxy = await getUnitProxy(unitName);
         const state = await readRuntimeState(unitName, proxy.properties);
+        if (state === null) {
+          runtimeCache.delete(unitName);
+          return null;
+        }
         runtimeCache.set(unitName, state);
         return state;
       } catch (error: unknown) {
@@ -155,7 +159,7 @@ export function createSystemdDbusClient({
       const units = await manager.ListUnits();
       return units
         .filter(([name]) => name.endsWith(".service"))
-        .map(([name, description, loadState, activeState, subState]) => ({
+        .map(([name, description, loadState, activeState]) => ({
           unitName: name,
           unitType: "service",
           state: activeState,
@@ -239,6 +243,11 @@ async function createUnitProxy(
 
     void readRuntimeState(unitName, properties)
       .then((state) => {
+        if (state === null) {
+          runtimeCache.delete(unitName);
+          return;
+        }
+
         runtimeCache.set(unitName, state);
       })
       .catch(() => {
@@ -261,6 +270,9 @@ async function getRuntimeStateOrThrow(
 
   const proxy = await getUnitProxy(unitName);
   const state = await readRuntimeState(unitName, proxy.properties);
+  if (state === null) {
+    throw createNoSuchUnitError(unitName);
+  }
   runtimeCache.set(unitName, state);
   return state;
 }
@@ -268,8 +280,12 @@ async function getRuntimeStateOrThrow(
 async function readRuntimeState(
   unitName: string,
   properties: PropertiesInterface,
-): Promise<UnitRuntimeState> {
+): Promise<UnitRuntimeState | null> {
   const unitProps = await properties.GetAll(SYSTEMD_UNIT_INTERFACE);
+  const loadState = getString(unitProps, "LoadState") ?? "unknown";
+  if (loadState === "not-found") {
+    return null;
+  }
   const serviceProps = await properties
     .GetAll(SYSTEMD_SERVICE_INTERFACE)
     .catch((error: unknown) => {
@@ -284,7 +300,7 @@ async function readRuntimeState(
     unitName,
     description: getString(unitProps, "Description"),
     unitType: inferUnitType(unitName),
-    loadState: getString(unitProps, "LoadState") ?? "unknown",
+    loadState,
     activeState: getString(unitProps, "ActiveState") ?? "inactive",
     subState: getString(unitProps, "SubState") ?? "dead",
     fragmentPath: getString(unitProps, "FragmentPath"),
@@ -298,6 +314,12 @@ async function readRuntimeState(
     execMainStatus: getNumber(serviceProps, "ExecMainStatus"),
     result: getString(serviceProps, "Result"),
   };
+}
+
+function createNoSuchUnitError(unitName: string) {
+  const error = new Error(`Unit ${unitName} was not found.`);
+  error.name = "org.freedesktop.systemd1.NoSuchUnit";
+  return error;
 }
 
 function getExecStart(props: Record<string, Variant>) {

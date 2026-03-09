@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { spawn as spawnProcess } from "node:child_process";
 import { createServer } from "node:http";
 import type { Duplex } from "node:stream";
-import { spawn as spawnPty } from "node-pty";
+import { spawn as spawnPty } from "@lydell/node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { ZodError } from "zod";
 import {
