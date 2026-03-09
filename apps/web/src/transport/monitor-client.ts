@@ -18,10 +18,16 @@ export function connectMonitorClient({
   onStateChange,
 }: ConnectMonitorClientOptions): MonitorClientHandle {
   const websocketUrl = buildMonitorWebSocketUrl(session);
+  console.info("[monitor] connect:start", {
+    computerName: session.computerName,
+    websocketUrl,
+  });
+  logMonitorDimensions("initial-target", target);
   onStateChange("connecting");
   target.replaceChildren(createMonitorPlaceholder(websocketUrl));
   let disposed = false;
   let rfb: NoVncRfbLike | null = null;
+  let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 
   void loadNoVnc()
     .then((RFB) => {
@@ -31,15 +37,38 @@ export function connectMonitorClient({
 
       target.replaceChildren();
       rfb = new RFB(target, websocketUrl);
+      console.info("[monitor] rfb:constructed");
       rfb.scaleViewport = true;
       rfb.resizeSession = false;
       rfb.viewOnly = false;
       rfb.addEventListener("connect", () => {
+        console.info("[monitor] rfb:connect");
+        logMonitorTree(target);
         onStateChange("connected");
       });
-      rfb.addEventListener("disconnect", () => {
+      rfb.addEventListener("disconnect", (event) => {
+        console.warn("[monitor] rfb:disconnect", event);
+        logMonitorTree(target);
         onStateChange("unavailable");
       });
+      rfb.addEventListener("credentialsrequired", (event) => {
+        console.info("[monitor] rfb:credentialsrequired", event);
+      });
+      rfb.addEventListener("securityfailure", (event) => {
+        console.error("[monitor] rfb:securityfailure", event);
+      });
+      rfb.addEventListener("clippingviewport", (event) => {
+        console.info("[monitor] rfb:clippingviewport", event);
+        logMonitorTree(target);
+      });
+
+      snapshotTimer = setInterval(() => {
+        if (disposed) {
+          return;
+        }
+
+        logMonitorTree(target);
+      }, 2_000);
     })
     .catch((error: unknown) => {
       if (disposed) {
@@ -54,6 +83,9 @@ export function connectMonitorClient({
   return {
     dispose() {
       disposed = true;
+      if (snapshotTimer !== null) {
+        clearInterval(snapshotTimer);
+      }
       rfb?.disconnect();
       target.replaceChildren();
     },
@@ -121,4 +153,42 @@ function createMonitorUnavailable(websocketUrl: string) {
   placeholder.append(copy);
 
   return placeholder;
+}
+
+function logMonitorTree(target: HTMLDivElement) {
+  logMonitorDimensions("target", target);
+  const screen = target.firstElementChild;
+  if (screen instanceof HTMLDivElement) {
+    logMonitorDimensions("screen", screen);
+  } else {
+    console.info("[monitor] screen:missing");
+  }
+
+  const canvas = target.querySelector("canvas");
+  if (canvas instanceof HTMLCanvasElement) {
+    logMonitorDimensions("canvas", canvas);
+    console.info("[monitor] canvas:bitmap", {
+      width: canvas.width,
+      height: canvas.height,
+    });
+  } else {
+    console.info("[monitor] canvas:missing");
+  }
+}
+
+function logMonitorDimensions(label: string, element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  console.info(`[monitor] ${label}:dimensions`, {
+    className: element.className,
+    clientWidth: element.clientWidth,
+    clientHeight: element.clientHeight,
+    offsetWidth: element.offsetWidth,
+    offsetHeight: element.offsetHeight,
+    scrollWidth: element.scrollWidth,
+    scrollHeight: element.scrollHeight,
+    rectWidth: rect.width,
+    rectHeight: rect.height,
+    styleWidth: element.style.width || null,
+    styleHeight: element.style.height || null,
+  });
 }
