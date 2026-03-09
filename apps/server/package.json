@@ -11,10 +11,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@lydell/node-pty": "^1.1.0",
     "@computerd/control-plane": "workspace:*",
     "@computerd/core": "workspace:*",
     "@computerd/mcp": "workspace:*",
+    "@lydell/node-pty": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
