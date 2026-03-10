@@ -2,6 +2,7 @@
   "extends": "./tsconfig.base.json",
   "files": ["./playwright.config.ts"],
   "compilerOptions": {
+    "noEmit": true,
     "types": ["node"]
   }
 }
