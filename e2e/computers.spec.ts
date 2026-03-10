@@ -31,7 +31,11 @@ test("creates and opens a browser computer", async ({ page }) => {
 
   await expect(page.getByTestId("computer-state")).toHaveText("running");
   await expect(page.getByTestId("open-monitor-link")).toContainText("Open browser");
+  const popupPromise = page.waitForEvent("popup");
   await page.getByTestId("open-monitor-link").click();
-  await expect(page.getByRole("heading", { name: computerName })).toBeVisible();
-  await expect(page.getByTestId("novnc-shell")).toBeVisible();
+  const popup = await popupPromise;
+  await popup.waitForLoadState("domcontentloaded");
+
+  await expect(popup).toHaveTitle(new RegExp(`${computerName} - Computerd Browser`, "i"));
+  await expect(popup.getByTestId("novnc-shell")).toBeVisible();
 });

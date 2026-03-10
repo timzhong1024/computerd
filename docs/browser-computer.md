@@ -58,6 +58,16 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - CDP websocket attach
 - 适合给 Playwright 直接连接
 
+Playwright 接入细节见：
+
+- [docs/playwright-browser-computer.md](/Users/timzhong/computerd/docs/playwright-browser-computer.md)
+
+当前推荐开发者入口：
+
+- `@computerd/sdk` 的 `createComputerdClient(...)`
+- `examples/browser-cli.ts`
+- `examples/playwright-connect.ts`
+
 ### Capture
 
 - fullscreen screenshot
@@ -85,6 +95,29 @@ browser detail 页提供 `Open browser` 按钮。
 - `POST /api/computers/:name/screenshots`
 - `GET /api/computers/:name/monitor/ws`
 - `GET /api/computers/:name/automation/ws`
+
+## SDK And CLI
+
+当前仓库已经提供一套轻量开发者入口：
+
+- TypeScript SDK：`@computerd/sdk`
+- 示例 CLI：`examples/browser-cli.ts`
+
+SDK 当前提供的最小 browser client：
+
+- `createComputerdClient({ baseUrl, fetch? })`
+- `getComputer(name)`
+- `createBrowserAutomationSession(name)`
+- `createBrowserMonitorSession(name)`
+- `captureBrowserScreenshot(name)`
+- `resolveWebSocketUrl(...)`
+- `connectPlaywright(name)`
+
+CLI 当前支持：
+
+- `browser-info <name>`
+- `browser-connect <name>`
+- `browser-screenshot <name> [--out <file>]`
 
 ## Current Constraints
 

@@ -18,7 +18,8 @@
     "paths": {
       "@computerd/core": ["./packages/core/src/index.ts"],
       "@computerd/control-plane": ["./packages/control-plane/src/index.ts"],
-      "@computerd/mcp": ["./apps/mcp/src/index.ts"]
+      "@computerd/mcp": ["./apps/mcp/src/index.ts"],
+      "@computerd/sdk": ["./packages/sdk/src/index.ts"]
     }
   }
 }
