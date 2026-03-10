@@ -119,6 +119,7 @@ function renderBrowserUnitFile(
     "[Service]",
     "Type=simple",
     "KillMode=control-group",
+    "TimeoutStopSec=10s",
     `User=${computer.runtime.runtimeUser}`,
     `Group=${computer.runtime.runtimeUser}`,
     `StateDirectory=computerd/computers/${spec.slug}`,
@@ -145,6 +146,7 @@ function renderBrowserUnitFile(
       renderPipeWireClientProperties(computer, spec.slug),
     ),
     `ExecStart=${buildBrowserExecStart(computer, spec)}`,
+    `ExecStopPost=${buildBrowserExecStopPost(spec)}`,
   ];
 
   if (computer.resources.cpuWeight !== undefined) {
@@ -221,6 +223,23 @@ function buildBrowserExecStart(
     `export HOME=${escapeShellToken(spec.homeDirectory)}`,
     `export XDG_CONFIG_HOME=${escapeShellToken(spec.configDirectory)}`,
     `dbus-run-session -- /usr/bin/bash -lc ${escapeShellToken(browserLaunchCommand)}`,
+  ].join("; ");
+
+  return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
+}
+
+function buildBrowserExecStopPost(
+  spec: ReturnType<ReturnType<typeof createBrowserRuntimePaths>["specForComputer"]>,
+) {
+  const shellScript = [
+    "set +e",
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -f ${escapeShellToken(`x11vnc -display ${spec.xvfbDisplay}`)} >/dev/null 2>&1 || true`,
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -f ${escapeShellToken(`Xvfb ${spec.xvfbDisplay}`)} >/dev/null 2>&1 || true`,
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -f ${escapeShellToken(spec.profileDirectory)} >/dev/null 2>&1 || true`,
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -x pipewire >/dev/null 2>&1 || true`,
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -x pipewire-pulse >/dev/null 2>&1 || true`,
+    `pkill -u ${escapeShellToken(spec.runtimeUser)} -x wireplumber >/dev/null 2>&1 || true`,
+    `rm -rf ${escapeShellToken(spec.runtimeDirectory)}`,
   ].join("; ");
 
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;

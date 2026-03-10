@@ -56,6 +56,7 @@ test("renders browser exec start without invalid background separators", async (
   const unitFile = await readFile(join(root, "units", "computerd-browser-smoke.service"), "utf8");
   expect(unitFile).not.toContain("&;");
   expect(unitFile).toContain("User=computerd-b-browser-smoke");
+  expect(unitFile).toContain("TimeoutStopSec=10s");
   expect(unitFile).toContain("RuntimeDirectoryMode=0700");
   expect(unitFile).toContain('Environment="COMPUTERD_BROWSER_VIEWPORT=1600x1000"');
   expect(unitFile).toContain('Environment="PIPEWIRE_ALSA=');
@@ -72,5 +73,8 @@ test("renders browser exec start without invalid background separators", async (
   expect(unitFile).toContain(
     "kill $$X11VNC_PID $$CHROMIUM_PID $$PIPEWIRE_PULSE_PID $$WIREPLUMBER_PID $$PIPEWIRE_PID $$XVFB_PID",
   );
+  expect(unitFile).toContain("ExecStopPost=/usr/bin/bash -lc");
+  expect(unitFile).toContain("pkill -u 'computerd-b-browser-smoke' -x pipewire");
+  expect(unitFile).toContain("rm -rf ");
   expect(unitFile).toContain("--window-size=1600,1000");
 });
