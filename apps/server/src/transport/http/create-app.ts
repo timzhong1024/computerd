@@ -15,6 +15,7 @@ import {
   parseCreateComputerInput,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  parseUpdateBrowserViewportInput,
   type ComputerAutomationSession,
   type ComputerConsoleSession,
   type ComputerDetail,
@@ -61,6 +62,10 @@ interface CreateAppOptions {
   restartComputer: (name: string) => Promise<ComputerDetail>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
+  updateBrowserViewport: (
+    name: string,
+    input: { width: number; height: number },
+  ) => Promise<ComputerDetail>;
 }
 
 export function createApp({
@@ -81,6 +86,7 @@ export function createApp({
   restartComputer,
   listHostUnits,
   getHostUnit,
+  updateBrowserViewport,
 }: CreateAppOptions) {
   const websocketServer = new WebSocketServer({ noServer: true });
   const server = createServer(async (request, response) => {
@@ -206,6 +212,22 @@ export function createApp({
       if (request.method === "POST" && computerScreenshotMatch?.groups?.name) {
         const name = decodeURIComponent(computerScreenshotMatch.groups.name);
         sendJson(response, 200, parseComputerScreenshot(await createScreenshot(name)));
+        return;
+      }
+
+      const browserViewportMatch = /^\/api\/computers\/(?<name>[^/]+)\/viewport$/.exec(
+        url.pathname,
+      );
+      if (request.method === "POST" && browserViewportMatch?.groups?.name) {
+        const name = decodeURIComponent(browserViewportMatch.groups.name);
+        const body = await readJsonBody(request);
+        sendJson(
+          response,
+          200,
+          parseComputerDetail(
+            await updateBrowserViewport(name, parseUpdateBrowserViewportInput(body)),
+          ),
+        );
         return;
       }
 

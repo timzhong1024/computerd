@@ -15,8 +15,13 @@ import {
   type HostUnitDetail,
   type HostUnitSummary,
   type TerminalRuntime,
+  type UpdateBrowserViewportInput,
 } from "@computerd/core";
-import { createBrowserRuntimePaths, toBrowserRuntimeDetail } from "./systemd/browser-runtime";
+import {
+  createBrowserRuntimePaths,
+  toBrowserRuntimeDetail,
+  withBrowserViewport,
+} from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
 import { createFileComputerMetadataStore } from "./systemd/metadata-store";
 import { createSystemdRuntime } from "./systemd/runtime";
@@ -84,6 +89,10 @@ export interface ControlPlane {
   startComputer: (name: string) => Promise<ComputerDetail>;
   stopComputer: (name: string) => Promise<ComputerDetail>;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
+  updateBrowserViewport: (
+    name: string,
+    input: UpdateBrowserViewportInput,
+  ) => Promise<ComputerDetail>;
 }
 
 export interface CreateControlPlaneOptions {
@@ -247,6 +256,9 @@ export function createControlPlane(
     },
     async startComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      if (record.profile === "browser") {
+        await runtime.createPersistentUnit(record);
+      }
       await runtime.startUnit(record.unitName);
       if (record.profile === "terminal") {
         await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths);
@@ -270,6 +282,9 @@ export function createControlPlane(
     },
     async restartComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      if (record.profile === "browser") {
+        await runtime.createPersistentUnit(record);
+      }
       await runtime.restartUnit(record.unitName);
       if (record.profile === "terminal") {
         await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths);
@@ -279,6 +294,14 @@ export function createControlPlane(
         lastActionAt: new Date().toISOString(),
       } satisfies PersistedComputer;
       await metadataStore.putComputer(updated);
+      return await toComputerDetail(updated, runtime, browserRuntimePaths);
+    },
+    async updateBrowserViewport(name, input) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      const updated = withBrowserViewport(browserRecord, input);
+      await metadataStore.putComputer(updated);
+      await runtime.updateBrowserViewport(updated, input);
       return await toComputerDetail(updated, runtime, browserRuntimePaths);
     },
     async listHostUnits() {
@@ -803,6 +826,15 @@ function createDevelopmentControlPlane(): ControlPlane {
         await writeFile(`${spec.runtimeDirectory}/stopped`, "");
       }
       return state;
+    },
+    async updateBrowserViewport(computer, viewport) {
+      const state = runtimeStates.get(computer.unitName);
+      if (state?.activeState !== "active") {
+        return;
+      }
+
+      const spec = browserRuntimePaths.specForComputer(withBrowserViewport(computer, viewport));
+      await mkdir(spec.runtimeDirectory, { recursive: true });
     },
   };
   const metadataStore: ComputerMetadataStore = {

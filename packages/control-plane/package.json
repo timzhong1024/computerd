@@ -21,6 +21,10 @@
   },
   "dependencies": {
     "@computerd/core": "workspace:*",
-    "dbus-next": "^0.10.2"
+    "dbus-next": "^0.10.2",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }

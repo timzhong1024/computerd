@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
 import type {
+  BrowserViewport,
   PersistedBrowserComputer,
   HostUnitDetail,
   HostUnitSummary,
@@ -43,6 +45,10 @@ export interface SystemdRuntime {
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  updateBrowserViewport: (
+    computer: PersistedBrowserComputer,
+    viewport: BrowserViewport,
+  ) => Promise<void>;
 }
 
 export interface CreateSystemdRuntimeOptions {
@@ -133,6 +139,32 @@ export function createSystemdRuntime({
         dataBase64: stdout.trim(),
       };
     },
+    async updateBrowserViewport(computer, viewport) {
+      const spec = browserRuntimePaths.specForComputer(computer);
+      const runtimeState = await resolvedDbusClient.getRuntimeState(computer.unitName);
+      if (runtimeState?.activeState !== "active") {
+        return;
+      }
+
+      await execFileAsync("/usr/bin/bash", [
+        "-lc",
+        [
+          `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
+          `xrandr -display ${quoteShell(spec.xvfbDisplay)} -s ${viewport.width}x${viewport.height}`,
+        ].join(" "),
+      ]).catch(async () => {
+        await execFileAsync("/usr/bin/bash", [
+          "-lc",
+          [
+            `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
+            `xrandr -display ${quoteShell(spec.xvfbDisplay)} --fb ${viewport.width}x${viewport.height}`,
+          ].join(" "),
+        ]);
+      });
+
+      const websocketUrl = await resolveAutomationWebSocketUrl(spec.devtoolsPort);
+      await resizeChromiumWindow(websocketUrl, viewport);
+    },
     async createPersistentUnit(computer) {
       await resolvedUnitFileStore.writeUnitFile(computer);
       await resolvedDbusClient.reloadDaemon();
@@ -175,6 +207,138 @@ export function createSystemdRuntime({
     listHostUnits: resolvedDbusClient.listHostUnits,
     getHostUnit: resolvedDbusClient.getHostUnit,
   };
+}
+
+async function resizeChromiumWindow(websocketUrl: string, viewport: BrowserViewport) {
+  const targetsResponse = await sendCdpCommand(websocketUrl, "Target.getTargets");
+  const pageTarget = findPageTargetId(targetsResponse);
+  if (pageTarget === null) {
+    return;
+  }
+
+  const windowResponse = await sendCdpCommand(websocketUrl, "Browser.getWindowForTarget", {
+    targetId: pageTarget,
+  });
+  const windowId = readWindowId(windowResponse);
+  if (windowId === null) {
+    return;
+  }
+
+  await sendCdpCommand(websocketUrl, "Browser.setWindowBounds", {
+    windowId,
+    bounds: {
+      width: viewport.width,
+      height: viewport.height,
+      left: 0,
+      top: 0,
+    },
+  });
+}
+
+async function sendCdpCommand(
+  websocketUrl: string,
+  method: string,
+  params?: Record<string, unknown>,
+) {
+  const websocket = new WebSocket(websocketUrl);
+  await onceWebSocketOpen(websocket);
+
+  const id = 1;
+  const responsePromise = new Promise<unknown>((resolve, reject) => {
+    const messageHandler = (data: Buffer) => {
+      const payload = JSON.parse(data.toString("utf8")) as {
+        id?: unknown;
+        result?: unknown;
+        error?: unknown;
+      };
+      if (payload.id !== id) {
+        return;
+      }
+
+      websocket.off("message", messageHandler);
+      websocket.off("close", closeHandler);
+      websocket.close();
+
+      if (payload.error !== undefined) {
+        reject(new Error(`CDP ${method} failed: ${JSON.stringify(payload.error)}`));
+        return;
+      }
+
+      resolve(payload.result ?? null);
+    };
+
+    const closeHandler = () => {
+      reject(new Error(`CDP websocket closed before ${method} completed.`));
+    };
+
+    websocket.on("message", messageHandler);
+    websocket.once("close", closeHandler);
+    websocket.send(JSON.stringify({ id, method, params }));
+  });
+
+  return await responsePromise.finally(() => {
+    if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
+      websocket.close();
+    }
+  });
+}
+
+function findPageTargetId(payload: unknown) {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("targetInfos" in payload) ||
+    !Array.isArray(payload.targetInfos)
+  ) {
+    return null;
+  }
+
+  const pageTarget = payload.targetInfos.find(
+    (target): target is { targetId: string; type: string } =>
+      typeof target === "object" &&
+      target !== null &&
+      "targetId" in target &&
+      typeof target.targetId === "string" &&
+      "type" in target &&
+      target.type === "page",
+  );
+
+  return pageTarget?.targetId ?? null;
+}
+
+function readWindowId(payload: unknown) {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "windowId" in payload &&
+    typeof payload.windowId === "number"
+  ) {
+    return payload.windowId;
+  }
+
+  return null;
+}
+
+function onceWebSocketOpen(websocket: WebSocket) {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      websocket.off("open", openHandler);
+      websocket.off("error", errorHandler);
+    };
+
+    const openHandler = () => {
+      cleanup();
+      resolve();
+    };
+
+    const errorHandler = () => {
+      cleanup();
+      reject(new Error(`Failed to connect to CDP websocket at ${websocket.url}.`));
+    };
+
+    websocket.once("open", openHandler);
+    websocket.once("error", errorHandler);
+  });
 }
 
 async function resolveAutomationWebSocketUrl(port: number) {

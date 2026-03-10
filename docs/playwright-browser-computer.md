@@ -150,6 +150,27 @@ browser computer 是长期状态浏览器，不是临时 Playwright browser。
 - 如果你要 DOM/page 级截图，用 Playwright
 - 如果你要“人类看到的整块屏幕”，用 computerd screenshot
 
+## Viewport Updates
+
+browser computer 现在支持显式 viewport 更新：
+
+- `POST /api/computers/:name/viewport`
+
+WebUI popup monitor 会在窗口尺寸变化时自动调用这个接口，把当前可视区同步回 browser computer。
+
+如果你从 SDK/脚本侧控制，也可以手动调用：
+
+```ts
+const client = createComputerdClient({
+  baseUrl: "http://127.0.0.1:3000",
+});
+
+await client.updateBrowserViewport("chrome1", {
+  width: 1600,
+  height: 1000,
+});
+```
+
 ## Errors To Expect
 
 ### Computer not running

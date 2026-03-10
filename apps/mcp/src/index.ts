@@ -25,6 +25,7 @@ export interface ComputerdMcpContext {
   restartComputer: ControlPlane["restartComputer"];
   startComputer: ControlPlane["startComputer"];
   stopComputer: ControlPlane["stopComputer"];
+  updateBrowserViewport: ControlPlane["updateBrowserViewport"];
 }
 
 export function createComputerdMcpServer(context: ComputerdMcpContext) {
@@ -71,6 +72,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
           environment: z.record(z.string(), z.string()).optional(),
           browser: createBrowserRuntimeSchema.shape.browser.optional(),
           persistentProfile: z.boolean().optional(),
+          viewport: createBrowserRuntimeSchema.shape.viewport.optional(),
         }),
       },
     },
@@ -109,6 +111,21 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
       },
     },
     async ({ name }) => createJsonToolResult(await context.createScreenshot(name)),
+  );
+
+  server.registerTool(
+    "set_browser_viewport",
+    {
+      description:
+        "Update a browser computer viewport and apply it to the running virtual display.",
+      inputSchema: {
+        name: z.string().min(1),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      },
+    },
+    async ({ name, width, height }) =>
+      createJsonToolResult(await context.updateBrowserViewport(name, { width, height })),
   );
 
   server.registerTool(

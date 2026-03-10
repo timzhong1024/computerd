@@ -110,6 +110,16 @@ export function createComputerdClient({
         parseComputerScreenshot,
       );
     },
+    async updateBrowserViewport(
+      name: string,
+      viewport: { width: number; height: number },
+    ): Promise<ComputerDetail> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/viewport`,
+        viewport,
+        parseComputerDetail,
+      );
+    },
     resolveWebSocketUrl(input: string | { connect: ComputerSessionConnect }): string {
       const connect = typeof input === "string" ? inferConnectDescriptor(input) : input.connect;
       return resolveWebSocketUrl(normalizedBaseUrl, connect);
@@ -186,6 +196,7 @@ function formatBrowserInfo(detail: ComputerDetail) {
     `runtime directory: ${detail.runtime.runtimeDirectory}`,
     `automation available: ${detail.runtime.automation.available}`,
     `screenshot available: ${detail.runtime.screenshot.available}`,
+    `viewport update endpoint: /api/computers/${encodeURIComponent(detail.name)}/viewport`,
   ];
 
   return `${lines.join("\n")}\n`;

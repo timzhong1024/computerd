@@ -28,6 +28,11 @@ export const computerSessionConnectSchema = z.object({
   url: z.string().min(1),
 });
 
+export const browserViewportSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
 export const computerSessionAuthorizationSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("none"),
@@ -44,12 +49,7 @@ export const computerMonitorSessionSchema = z.object({
   connect: computerSessionConnectSchema,
   authorization: computerSessionAuthorizationSchema,
   expiresAt: z.string().datetime().optional(),
-  viewport: z
-    .object({
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-    })
-    .optional(),
+  viewport: browserViewportSchema.optional(),
 });
 
 export const computerAutomationSessionSchema = z.object({
@@ -114,6 +114,7 @@ export const terminalRuntimeSchema = z.object({
 export const createBrowserRuntimeSchema = z.object({
   browser: z.literal("chromium"),
   persistentProfile: z.boolean(),
+  viewport: browserViewportSchema.optional(),
 });
 
 export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
@@ -122,10 +123,7 @@ export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
   display: z.object({
     protocol: z.literal("x11"),
     mode: z.literal("virtual-display"),
-    viewport: z.object({
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-    }),
+    viewport: browserViewportSchema,
   }),
   automation: z.object({
     protocol: z.literal("cdp"),
@@ -207,6 +205,8 @@ export const createBrowserComputerInputSchema = createComputerBaseSchema.extend(
   runtime: createBrowserRuntimeSchema,
 });
 
+export const updateBrowserViewportInputSchema = browserViewportSchema;
+
 export const createComputerInputSchema = z.discriminatedUnion("profile", [
   createTerminalComputerInputSchema,
   createBrowserComputerInputSchema,
@@ -236,6 +236,7 @@ export const hostUnitDetailSchema = hostUnitSummarySchema.extend({
 
 export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
+export type BrowserViewport = z.infer<typeof browserViewportSchema>;
 export type ComputerAutomationSession = z.infer<typeof computerAutomationSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
@@ -260,6 +261,7 @@ export type HostUnitDetail = z.infer<typeof hostUnitDetailSchema>;
 export type HostUnitSummary = z.infer<typeof hostUnitSummarySchema>;
 export type TerminalComputerDetail = z.infer<typeof terminalComputerDetailSchema>;
 export type TerminalRuntime = z.infer<typeof terminalRuntimeSchema>;
+export type UpdateBrowserViewportInput = z.infer<typeof updateBrowserViewportInputSchema>;
 
 export function parseComputerSummaries(value: unknown) {
   return z.array(computerSummarySchema).parse(value);
@@ -287,6 +289,10 @@ export function parseComputerScreenshot(value: unknown) {
 
 export function parseCreateComputerInput(value: unknown) {
   return createComputerInputSchema.parse(value);
+}
+
+export function parseUpdateBrowserViewportInput(value: unknown) {
+  return updateBrowserViewportInputSchema.parse(value);
 }
 
 export function parseHostUnitSummaries(value: unknown) {

@@ -52,6 +52,7 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - browser monitor session
 - noVNC websocket attach
 - WebUI popup browser stage
+- popup viewport 会随窗口大小实时回传并更新远端分辨率
 
 ### Automation
 
@@ -93,6 +94,7 @@ browser detail 页提供 `Open browser` 按钮。
 - `POST /api/computers/:name/monitor-sessions`
 - `POST /api/computers/:name/automation-sessions`
 - `POST /api/computers/:name/screenshots`
+- `POST /api/computers/:name/viewport`
 - `GET /api/computers/:name/monitor/ws`
 - `GET /api/computers/:name/automation/ws`
 
@@ -110,6 +112,7 @@ SDK 当前提供的最小 browser client：
 - `createBrowserAutomationSession(name)`
 - `createBrowserMonitorSession(name)`
 - `captureBrowserScreenshot(name)`
+- `updateBrowserViewport(name, { width, height })`
 - `resolveWebSocketUrl(...)`
 - `connectPlaywright(name)`
 

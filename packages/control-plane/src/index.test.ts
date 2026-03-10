@@ -97,6 +97,10 @@ test("creates and manages a browser computer with persisted metadata", async () 
     runtime: {
       browser: "chromium",
       persistentProfile: true,
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
     },
   });
 
@@ -106,6 +110,59 @@ test("creates and manages a browser computer with persisted metadata", async () 
   }
   expect(created.runtime.browser).toBe("chromium");
   expect(created.runtime.profileDirectory).toContain("research-browser");
+  expect(created.runtime.display.viewport).toEqual({
+    width: 1280,
+    height: 800,
+  });
+});
+
+test("updates browser viewport and persists it across detail reads", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_BROWSER_RUNTIME_DIR: "/tmp/computerd-test-browsers",
+      COMPUTERD_BROWSER_STATE_DIR: "/tmp/computerd-test-browser-state",
+    },
+    { metadataStore, runtime },
+  );
+
+  await controlPlane.createComputer({
+    name: "research-browser",
+    profile: "browser",
+    runtime: {
+      browser: "chromium",
+      persistentProfile: true,
+    },
+  });
+
+  const updated = await controlPlane.updateBrowserViewport("research-browser", {
+    width: 1600,
+    height: 1000,
+  });
+
+  expect(updated.profile).toBe("browser");
+  if (updated.profile !== "browser") {
+    throw new TypeError("Expected browser detail");
+  }
+
+  expect(updated.runtime.display.viewport).toEqual({
+    width: 1600,
+    height: 1000,
+  });
+
+  const detail = await controlPlane.getComputer("research-browser");
+  expect(detail.profile).toBe("browser");
+  if (detail.profile !== "browser") {
+    throw new TypeError("Expected browser detail");
+  }
+
+  expect(detail.runtime.display.viewport).toEqual({
+    width: 1600,
+    height: 1000,
+  });
 });
 
 test("deletes a running computer by stopping runtime and removing metadata", async () => {
@@ -349,6 +406,7 @@ test("waits for terminal console runtime readiness during start", async () => {
     async stopUnit() {
       return runtimeState;
     },
+    async updateBrowserViewport() {},
   };
   const runtimeState: UnitRuntimeState = {
     unitName: terminalRecord.unitName,
@@ -501,6 +559,7 @@ function createTerminalComputerRecord(): PersistedTerminalComputer {
 
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
+  const browserViewports = new Map<string, { width: number; height: number }>();
 
   return {
     async createAutomationSession(computer) {
@@ -528,12 +587,25 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
           mode: "none",
         },
         viewport: {
-          width: 1440,
-          height: 900,
+          width:
+            browserViewports.get(computer.unitName)?.width ??
+            computer.runtime.viewport?.width ??
+            1440,
+          height:
+            browserViewports.get(computer.unitName)?.height ??
+            computer.runtime.viewport?.height ??
+            900,
         },
       };
     },
     async createPersistentUnit(computer) {
+      if (computer.profile === "browser") {
+        browserViewports.set(
+          computer.unitName,
+          computer.runtime.viewport ?? { width: 1440, height: 900 },
+        );
+      }
+
       const state: UnitRuntimeState = {
         unitName: computer.unitName,
         description: computer.description,
@@ -553,13 +625,14 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       return state;
     },
     async createScreenshot(computer) {
+      const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
       return {
         computerName: computer.name,
         format: "png",
         mimeType: "image/png",
         capturedAt: new Date().toISOString(),
-        width: 1440,
-        height: 900,
+        width: viewport.width,
+        height: viewport.height,
         dataBase64: Buffer.from(`screenshot:${computer.name}`).toString("base64"),
       };
     },
@@ -615,6 +688,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.activeState = "inactive";
       state.subState = "dead";
       return state;
+    },
+    async updateBrowserViewport(computer, viewport) {
+      browserViewports.set(computer.unitName, viewport);
     },
   };
 }

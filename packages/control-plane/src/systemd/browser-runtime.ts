@@ -1,12 +1,12 @@
 import { join } from "node:path";
-import type { BrowserRuntime, PersistedBrowserComputer } from "./types";
+import type { BrowserRuntime, BrowserViewport, PersistedBrowserComputer } from "./types";
 
 export interface BrowserRuntimePathsOptions {
   stateRootDirectory: string;
   runtimeRootDirectory: string;
 }
 
-const DEFAULT_VIEWPORT = {
+export const DEFAULT_BROWSER_VIEWPORT = {
   width: 1440,
   height: 900,
 } as const;
@@ -32,7 +32,7 @@ export function createBrowserRuntimePaths({
         devtoolsPort: portBase,
         vncPort: portBase + 1,
         xvfbDisplay: `:${100 + (stableHash(`${slug}-display`) % 100)}`,
-        viewport: DEFAULT_VIEWPORT,
+        viewport: computer.runtime.viewport ?? DEFAULT_BROWSER_VIEWPORT,
       };
     },
   };
@@ -61,6 +61,19 @@ export function toBrowserRuntimeDetail(
     screenshot: {
       format: "png",
       available: true,
+    },
+  };
+}
+
+export function withBrowserViewport(
+  computer: PersistedBrowserComputer,
+  viewport: BrowserViewport,
+): PersistedBrowserComputer {
+  return {
+    ...computer,
+    runtime: {
+      ...computer.runtime,
+      viewport,
     },
   };
 }

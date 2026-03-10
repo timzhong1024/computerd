@@ -116,6 +116,7 @@ test("registers computer and host inspect tools", async () => {
     startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+    updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
     listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
     getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
   });
@@ -143,6 +144,7 @@ test("registers computer and host inspect tools", async () => {
     "list_computers",
     "list_host_units",
     "restart_computer",
+    "set_browser_viewport",
     "start_computer",
     "stop_computer",
   ]);
@@ -161,6 +163,7 @@ test("invokes handlers and returns JSON payloads", async () => {
     startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+    updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
     listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
     getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
   });

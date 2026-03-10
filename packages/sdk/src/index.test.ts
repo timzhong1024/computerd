@@ -82,6 +82,87 @@ describe("createComputerdClient", () => {
     });
   });
 
+  test("updates browser viewport through the HTTP api", async () => {
+    const client = createComputerdClient({
+      baseUrl: "http://computerd.test",
+      fetch: vi.fn(async () =>
+        createJsonResponse({
+          name: "research-browser",
+          unitName: "computerd-research-browser.service",
+          profile: "browser",
+          state: "running",
+          createdAt: "2026-03-10T00:00:00.000Z",
+          access: {
+            display: {
+              mode: "virtual-display",
+            },
+          },
+          capabilities: {
+            canInspect: true,
+            canStart: false,
+            canStop: true,
+            canRestart: true,
+            consoleAvailable: false,
+            browserAvailable: true,
+            automationAvailable: true,
+            screenshotAvailable: true,
+          },
+          resources: {},
+          storage: {
+            rootMode: "persistent",
+          },
+          network: {
+            mode: "host",
+          },
+          lifecycle: {},
+          status: {
+            lastActionAt: "2026-03-10T00:00:00.000Z",
+            primaryUnit: "computerd-research-browser.service",
+          },
+          runtime: {
+            browser: "chromium",
+            persistentProfile: true,
+            profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
+            runtimeDirectory: "/run/computerd/computers/research-browser",
+            display: {
+              protocol: "x11",
+              mode: "virtual-display",
+              viewport: {
+                width: 1600,
+                height: 1000,
+              },
+            },
+            automation: {
+              protocol: "cdp",
+              available: true,
+            },
+            screenshot: {
+              format: "png",
+              available: true,
+            },
+          },
+        }),
+      ) as typeof globalThis.fetch,
+    });
+
+    await expect(
+      client.updateBrowserViewport("research-browser", {
+        width: 1600,
+        height: 1000,
+      }),
+    ).resolves.toMatchObject({
+      profile: "browser",
+      runtime: {
+        display: {
+          viewport: {
+            width: 1600,
+            height: 1000,
+          },
+        },
+      },
+    });
+  });
+
   test("resolves relative websocket paths against http and https base urls", () => {
     const httpClient = createComputerdClient({
       baseUrl: "http://127.0.0.1:3000/base/",

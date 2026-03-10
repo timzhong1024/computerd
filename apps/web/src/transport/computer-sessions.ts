@@ -1,9 +1,11 @@
 import {
   parseComputerAutomationSession,
+  parseComputerDetail,
   parseComputerConsoleSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
   type ComputerAutomationSession,
+  type ComputerDetail,
   type ComputerConsoleSession,
   type ComputerMonitorSession,
   type ComputerScreenshot,
@@ -39,5 +41,16 @@ export async function createScreenshot(name: string): Promise<ComputerScreenshot
     `/api/computers/${encodeURIComponent(name)}/screenshots`,
     undefined,
     parseComputerScreenshot,
+  );
+}
+
+export async function updateBrowserViewport(
+  name: string,
+  viewport: { width: number; height: number },
+): Promise<ComputerDetail> {
+  return await postJson(
+    `/api/computers/${encodeURIComponent(name)}/viewport`,
+    viewport,
+    parseComputerDetail,
   );
 }

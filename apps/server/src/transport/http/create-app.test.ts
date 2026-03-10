@@ -65,6 +65,7 @@ test("serves computer and host unit APIs", async () => {
     restartComputer: controlPlane.restartComputer,
     listHostUnits: controlPlane.listHostUnits,
     getHostUnit: controlPlane.getHostUnit,
+    updateBrowserViewport: controlPlane.updateBrowserViewport,
   });
 
   servers.push(app);
@@ -185,6 +186,29 @@ test("serves computer and host unit APIs", async () => {
     format: "png",
   });
 
+  const viewportResponse = await fetch(`${baseUrl}/api/computers/research-browser/viewport`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      width: 1600,
+      height: 1000,
+    }),
+  });
+  expect(viewportResponse.status).toBe(200);
+  await expect(viewportResponse.json()).resolves.toMatchObject({
+    profile: "browser",
+    runtime: {
+      display: {
+        viewport: {
+          width: 1600,
+          height: 1000,
+        },
+      },
+    },
+  });
+
   const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-terminal/console/ws`);
   expect(consoleWsResponse.status).toBe(426);
 
@@ -249,6 +273,12 @@ test("serves computer and host unit APIs", async () => {
         type: "http_request",
         method: "POST",
         path: "/api/computers/research-browser/screenshots",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/research-browser/viewport",
         statusCode: 200,
       }),
       expect.objectContaining({

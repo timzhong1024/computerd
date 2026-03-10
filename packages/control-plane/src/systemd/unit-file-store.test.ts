@@ -31,6 +31,10 @@ test("renders browser exec start without invalid background separators", async (
     runtime: {
       browser: "chromium",
       persistentProfile: true,
+      viewport: {
+        width: 1600,
+        height: 1000,
+      },
     },
     access: {
       display: {
@@ -51,4 +55,6 @@ test("renders browser exec start without invalid background separators", async (
   const unitFile = await readFile(join(root, "units", "computerd-browser-smoke.service"), "utf8");
   expect(unitFile).not.toContain("&;");
   expect(unitFile).toContain("CHROMIUM_SANDBOX_FLAG=--no-sandbox");
+  expect(unitFile).toContain("Environment=COMPUTERD_BROWSER_VIEWPORT=1600x1000");
+  expect(unitFile).toContain("--window-size=1600,1000");
 });

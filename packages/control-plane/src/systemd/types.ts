@@ -1,5 +1,6 @@
 import type {
   BrowserRuntime,
+  BrowserViewport,
   ComputerAutomationSession,
   ComputerConsoleSession,
   ComputerAccess,
@@ -19,6 +20,7 @@ import type {
   HostUnitDetail,
   HostUnitSummary,
   TerminalRuntime,
+  UpdateBrowserViewportInput,
 } from "@computerd/core";
 
 export interface PersistedComputerBase {
@@ -88,6 +90,10 @@ export interface ComputerRuntimePort {
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  updateBrowserViewport: (
+    computer: PersistedBrowserComputer,
+    viewport: BrowserViewport,
+  ) => Promise<void>;
 }
 
 export interface ConsoleAttachLease {
@@ -121,6 +127,7 @@ export interface ComputerMetadataStore {
 
 export type {
   BrowserRuntime,
+  BrowserViewport,
   ComputerAutomationSession,
   ComputerConsoleSession,
   ComputerDetail,
@@ -133,4 +140,5 @@ export type {
   HostUnitDetail,
   HostUnitSummary,
   TerminalRuntime,
+  UpdateBrowserViewportInput,
 };

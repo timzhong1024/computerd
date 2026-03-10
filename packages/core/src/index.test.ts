@@ -8,6 +8,7 @@ import {
   parseComputerScreenshot,
   parseCreateComputerInput,
   parseHostUnitDetail,
+  parseUpdateBrowserViewportInput,
 } from "./index";
 
 test("parses terminal computer creation input", () => {
@@ -25,6 +26,31 @@ test("parses terminal computer creation input", () => {
     profile: "terminal",
     runtime: {
       execStart: "/usr/bin/bash",
+    },
+  });
+});
+
+test("parses browser computer creation input with viewport", () => {
+  const input = parseCreateComputerInput({
+    name: "research-browser",
+    profile: "browser",
+    runtime: {
+      browser: "chromium",
+      persistentProfile: true,
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
+    },
+  });
+
+  expect(input).toMatchObject({
+    profile: "browser",
+    runtime: {
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
     },
   });
 });
@@ -208,6 +234,18 @@ test("parses host unit detail payloads", () => {
   });
 
   expect(detail.execStart).toContain("dockerd");
+});
+
+test("parses browser viewport updates", () => {
+  expect(
+    parseUpdateBrowserViewportInput({
+      width: 1600,
+      height: 1000,
+    }),
+  ).toEqual({
+    width: 1600,
+    height: 1000,
+  });
 });
 
 test("derives computer capabilities from profile and state", () => {

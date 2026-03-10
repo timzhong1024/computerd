@@ -23,6 +23,7 @@ const app = createApp({
   restartComputer: controlPlane.restartComputer,
   listHostUnits: controlPlane.listHostUnits,
   getHostUnit: controlPlane.getHostUnit,
+  updateBrowserViewport: controlPlane.updateBrowserViewport,
 });
 
 app.listen(port, host, () => {
