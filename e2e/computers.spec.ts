@@ -39,3 +39,18 @@ test("creates and opens a browser computer", async ({ page }) => {
   await expect(popup).toHaveTitle(new RegExp(`${computerName} - Computerd Browser`, "i"));
   await expect(popup.getByTestId("novnc-shell")).toBeVisible();
 });
+
+test("deletes a created terminal computer", async ({ page }) => {
+  await page.goto("/");
+  const computerName = `delete-terminal-${Date.now()}`;
+
+  await page.getByLabel("Name").fill(computerName);
+  await page.getByRole("button", { name: "Create computer" }).click();
+
+  const computerButton = page.getByRole("button", { name: new RegExp(computerName, "i") });
+  await expect(computerButton).toBeVisible();
+  await computerButton.click();
+  await page.getByTestId("computer-action-delete").click();
+
+  await expect(page.getByRole("button", { name: new RegExp(computerName, "i") })).toHaveCount(0);
+});

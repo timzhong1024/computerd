@@ -24,6 +24,17 @@ export async function postJson<T>(url: string, payload: unknown, parser: (value:
   return parser(await response.json());
 }
 
+export async function deleteRequest(url: string) {
+  const response = await fetch(url, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(async () => ({ error: await response.text() }));
+    throw new Error(typeof errorBody.error === "string" ? errorBody.error : "Request failed");
+  }
+}
+
 export function formatError(error: unknown) {
   return error instanceof Error ? error.message : "Unexpected error";
 }

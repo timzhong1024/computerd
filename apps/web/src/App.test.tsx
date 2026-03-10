@@ -210,6 +210,12 @@ beforeEach(() => {
         return jsonResponse(createComputerDetail(computer ?? computers[0]!));
       }
 
+      if (url.startsWith("/api/computers/") && method === "DELETE") {
+        const name = decodeURIComponent(url.slice("/api/computers/".length));
+        computers = computers.filter((entry) => entry.name !== name);
+        return jsonResponse(null, 204);
+      }
+
       if (url.startsWith("/api/host-units/") && method === "GET") {
         return jsonResponse(hostUnits[0]);
       }
@@ -287,6 +293,18 @@ test("creates a browser computer and refreshes inventory", async () => {
   await waitFor(() => {
     expect(screen.getByText(/chromium · profile persistent/i)).toBeInTheDocument();
   });
+});
+
+test("deletes a selected computer and refreshes the inventory", async () => {
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /starter-terminal/i }));
+  fireEvent.click(await screen.findByTestId("computer-action-delete"));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: /starter-terminal/i })).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("button", { name: /research-browser/i })).toBeInTheDocument();
 });
 
 test("renders monitor session shell and unavailable websocket state", async () => {

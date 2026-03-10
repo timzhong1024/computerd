@@ -14,7 +14,7 @@ import {
   type HostUnitSummary,
 } from "@computerd/core";
 import { createAutomationSession, createScreenshot } from "../transport/computer-sessions";
-import { formatError, getJson, postJson } from "../transport/http";
+import { deleteRequest, formatError, getJson, postJson } from "../transport/http";
 
 type SelectedItem =
   | {
@@ -173,6 +173,29 @@ export function HomePage() {
         parseComputerDetail,
       );
       setSelectedComputer(detail);
+      setAutomationSession(null);
+      setScreenshot(null);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteComputer() {
+    if (selectedComputer === null) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await deleteRequest(`/api/computers/${encodeURIComponent(selectedComputer.name)}`);
+      setSelectedItem(null);
+      setSelectedComputer(null);
+      setSelectedHostUnit(null);
       setAutomationSession(null);
       setScreenshot(null);
       await refreshInventory();
@@ -441,6 +464,14 @@ export function HomePage() {
                   onClick={() => void handleComputerAction("restart")}
                 >
                   Restart
+                </button>
+                <button
+                  type="button"
+                  data-testid="computer-action-delete"
+                  disabled={isBusy}
+                  onClick={() => void handleDeleteComputer()}
+                >
+                  Delete
                 </button>
               </div>
             </div>
