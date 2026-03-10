@@ -750,7 +750,8 @@ function looksLikeConflictError(error: unknown) {
     (/does not support/i.test(error.message) ||
       /must be running/i.test(error.message) ||
       /already has an active/i.test(error.message) ||
-      /PipeWire node .* was not found/i.test(error.message))
+      /PipeWire node .* was not found/i.test(error.message) ||
+      /PipeWire runtime .* is not available/i.test(error.message))
   );
 }
 

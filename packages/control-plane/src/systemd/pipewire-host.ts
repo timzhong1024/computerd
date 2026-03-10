@@ -78,12 +78,17 @@ export async function resolvePipeWireNodeTarget(
     stateRootDirectory: options.browserStateDirectory,
   });
   const spec = browserRuntimePaths.specForComputer(computer);
-  const { stdout } = await execFileAsync("pw-dump", [], {
-    env: {
-      ...process.env,
-      ...createPipeWireRuntimeEnvironment(computer, options),
-    },
-  });
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync("pw-dump", [], {
+      env: {
+        ...process.env,
+        ...createPipeWireRuntimeEnvironment(computer, options),
+      },
+    }));
+  } catch (error) {
+    throw toPipeWireConnectionError(error, computer.name, spec.runtimeUser);
+  }
   const payload = JSON.parse(stdout) as PipeWireObject[];
   const target = selectPipeWireNodeTarget(payload, computer.name, spec.runtimeUser);
   if (target === undefined) {
@@ -204,6 +209,25 @@ function toPipeWireNode(entry: PipeWireObject): PipeWireNode | null {
 
 function asString(value: string | number | undefined) {
   return typeof value === "string" ? value : typeof value === "number" ? `${value}` : undefined;
+}
+
+export function toPipeWireConnectionError(
+  error: unknown,
+  computerName: string,
+  runtimeUser: string,
+) {
+  if (
+    error instanceof Error &&
+    "stderr" in error &&
+    typeof (error as { stderr?: unknown }).stderr === "string" &&
+    (error as { stderr: string }).stderr.includes("can't connect: Host is down")
+  ) {
+    return new Error(
+      `PipeWire runtime for browser "${computerName}" (user ${runtimeUser}) is not available. Restart the browser computer so it can relaunch with the current PipeWire-enabled unit.`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function quoteShell(value: string) {

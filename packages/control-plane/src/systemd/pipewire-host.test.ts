@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { createPipeWireRuntimeEnvironment, selectPipeWireNodeTarget } from "./pipewire-host";
+import {
+  createPipeWireRuntimeEnvironment,
+  selectPipeWireNodeTarget,
+  toPipeWireConnectionError,
+} from "./pipewire-host";
 
 test("selects the newest matching pipewire browser audio node", () => {
   const target = selectPipeWireNodeTarget(
@@ -106,4 +110,12 @@ test("creates a per-browser pipewire runtime environment", () => {
     XDG_CONFIG_HOME: "/var/lib/computerd/computers/research-browser/home/.config",
     XDG_RUNTIME_DIR: "/run/computerd/computers/research-browser",
   });
+});
+
+test("surfaces a restart hint when pipewire runtime is unavailable", () => {
+  const input = new Error("pw-dump failed") as Error & { stderr: string };
+  input.stderr = "can't connect: Host is down\n";
+  const error = toPipeWireConnectionError(input, "chrome1", "computerd-b-chrome1");
+
+  expect(error.message).toMatch(/Restart the browser computer/i);
 });

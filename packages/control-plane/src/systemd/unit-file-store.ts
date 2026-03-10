@@ -123,17 +123,27 @@ function renderBrowserUnitFile(
     `Group=${computer.runtime.runtimeUser}`,
     `StateDirectory=computerd/computers/${spec.slug}`,
     `RuntimeDirectory=computerd/computers/${spec.slug}`,
+    "RuntimeDirectoryMode=0700",
     `WorkingDirectory=${spec.stateDirectory}`,
-    `Environment=HOME=${escapeEnvironmentAssignment(spec.homeDirectory)}`,
-    `Environment=COMPUTERD_BROWSER_PROFILE_DIR=${escapeEnvironmentAssignment(spec.profileDirectory)}`,
-    `Environment=COMPUTERD_BROWSER_RUNTIME_DIR=${escapeEnvironmentAssignment(spec.runtimeDirectory)}`,
-    `Environment=COMPUTERD_BROWSER_DEVTOOLS_PORT=${spec.devtoolsPort}`,
-    `Environment=COMPUTERD_BROWSER_VNC_PORT=${spec.vncPort}`,
-    `Environment=COMPUTERD_BROWSER_DISPLAY=${spec.xvfbDisplay}`,
-    `Environment=COMPUTERD_BROWSER_VIEWPORT=${spec.viewport.width}x${spec.viewport.height}`,
-    `Environment=XDG_CONFIG_HOME=${escapeEnvironmentAssignment(spec.configDirectory)}`,
-    `Environment=PIPEWIRE_ALSA=${escapeEnvironmentAssignment(renderPipeWireAlsaProperties(computer, spec.slug))}`,
-    `Environment=PIPEWIRE_PROPS=${escapeEnvironmentAssignment(renderPipeWireClientProperties(computer, spec.slug))}`,
+    renderSystemdEnvironmentLine("HOME", spec.homeDirectory),
+    renderSystemdEnvironmentLine("COMPUTERD_BROWSER_PROFILE_DIR", spec.profileDirectory),
+    renderSystemdEnvironmentLine("COMPUTERD_BROWSER_RUNTIME_DIR", spec.runtimeDirectory),
+    renderSystemdEnvironmentLine("COMPUTERD_BROWSER_DEVTOOLS_PORT", `${spec.devtoolsPort}`),
+    renderSystemdEnvironmentLine("COMPUTERD_BROWSER_VNC_PORT", `${spec.vncPort}`),
+    renderSystemdEnvironmentLine("COMPUTERD_BROWSER_DISPLAY", spec.xvfbDisplay),
+    renderSystemdEnvironmentLine(
+      "COMPUTERD_BROWSER_VIEWPORT",
+      `${spec.viewport.width}x${spec.viewport.height}`,
+    ),
+    renderSystemdEnvironmentLine("XDG_CONFIG_HOME", spec.configDirectory),
+    renderSystemdEnvironmentLine(
+      "PIPEWIRE_ALSA",
+      renderPipeWireAlsaProperties(computer, spec.slug),
+    ),
+    renderSystemdEnvironmentLine(
+      "PIPEWIRE_PROPS",
+      renderPipeWireClientProperties(computer, spec.slug),
+    ),
     `ExecStart=${buildBrowserExecStart(computer, spec)}`,
   ];
 
@@ -184,15 +194,21 @@ function buildBrowserExecStart(
 ) {
   const width = spec.viewport.width;
   const height = spec.viewport.height;
+  const xvfbLogPath = join(spec.runtimeDirectory, "xvfb.log");
+  const pipewireLogPath = join(spec.runtimeDirectory, "pipewire.log");
+  const wireplumberLogPath = join(spec.runtimeDirectory, "wireplumber.log");
+  const pipewirePulseLogPath = join(spec.runtimeDirectory, "pipewire-pulse.log");
+  const chromiumLogPath = join(spec.runtimeDirectory, "chromium.log");
+  const x11vncLogPath = join(spec.runtimeDirectory, "x11vnc.log");
   const browserLaunchCommand = [
-    `Xvfb ${escapeShellToken(spec.xvfbDisplay)} -screen 0 ${width}x${height}x24 -nolisten tcp >/tmp/computerd-xvfb.log 2>&1 & XVFB_PID=$!`,
+    `Xvfb ${escapeShellToken(spec.xvfbDisplay)} -screen 0 ${width}x${height}x24 -nolisten tcp >${escapeShellToken(xvfbLogPath)} 2>&1 & XVFB_PID=$!`,
     `export DISPLAY=${escapeShellToken(spec.xvfbDisplay)}`,
-    "pipewire >/tmp/computerd-pipewire.log 2>&1 & PIPEWIRE_PID=$!",
-    "wireplumber >/tmp/computerd-wireplumber.log 2>&1 & WIREPLUMBER_PID=$!",
-    "pipewire-pulse >/tmp/computerd-pipewire-pulse.log 2>&1 & PIPEWIRE_PULSE_PID=$!",
+    `pipewire >${escapeShellToken(pipewireLogPath)} 2>&1 & PIPEWIRE_PID=$!`,
+    `wireplumber >${escapeShellToken(wireplumberLogPath)} 2>&1 & WIREPLUMBER_PID=$!`,
+    `pipewire-pulse >${escapeShellToken(pipewirePulseLogPath)} 2>&1 & PIPEWIRE_PULSE_PID=$!`,
     'if [ "$(id -u)" -eq 0 ]; then CHROMIUM_SANDBOX_FLAG=--no-sandbox; else CHROMIUM_SANDBOX_FLAG=; fi',
-    `chromium $CHROMIUM_SANDBOX_FLAG --user-data-dir=${escapeShellToken(spec.profileDirectory)} --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --remote-debugging-port=${spec.devtoolsPort} --window-size=${width},${height} >/tmp/computerd-chromium.log 2>&1 & CHROMIUM_PID=$!`,
-    `x11vnc -display ${escapeShellToken(spec.xvfbDisplay)} -forever -shared -rfbport ${spec.vncPort} -nopw -localhost >/tmp/computerd-x11vnc.log 2>&1 & X11VNC_PID=$!`,
+    `chromium $CHROMIUM_SANDBOX_FLAG --user-data-dir=${escapeShellToken(spec.profileDirectory)} --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --remote-debugging-port=${spec.devtoolsPort} --window-size=${width},${height} >${escapeShellToken(chromiumLogPath)} 2>&1 & CHROMIUM_PID=$!`,
+    `x11vnc -display ${escapeShellToken(spec.xvfbDisplay)} -forever -shared -rfbport ${spec.vncPort} -nopw -localhost >${escapeShellToken(x11vncLogPath)} 2>&1 & X11VNC_PID=$!`,
     "trap 'kill $X11VNC_PID $CHROMIUM_PID $PIPEWIRE_PULSE_PID $WIREPLUMBER_PID $PIPEWIRE_PID $XVFB_PID >/dev/null 2>&1 || true' EXIT INT TERM",
     "wait $CHROMIUM_PID",
   ].join("; ");
@@ -214,12 +230,16 @@ function escapeEnvironmentAssignment(value: string) {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
+function renderSystemdEnvironmentLine(key: string, value: string) {
+  return `Environment=\"${escapeEnvironmentAssignment(`${key}=${value}`)}\"`;
+}
+
 function escapeShellToken(value: string) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function escapeSystemdExecArg(value: string) {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').split("$").join("$$")}"`;
 }
 
 function renderPipeWireAlsaProperties(computer: PersistedBrowserComputer, slug: string) {
