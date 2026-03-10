@@ -37,9 +37,17 @@ test("serves computer and host unit APIs", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
     createAutomationSession: controlPlane.createAutomationSession,
+    createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
     openConsoleAttach: controlPlane.openConsoleAttach,
     openAutomationAttach: controlPlane.openAutomationAttach,
+    openAudioStream: async (name) => ({
+      computerName: name,
+      command: "/bin/bash",
+      args: ["-lc", "printf 'OggS-test-audio'"],
+      targetSelector: `computerd.computer.name=${name}`,
+      release() {},
+    }),
     listComputers: controlPlane.listComputers,
     createMonitorSession: async (name) =>
       name === "research-browser"
@@ -153,6 +161,11 @@ test("serves computer and host unit APIs", async () => {
     protocol: "ttyd",
   });
 
+  const audioSessionResponse = await fetch(`${baseUrl}/api/computers/research-browser/audio-sessions`, {
+    method: "POST",
+  });
+  expect(audioSessionResponse.status).toBe(409);
+
   const automationSessionResponse = await fetch(
     `${baseUrl}/api/computers/research-browser/automation-sessions`,
     {
@@ -176,6 +189,24 @@ test("serves computer and host unit APIs", async () => {
     computerName: "research-browser",
     protocol: "cdp",
   });
+
+  const startedAudioSessionResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/audio-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(startedAudioSessionResponse.status).toBe(200);
+  await expect(startedAudioSessionResponse.json()).resolves.toMatchObject({
+    computerName: "research-browser",
+    protocol: "http-audio-stream",
+    mimeType: "audio/ogg",
+  });
+
+  const audioStreamResponse = await fetch(`${baseUrl}/api/computers/research-browser/audio`);
+  expect(audioStreamResponse.status).toBe(200);
+  expect(audioStreamResponse.headers.get("content-type")).toBe("audio/ogg");
+  await expect(audioStreamResponse.text()).resolves.toContain("OggS");
 
   const screenshotResponse = await fetch(`${baseUrl}/api/computers/research-browser/screenshots`, {
     method: "POST",
@@ -266,7 +297,19 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
+        path: "/api/computers/research-browser/audio-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
         path: "/api/computers/research-browser/automation-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/computers/research-browser/audio",
         statusCode: 200,
       }),
       expect.objectContaining({
@@ -313,6 +356,11 @@ test("serves computer and host unit APIs", async () => {
         type: "http_request_error",
         method: "POST",
         path: "/api/computers/starter-terminal/monitor-sessions",
+      }),
+      expect.objectContaining({
+        type: "http_request_error",
+        method: "POST",
+        path: "/api/computers/research-browser/audio-sessions",
       }),
       expect.objectContaining({
         type: "http_request_error",

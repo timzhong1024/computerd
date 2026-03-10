@@ -2,6 +2,7 @@ import type {
   BrowserRuntime,
   BrowserViewport,
   ComputerAutomationSession,
+  ComputerAudioSession,
   ComputerConsoleSession,
   ComputerAccess,
   ComputerDetail,
@@ -22,6 +23,10 @@ import type {
   TerminalRuntime,
   UpdateBrowserViewportInput,
 } from "@computerd/core";
+
+export interface PersistedBrowserComputerRuntime extends CreateBrowserRuntime {
+  runtimeUser: string;
+}
 
 export interface PersistedComputerBase {
   name: string;
@@ -44,7 +49,7 @@ export interface PersistedTerminalComputer extends PersistedComputerBase {
 
 export interface PersistedBrowserComputer extends PersistedComputerBase {
   profile: "browser";
-  runtime: CreateBrowserRuntime;
+  runtime: PersistedBrowserComputerRuntime;
 }
 
 export type PersistedComputer = PersistedTerminalComputer | PersistedBrowserComputer;
@@ -75,9 +80,13 @@ export interface TerminalConsoleRuntimeSpec {
 }
 
 export interface ComputerRuntimePort {
+  deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
   createAutomationSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<ComputerAutomationSession>;
+  createAudioSession: (computer: PersistedBrowserComputer) => Promise<ComputerAudioSession>;
   createMonitorSession: (computer: PersistedBrowserComputer) => Promise<ComputerMonitorSession>;
   createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
   createScreenshot: (computer: PersistedBrowserComputer) => Promise<ComputerScreenshot>;
@@ -86,6 +95,7 @@ export interface ComputerRuntimePort {
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
   openAutomationAttach: (computer: PersistedBrowserComputer) => Promise<BrowserAutomationLease>;
+  openAudioStream: (computer: PersistedBrowserComputer) => Promise<BrowserAudioStreamLease>;
   openMonitorAttach: (computer: PersistedBrowserComputer) => Promise<BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
@@ -118,6 +128,16 @@ export interface BrowserAutomationLease {
   release: () => void;
 }
 
+export interface BrowserAudioStreamLease {
+  computerName: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  targetNodeId?: number;
+  targetSelector: string;
+  release: () => void;
+}
+
 export interface ComputerMetadataStore {
   deleteComputer: (name: string) => Promise<void>;
   getComputer: (name: string) => Promise<PersistedComputer | null>;
@@ -129,6 +149,7 @@ export type {
   BrowserRuntime,
   BrowserViewport,
   ComputerAutomationSession,
+  ComputerAudioSession,
   ComputerConsoleSession,
   ComputerDetail,
   ComputerMonitorSession,

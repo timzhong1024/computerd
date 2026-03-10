@@ -66,6 +66,7 @@ beforeEach(() => {
       runtime: {
         browser: "chromium",
         persistentProfile: true,
+        runtimeUser: "computerd-b-research-browser",
         profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
         runtimeDirectory: "/run/computerd/computers/research-browser",
         display: {
@@ -78,6 +79,11 @@ beforeEach(() => {
         },
         automation: {
           protocol: "cdp",
+          available: true,
+        },
+        audio: {
+          protocol: "pipewire",
+          isolation: "host-pipewire-user",
           available: true,
         },
         screenshot: {
@@ -124,6 +130,28 @@ beforeEach(() => {
             capabilities: unit.capabilities,
           })),
         );
+      }
+
+      if (
+        url.startsWith("/api/computers/") &&
+        url.endsWith("/audio-sessions") &&
+        method === "POST"
+      ) {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/audio-sessions".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          protocol: "http-audio-stream",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/audio`,
+          },
+          authorization: {
+            mode: "none",
+          },
+          mimeType: "audio/ogg",
+        });
       }
 
       if (
@@ -227,7 +255,13 @@ beforeEach(() => {
           unitName: `computerd-${body.name}.service`,
           profile: body.profile,
           state: "stopped",
-          runtime: body.runtime,
+          runtime:
+            body.profile === "browser"
+              ? {
+                  ...body.runtime,
+                  runtimeUser: `computerd-b-${body.name}`,
+                }
+              : body.runtime,
         };
         computers = [...computers, nextComputer];
         return jsonResponse(createComputerDetail(nextComputer), 201);
@@ -308,14 +342,23 @@ test("deletes a selected computer and refreshes the inventory", async () => {
 });
 
 test("renders monitor session shell and unavailable websocket state", async () => {
+  const playSpy = vi
+    .spyOn(HTMLMediaElement.prototype, "play")
+    .mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+
   renderApp("/computers/research-browser/monitor");
 
   expect(await screen.findByTestId("novnc-shell")).toBeInTheDocument();
-  expect(await screen.findByTestId("monitor-state")).toHaveTextContent("websocket unavailable");
+  expect(await screen.findByTestId("browser-audio")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Enable audio" })).toBeInTheDocument();
+  expect(await screen.findByTestId("monitor-state")).toHaveTextContent(
+    "video unavailable / audio blocked by autoplay",
+  );
   await waitFor(() => {
     expect(document.title).toBe("research-browser - Computerd Browser");
   });
   expect(connectMonitorClient).toHaveBeenCalled();
+  playSpy.mockRestore();
 });
 
 test("creates browser automation sessions and screenshot previews from the detail page", async () => {
@@ -405,6 +448,7 @@ function createComputerSummary(computer: FakeComputer) {
       browserAvailable: computer.profile === "browser",
       automationAvailable: computer.profile === "browser" && computer.state === "running",
       screenshotAvailable: computer.profile === "browser" && computer.state === "running",
+      audioAvailable: computer.profile === "browser" && computer.state === "running",
     },
   };
 }
@@ -415,6 +459,9 @@ function createComputerDetail(computer: FakeComputer) {
       ? {
           browser: "chromium",
           persistentProfile: true,
+          runtimeUser:
+            (computer.runtime.runtimeUser as string | undefined) ??
+            `computerd-b-${computer.name}`,
           profileDirectory:
             (computer.runtime.profileDirectory as string | undefined) ??
             `/var/lib/computerd/computers/${computer.name}/profile`,
@@ -431,6 +478,11 @@ function createComputerDetail(computer: FakeComputer) {
           },
           automation: {
             protocol: "cdp",
+            available: true,
+          },
+          audio: {
+            protocol: "pipewire",
+            isolation: "host-pipewire-user",
             available: true,
           },
           screenshot: {

@@ -119,15 +119,21 @@ function renderBrowserUnitFile(
     "[Service]",
     "Type=simple",
     "KillMode=control-group",
+    `User=${computer.runtime.runtimeUser}`,
+    `Group=${computer.runtime.runtimeUser}`,
     `StateDirectory=computerd/computers/${spec.slug}`,
     `RuntimeDirectory=computerd/computers/${spec.slug}`,
     `WorkingDirectory=${spec.stateDirectory}`,
+    `Environment=HOME=${escapeEnvironmentAssignment(spec.homeDirectory)}`,
     `Environment=COMPUTERD_BROWSER_PROFILE_DIR=${escapeEnvironmentAssignment(spec.profileDirectory)}`,
     `Environment=COMPUTERD_BROWSER_RUNTIME_DIR=${escapeEnvironmentAssignment(spec.runtimeDirectory)}`,
     `Environment=COMPUTERD_BROWSER_DEVTOOLS_PORT=${spec.devtoolsPort}`,
     `Environment=COMPUTERD_BROWSER_VNC_PORT=${spec.vncPort}`,
     `Environment=COMPUTERD_BROWSER_DISPLAY=${spec.xvfbDisplay}`,
     `Environment=COMPUTERD_BROWSER_VIEWPORT=${spec.viewport.width}x${spec.viewport.height}`,
+    `Environment=XDG_CONFIG_HOME=${escapeEnvironmentAssignment(spec.configDirectory)}`,
+    `Environment=PIPEWIRE_ALSA=${escapeEnvironmentAssignment(renderPipeWireAlsaProperties(computer, spec.slug))}`,
+    `Environment=PIPEWIRE_PROPS=${escapeEnvironmentAssignment(renderPipeWireClientProperties(computer, spec.slug))}`,
     `ExecStart=${buildBrowserExecStart(computer, spec)}`,
   ];
 
@@ -178,18 +184,27 @@ function buildBrowserExecStart(
 ) {
   const width = spec.viewport.width;
   const height = spec.viewport.height;
-  const shellScript = [
-    "set -eu",
-    `mkdir -p ${escapeShellToken(spec.profileDirectory)} ${escapeShellToken(spec.runtimeDirectory)}`,
-    `rm -f ${escapeShellToken(join(spec.runtimeDirectory, "x11vnc.pid"))}`,
-    `rm -f ${escapeShellToken(join(spec.runtimeDirectory, "chromium.pid"))}`,
+  const browserLaunchCommand = [
     `Xvfb ${escapeShellToken(spec.xvfbDisplay)} -screen 0 ${width}x${height}x24 -nolisten tcp >/tmp/computerd-xvfb.log 2>&1 & XVFB_PID=$!`,
     `export DISPLAY=${escapeShellToken(spec.xvfbDisplay)}`,
+    "pipewire >/tmp/computerd-pipewire.log 2>&1 & PIPEWIRE_PID=$!",
+    "wireplumber >/tmp/computerd-wireplumber.log 2>&1 & WIREPLUMBER_PID=$!",
+    "pipewire-pulse >/tmp/computerd-pipewire-pulse.log 2>&1 & PIPEWIRE_PULSE_PID=$!",
     'if [ "$(id -u)" -eq 0 ]; then CHROMIUM_SANDBOX_FLAG=--no-sandbox; else CHROMIUM_SANDBOX_FLAG=; fi',
-    `chromium $CHROMIUM_SANDBOX_FLAG --user-data-dir=${escapeShellToken(spec.profileDirectory)} --no-first-run --no-default-browser-check --remote-debugging-port=${spec.devtoolsPort} --window-size=${width},${height} >/tmp/computerd-chromium.log 2>&1 & CHROMIUM_PID=$!`,
+    `chromium $CHROMIUM_SANDBOX_FLAG --user-data-dir=${escapeShellToken(spec.profileDirectory)} --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --remote-debugging-port=${spec.devtoolsPort} --window-size=${width},${height} >/tmp/computerd-chromium.log 2>&1 & CHROMIUM_PID=$!`,
     `x11vnc -display ${escapeShellToken(spec.xvfbDisplay)} -forever -shared -rfbport ${spec.vncPort} -nopw -localhost >/tmp/computerd-x11vnc.log 2>&1 & X11VNC_PID=$!`,
-    "trap 'kill $X11VNC_PID $CHROMIUM_PID $XVFB_PID >/dev/null 2>&1 || true' EXIT INT TERM",
+    "trap 'kill $X11VNC_PID $CHROMIUM_PID $PIPEWIRE_PULSE_PID $WIREPLUMBER_PID $PIPEWIRE_PID $XVFB_PID >/dev/null 2>&1 || true' EXIT INT TERM",
     "wait $CHROMIUM_PID",
+  ].join("; ");
+  const shellScript = [
+    "set -eu",
+    `mkdir -p ${escapeShellToken(spec.profileDirectory)} ${escapeShellToken(spec.runtimeDirectory)} ${escapeShellToken(spec.homeDirectory)} ${escapeShellToken(spec.configDirectory)} ${escapeShellToken(spec.pipewireClientConfigDirectory)}`,
+    `rm -f ${escapeShellToken(join(spec.runtimeDirectory, "x11vnc.pid"))}`,
+    `rm -f ${escapeShellToken(join(spec.runtimeDirectory, "chromium.pid"))}`,
+    `export XDG_RUNTIME_DIR=${escapeShellToken(spec.runtimeDirectory)}`,
+    `export HOME=${escapeShellToken(spec.homeDirectory)}`,
+    `export XDG_CONFIG_HOME=${escapeShellToken(spec.configDirectory)}`,
+    `dbus-run-session -- /usr/bin/bash -lc ${escapeShellToken(browserLaunchCommand)}`,
   ].join("; ");
 
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
@@ -205,6 +220,14 @@ function escapeShellToken(value: string) {
 
 function escapeSystemdExecArg(value: string) {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+function renderPipeWireAlsaProperties(computer: PersistedBrowserComputer, slug: string) {
+  return `{ application.name = "computerd-browser" media.role = "browser" node.name = "computerd-browser-${slug}" computerd.computer.name = "${computer.name}" computerd.computer.slug = "${slug}" }`;
+}
+
+function renderPipeWireClientProperties(computer: PersistedBrowserComputer, slug: string) {
+  return `{ application.name = "computerd-browser" media.role = "browser" node.name = "computerd-browser-${slug}" computerd.computer.name = "${computer.name}" computerd.computer.slug = "${slug}" }`;
 }
 
 function isMissingFileError(error: unknown) {

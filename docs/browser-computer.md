@@ -28,14 +28,31 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - `Xvfb`
 - `chromium`
 - `x11vnc`
+- `pipewire`
+- `wireplumber`
+- `pipewire-pulse`
 
 目录约定：
 
 - state root: `/var/lib/computerd/computers/<slug>`
 - runtime root: `/run/computerd/computers/<slug>`
 - chromium profile: `<state root>/profile`
+- browser runtime user: `computerd-b-<slug>`
 
 这保证 browser 数据不会落在宿主用户的默认 home profile 中。
+
+音频当前采用 user-scoped PipeWire session：
+
+- 每个 browser computer 运行在独立 Linux 用户下
+- 该用户自己的 runtime 中启动 `pipewire` / `wireplumber`
+- Chromium 音频输出当前通过 `pipewire-pulse` 进入 PipeWire graph
+- server 侧通过目标 browser user 的 `XDG_RUNTIME_DIR` 附着并抓取该 user 的音频 node
+
+实现上这意味着：
+
+- 对外仍然兼容 Pulse 语义
+- 底层媒体 graph 仍由 PipeWire 驱动
+- 当前不假设 Chromium 已经稳定支持“完全不经 `pipewire-pulse` 的原生 PipeWire 音频输出”
 
 ## Supported Capabilities
 
@@ -53,6 +70,7 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - noVNC websocket attach
 - WebUI popup browser stage
 - popup viewport 会随窗口大小实时回传并更新远端分辨率
+- monitor 页面可同时播放 browser computer 音频
 
 ### Automation
 
@@ -73,6 +91,7 @@ Playwright 接入细节见：
 
 - fullscreen screenshot
 - PNG base64 payload
+- HTTP `audio/ogg` live audio stream
 
 ## WebUI
 
@@ -92,9 +111,11 @@ browser detail 页提供 `Open browser` 按钮。
 - `POST /api/computers/:name/stop`
 - `POST /api/computers/:name/restart`
 - `POST /api/computers/:name/monitor-sessions`
+- `POST /api/computers/:name/audio-sessions`
 - `POST /api/computers/:name/automation-sessions`
 - `POST /api/computers/:name/screenshots`
 - `POST /api/computers/:name/viewport`
+- `GET /api/computers/:name/audio`
 - `GET /api/computers/:name/monitor/ws`
 - `GET /api/computers/:name/automation/ws`
 
@@ -127,11 +148,21 @@ CLI 当前支持：
 - 当前只支持 `chromium`
 - 当前只支持 fullscreen screenshot
 - 当前 monitor / automation 默认无鉴权
+- 当前音频输出格式固定为 `audio/ogg`
 - 当前未内建 selector/tab/page 级 browser actions
 - 当前 stop/start 不保证浏览器窗口和标签页恢复
 
 ## Operational Notes
 
-在 root 运行 browser unit 的环境里，Chromium 目前会使用 `--no-sandbox` 启动。
+browser runtime 当前默认以专用非 root 用户运行，例如 `computerd-b-<slug>`。
 
-这能保证当前 vertical slice 可运行，但不是最终安全形态。后续更合理的方向是把 browser runtime 切到专用非 root 用户。
+在宿主完成 `pipewire`、`wireplumber`、`pipewire-pulse` 安装后，每个 browser unit 会在自己的 user-scoped session 中拉起这组音频进程，再启动 Chromium。
+
+Chromium 目前的稳定出声路径依赖 `pipewire-pulse`。因此当前推荐的宿主前提是：
+
+- `pipewire`
+- `wireplumber`
+- `pipewire-pulse`
+- `ffmpeg`
+
+这里的定位不是“继续使用独立 PulseAudio daemon”，而是“保留 Pulse 兼容接口，由 PipeWire 作为底层媒体后端”。

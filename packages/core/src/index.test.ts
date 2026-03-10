@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   createComputerCapabilities,
   parseComputerAutomationSession,
+  parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
   parseComputerMonitorSession,
@@ -84,6 +85,7 @@ test("parses browser computer details", () => {
     runtime: {
       browser: "chromium",
       persistentProfile: true,
+      runtimeUser: "computerd-b-research-browser",
       profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
       runtimeDirectory: "/run/computerd/computers/research-browser",
       display: {
@@ -96,6 +98,11 @@ test("parses browser computer details", () => {
       },
       automation: {
         protocol: "cdp",
+        available: true,
+      },
+      audio: {
+        protocol: "pipewire",
+        isolation: "host-pipewire-user",
         available: true,
       },
       screenshot: {
@@ -111,6 +118,7 @@ test("parses browser computer details", () => {
   }
 
   expect(detail.runtime.browser).toBe("chromium");
+  expect(detail.runtime.runtimeUser).toBe("computerd-b-research-browser");
   expect(detail.runtime.profileDirectory).toContain("research-browser");
 });
 
@@ -150,6 +158,24 @@ test("parses computer automation sessions", () => {
 
   expect(session.protocol).toBe("cdp");
   expect(session.authorization.mode).toBe("none");
+});
+
+test("parses computer audio sessions", () => {
+  const session = parseComputerAudioSession({
+    computerName: "research-browser",
+    protocol: "http-audio-stream",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/audio",
+    },
+    authorization: {
+      mode: "none",
+    },
+    mimeType: "audio/ogg",
+  });
+
+  expect(session.protocol).toBe("http-audio-stream");
+  expect(session.mimeType).toBe("audio/ogg");
 });
 
 test("parses computer screenshots", () => {
@@ -258,5 +284,18 @@ test("derives computer capabilities from profile and state", () => {
     browserAvailable: false,
     automationAvailable: false,
     screenshotAvailable: false,
+    audioAvailable: false,
+  });
+
+  expect(createComputerCapabilities("browser", "running")).toEqual({
+    canInspect: true,
+    canStart: false,
+    canStop: true,
+    canRestart: true,
+    consoleAvailable: false,
+    browserAvailable: true,
+    automationAvailable: true,
+    screenshotAvailable: true,
+    audioAvailable: true,
   });
 });

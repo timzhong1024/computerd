@@ -35,6 +35,7 @@ function createComputerDetail(name = "lab-terminal"): ComputerDetail {
       browserAvailable: false,
       automationAvailable: false,
       screenshotAvailable: false,
+      audioAvailable: false,
     },
     resources: {},
     storage: {

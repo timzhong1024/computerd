@@ -2,6 +2,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
+import {
+  createPipeWireRuntimeEnvironment,
+  createPipeWireHostManager,
+  resolvePipeWireNodeTarget,
+} from "./pipewire-host";
 import type {
   BrowserViewport,
   PersistedBrowserComputer,
@@ -22,9 +27,15 @@ import {
 } from "./dbus-client";
 
 export interface SystemdRuntime {
+  deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
   createAutomationSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").ComputerAutomationSession>;
+  createAudioSession: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").ComputerAudioSession>;
   createMonitorSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").ComputerMonitorSession>;
@@ -39,6 +50,9 @@ export interface SystemdRuntime {
   openAutomationAttach: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").BrowserAutomationLease>;
+  openAudioStream: (
+    computer: PersistedBrowserComputer,
+  ) => Promise<import("./types").BrowserAudioStreamLease>;
   openMonitorAttach: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").BrowserMonitorLease>;
@@ -72,8 +86,21 @@ export function createSystemdRuntime({
     runtimeRootDirectory: unitFileStoreOptions.browserRuntimeDirectory,
     stateRootDirectory: unitFileStoreOptions.browserStateDirectory,
   });
+  const pipeWireHostManager = createPipeWireHostManager({
+    browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+    browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
+  });
 
   return {
+    async deleteBrowserRuntimeIdentity(computer) {
+      await pipeWireHostManager.deleteRuntimeIdentity(computer);
+    },
+    async ensureBrowserRuntimeIdentity(computer) {
+      await pipeWireHostManager.ensureRuntimeIdentity(computer);
+    },
+    async prepareBrowserRuntime(computer) {
+      await pipeWireHostManager.prepareRuntime(computer);
+    },
     async createMonitorSession(computer) {
       const spec = browserRuntimePaths.specForComputer(computer);
       return {
@@ -90,12 +117,58 @@ export function createSystemdRuntime({
         viewport: spec.viewport,
       };
     },
+    async createAudioSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "http-audio-stream",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        mimeType: "audio/ogg",
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      };
+    },
     async openMonitorAttach(computer) {
       const spec = browserRuntimePaths.specForComputer(computer);
       return {
         computerName: computer.name,
         host: "127.0.0.1",
         port: spec.vncPort,
+        release() {},
+      };
+    },
+    async openAudioStream(computer) {
+      const target = await resolvePipeWireNodeTarget(computer, {
+        browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+        browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
+      });
+      const captureEnvironment = createPipeWireRuntimeEnvironment(computer, {
+        browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+        browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
+      });
+      return {
+        computerName: computer.name,
+        command: "/usr/bin/bash",
+        args: [
+          "-lc",
+          [
+            `pw-record --target ${quoteShell(`${target.id ?? target.selector}`)} --rate 48000 --channels 2 --format s16 -`,
+            "ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -f s16le -ar 48000 -ac 2 -i pipe:0 -c:a libopus -b:a 128k -frame_duration 20 -application lowdelay -f ogg pipe:1",
+          ].join(" | "),
+        ],
+        env: {
+          ...captureEnvironment,
+          PIPEWIRE_PROPS: JSON.stringify({
+            "application.name": "computerd-audio-capture",
+            "computerd.computer.name": computer.name,
+          }),
+        },
+        targetNodeId: target.id,
+        targetSelector: target.selector,
         release() {},
       };
     },

@@ -7,10 +7,12 @@ const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const controlPlane = createControlPlane();
 const app = createApp({
   createAutomationSession: controlPlane.createAutomationSession,
+  createAudioSession: controlPlane.createAudioSession,
   handleMcpRequest: createMcpHandler(controlPlane),
   createConsoleSession: controlPlane.createConsoleSession,
   openConsoleAttach: controlPlane.openConsoleAttach,
   openAutomationAttach: controlPlane.openAutomationAttach,
+  openAudioStream: controlPlane.openAudioStream,
   listComputers: () => controlPlane.listComputers(),
   createMonitorSession: controlPlane.createMonitorSession,
   openMonitorAttach: controlPlane.openMonitorAttach,

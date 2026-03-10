@@ -216,6 +216,17 @@ button:disabled {
   margin: 0 0 12px;
 }
 
+.browser-stage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.browser-stage-audio {
+  width: min(420px, 100%);
+}
+
 .browser-stage-canvas-shell {
   flex: 1 1 auto;
   min-height: 0;
@@ -300,7 +311,9 @@ button:disabled {
 }
 
 .browser-stage-status {
-  display: none;
+  margin-top: 10px;
+  color: rgba(242, 239, 232, 0.78);
+  font-size: 0.9rem;
 }
 
 @media (max-width: 960px) {
@@ -317,6 +330,11 @@ button:disabled {
 
   .browser-stage-shell {
     padding: 10px;
+  }
+
+  .browser-stage-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .browser-stage-canvas-shell {

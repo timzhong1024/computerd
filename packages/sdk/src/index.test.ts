@@ -106,6 +106,7 @@ describe("createComputerdClient", () => {
             browserAvailable: true,
             automationAvailable: true,
             screenshotAvailable: true,
+            audioAvailable: true,
           },
           resources: {},
           storage: {
@@ -119,10 +120,11 @@ describe("createComputerdClient", () => {
             lastActionAt: "2026-03-10T00:00:00.000Z",
             primaryUnit: "computerd-research-browser.service",
           },
-          runtime: {
-            browser: "chromium",
-            persistentProfile: true,
-            profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
+        runtime: {
+          browser: "chromium",
+          persistentProfile: true,
+          runtimeUser: "computerd-b-research-browser",
+          profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
             runtimeDirectory: "/run/computerd/computers/research-browser",
             display: {
               protocol: "x11",
@@ -134,6 +136,11 @@ describe("createComputerdClient", () => {
             },
             automation: {
               protocol: "cdp",
+              available: true,
+            },
+            audio: {
+              protocol: "pipewire",
+              isolation: "host-pipewire-user",
               available: true,
             },
             screenshot: {
@@ -268,6 +275,7 @@ describe("runBrowserCli", () => {
           browserAvailable: true,
           automationAvailable: true,
           screenshotAvailable: true,
+          audioAvailable: true,
         },
         resources: {},
         storage: {
@@ -284,6 +292,7 @@ describe("runBrowserCli", () => {
         runtime: {
           browser: "chromium",
           persistentProfile: true,
+          runtimeUser: "computerd-b-chrome1",
           profileDirectory: "/var/lib/computerd/computers/chrome1/profile",
           runtimeDirectory: "/run/computerd/computers/chrome1",
           display: {
@@ -296,6 +305,11 @@ describe("runBrowserCli", () => {
           },
           automation: {
             protocol: "cdp",
+            available: true,
+          },
+          audio: {
+            protocol: "pipewire",
+            isolation: "host-pipewire-user",
             available: true,
           },
           screenshot: {

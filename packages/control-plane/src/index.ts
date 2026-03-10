@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   createComputerCapabilities,
   type ComputerAutomationSession,
+  type ComputerAudioSession,
   type ComputerConsoleSession,
   type ComputerDetail,
   type ComputerMonitorSession,
@@ -18,6 +19,7 @@ import {
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
 import {
+  createBrowserRuntimeUser,
   createBrowserRuntimePaths,
   toBrowserRuntimeDetail,
   withBrowserViewport,
@@ -27,6 +29,7 @@ import { createFileComputerMetadataStore } from "./systemd/metadata-store";
 import { createSystemdRuntime } from "./systemd/runtime";
 import type {
   BrowserAutomationLease,
+  BrowserAudioStreamLease,
   BrowserMonitorLease,
   ConsoleAttachLease,
   ComputerMetadataStore,
@@ -74,6 +77,7 @@ export class ComputerConsoleUnavailableError extends Error {
 
 export interface ControlPlane {
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
+  createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
   createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
@@ -84,6 +88,7 @@ export interface ControlPlane {
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
+  openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   restartComputer: (name: string) => Promise<ComputerDetail>;
   openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   startComputer: (name: string) => Promise<ComputerDetail>;
@@ -165,6 +170,9 @@ export function createControlPlane(
       }
 
       const record = createPersistedComputer(input);
+      if (record.profile === "browser") {
+        await runtime.ensureBrowserRuntimeIdentity(record);
+      }
       await runtime.createPersistentUnit(record);
       await metadataStore.putComputer(record);
       return await toComputerDetail(record, runtime, browserRuntimePaths);
@@ -175,11 +183,23 @@ export function createControlPlane(
       await requireBrowserRunning(browserRecord, runtime, "monitor sessions");
       return await runtime.createMonitorSession(browserRecord);
     },
+    async createAudioSession(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "audio sessions");
+      return await runtime.createAudioSession(browserRecord);
+    },
     async openMonitorAttach(name) {
       const record = await requireComputer(metadataStore, name);
       const browserRecord = requireBrowserRecord(record);
       await requireBrowserRunning(browserRecord, runtime, "monitor sessions");
       return await runtime.openMonitorAttach(browserRecord);
+    },
+    async openAudioStream(name) {
+      const record = await requireComputer(metadataStore, name);
+      const browserRecord = requireBrowserRecord(record);
+      await requireBrowserRunning(browserRecord, runtime, "audio streams");
+      return await runtime.openAudioStream(browserRecord);
     },
     async createAutomationSession(name) {
       const record = await requireComputer(metadataStore, name);
@@ -251,12 +271,15 @@ export function createControlPlane(
       await runtime.deletePersistentUnit(record.unitName);
       if (record.profile === "terminal") {
         await consoleRuntimePaths.cleanupComputerDirectory(record);
+      } else {
+        await runtime.deleteBrowserRuntimeIdentity(record);
       }
       await metadataStore.deleteComputer(name);
     },
     async startComputer(name) {
       const record = await requireComputer(metadataStore, name);
       if (record.profile === "browser") {
+        await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
       }
       await runtime.startUnit(record.unitName);
@@ -283,6 +306,7 @@ export function createControlPlane(
     async restartComputer(name) {
       const record = await requireComputer(metadataStore, name);
       if (record.profile === "browser") {
+        await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
       }
       await runtime.restartUnit(record.unitName);
@@ -367,7 +391,10 @@ function createPersistedComputer(input: CreateComputerInput): PersistedComputer 
   return {
     ...common,
     profile: "browser",
-    runtime: input.runtime,
+    runtime: {
+      ...input.runtime,
+      runtimeUser: createBrowserRuntimeUser(input.name),
+    },
   };
 }
 
@@ -666,6 +693,9 @@ function createDevelopmentControlPlane(): ControlPlane {
   const activeConsoleAttaches = new Set<string>();
 
   const runtime: ComputerRuntimePort = {
+    async deleteBrowserRuntimeIdentity() {},
+    async ensureBrowserRuntimeIdentity() {},
+    async prepareBrowserRuntime() {},
     async createMonitorSession(computer) {
       const spec = browserRuntimePaths.specForComputer(computer);
       return {
@@ -682,12 +712,57 @@ function createDevelopmentControlPlane(): ControlPlane {
         viewport: spec.viewport,
       };
     },
+    async createAudioSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "http-audio-stream",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        mimeType: "audio/ogg",
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      };
+    },
     async openMonitorAttach(computer) {
       const spec = browserRuntimePaths.specForComputer(computer);
       return {
         computerName: computer.name,
         host: "127.0.0.1",
         port: spec.vncPort,
+        release() {},
+      };
+    },
+    async openAudioStream(computer) {
+      return {
+        computerName: computer.name,
+        command: "ffmpeg",
+        args: [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-f",
+          "lavfi",
+          "-i",
+          "anullsrc=channel_layout=stereo:sample_rate=48000",
+          "-c:a",
+          "libopus",
+          "-b:a",
+          "128k",
+          "-f",
+          "ogg",
+          "pipe:1",
+        ],
+        env: {
+          PIPEWIRE_PROPS: JSON.stringify({
+            "application.name": "computerd-audio-capture",
+            "computerd.computer.name": computer.name,
+          }),
+        },
+        targetSelector: `computerd.computer.name=${computer.name}`,
         release() {},
       };
     },
@@ -1005,7 +1080,9 @@ function escapeShellToken(value: string) {
 
 export type {
   BrowserAutomationLease,
+  BrowserAudioStreamLease,
   BrowserMonitorLease,
+  ComputerAudioSession,
   ConsoleAttachLease,
   ComputerConsoleSession,
   ComputerDetail,

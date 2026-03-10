@@ -28,7 +28,18 @@ export function createBrowserRuntimePaths({
         slug,
         stateDirectory,
         runtimeDirectory,
+        homeDirectory: join(stateDirectory, "home"),
+        configDirectory: join(stateDirectory, "home", ".config"),
+        pipewireClientConfigDirectory: join(
+          stateDirectory,
+          "home",
+          ".config",
+          "pipewire",
+          "client.conf.d",
+        ),
         profileDirectory: join(stateDirectory, "profile"),
+        runtimeUser: computer.runtime.runtimeUser,
+        audioNodeName: `computerd-browser-${slug}`,
         devtoolsPort: portBase,
         vncPort: portBase + 1,
         xvfbDisplay: `:${100 + (stableHash(`${slug}-display`) % 100)}`,
@@ -47,6 +58,7 @@ export function toBrowserRuntimeDetail(
   return {
     browser: computer.runtime.browser,
     persistentProfile: computer.runtime.persistentProfile,
+    runtimeUser: computer.runtime.runtimeUser,
     profileDirectory: spec.profileDirectory,
     runtimeDirectory: spec.runtimeDirectory,
     display: {
@@ -58,11 +70,20 @@ export function toBrowserRuntimeDetail(
       protocol: "cdp",
       available: true,
     },
+    audio: {
+      protocol: "pipewire",
+      isolation: "host-pipewire-user",
+      available: true,
+    },
     screenshot: {
       format: "png",
       available: true,
     },
   };
+}
+
+export function createBrowserRuntimeUser(name: string) {
+  return `computerd-b-${slugify(name)}`;
 }
 
 export function withBrowserViewport(

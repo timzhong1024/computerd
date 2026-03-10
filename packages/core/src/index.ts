@@ -12,6 +12,7 @@ export const computerCapabilitiesSchema = z.object({
   browserAvailable: z.boolean(),
   automationAvailable: z.boolean(),
   screenshotAvailable: z.boolean(),
+  audioAvailable: z.boolean(),
 });
 
 export const computerConsoleAccessSchema = z.object({
@@ -57,6 +58,15 @@ export const computerAutomationSessionSchema = z.object({
   protocol: z.literal("cdp"),
   connect: computerSessionConnectSchema,
   authorization: computerSessionAuthorizationSchema,
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const computerAudioSessionSchema = z.object({
+  computerName: z.string().min(1),
+  protocol: z.literal("http-audio-stream"),
+  connect: computerSessionConnectSchema,
+  authorization: computerSessionAuthorizationSchema,
+  mimeType: z.literal("audio/ogg"),
   expiresAt: z.string().datetime().optional(),
 });
 
@@ -118,6 +128,7 @@ export const createBrowserRuntimeSchema = z.object({
 });
 
 export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
+  runtimeUser: z.string().min(1),
   profileDirectory: z.string().min(1),
   runtimeDirectory: z.string().min(1),
   display: z.object({
@@ -127,6 +138,11 @@ export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
   }),
   automation: z.object({
     protocol: z.literal("cdp"),
+    available: z.boolean(),
+  }),
+  audio: z.object({
+    protocol: z.literal("pipewire"),
+    isolation: z.literal("host-pipewire-user"),
     available: z.boolean(),
   }),
   screenshot: z.object({
@@ -238,6 +254,7 @@ export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
 export type BrowserViewport = z.infer<typeof browserViewportSchema>;
 export type ComputerAutomationSession = z.infer<typeof computerAutomationSessionSchema>;
+export type ComputerAudioSession = z.infer<typeof computerAudioSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
 export type ComputerConsoleSession = z.infer<typeof computerConsoleSessionSchema>;
@@ -279,6 +296,10 @@ export function parseComputerAutomationSession(value: unknown) {
   return computerAutomationSessionSchema.parse(value);
 }
 
+export function parseComputerAudioSession(value: unknown) {
+  return computerAudioSessionSchema.parse(value);
+}
+
 export function parseComputerConsoleSession(value: unknown) {
   return computerConsoleSessionSchema.parse(value);
 }
@@ -313,5 +334,6 @@ export function createComputerCapabilities(profile: ComputerProfile, state: Comp
     browserAvailable: profile === "browser",
     automationAvailable: profile === "browser" && state === "running",
     screenshotAvailable: profile === "browser" && state === "running",
+    audioAvailable: profile === "browser" && state === "running",
   } satisfies ComputerCapabilities;
 }

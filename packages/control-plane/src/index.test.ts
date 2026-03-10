@@ -274,6 +274,7 @@ test("creates browser automation, monitor, screenshot, and console sessions from
 
   await controlPlane.startComputer("research-browser");
   const monitorSession = await controlPlane.createMonitorSession("research-browser");
+  const audioSession = await controlPlane.createAudioSession("research-browser");
   const automationSession = await controlPlane.createAutomationSession("research-browser");
   const screenshot = await controlPlane.createScreenshot("research-browser");
   await controlPlane.startComputer("starter-terminal");
@@ -295,6 +296,15 @@ test("creates browser automation, monitor, screenshot, and console sessions from
       mode: "relative-websocket-path",
       url: "/api/computers/research-browser/automation/ws",
     },
+  });
+  expect(audioSession).toMatchObject({
+    computerName: "research-browser",
+    protocol: "http-audio-stream",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/research-browser/audio",
+    },
+    mimeType: "audio/ogg",
   });
   expect(screenshot).toMatchObject({
     computerName: "research-browser",
@@ -319,6 +329,9 @@ test("waits for terminal console runtime readiness during start", async () => {
   await cleanupSocket(runtimeDirectory, terminalRecord.name);
 
   const runtime: ComputerRuntimePort = {
+    async deleteBrowserRuntimeIdentity() {},
+    async ensureBrowserRuntimeIdentity() {},
+    async prepareBrowserRuntime() {},
     async createAutomationSession(computer) {
       return {
         computerName: computer.name,
@@ -330,6 +343,20 @@ test("waits for terminal console runtime readiness during start", async () => {
         authorization: {
           mode: "none",
         },
+      };
+    },
+    async createAudioSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "http-audio-stream",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        mimeType: "audio/ogg",
       };
     },
     async createMonitorSession(computer) {
@@ -382,6 +409,15 @@ test("waits for terminal console runtime readiness during start", async () => {
       return {
         computerName: computer.name,
         url: "ws://127.0.0.1:9222/devtools/browser/test",
+        release() {},
+      };
+    },
+    async openAudioStream(computer) {
+      return {
+        computerName: computer.name,
+        command: "ffmpeg",
+        args: ["-f", "ogg", "pipe:1"],
+        targetSelector: `computerd.computer.name=${computer.name}`,
         release() {},
       };
     },
@@ -447,6 +483,7 @@ test("rejects sessions for unsupported capabilities", async () => {
   );
 
   await expect(controlPlane.createMonitorSession("starter-terminal")).rejects.toBeInstanceOf(Error);
+  await expect(controlPlane.createAudioSession("starter-terminal")).rejects.toBeInstanceOf(Error);
   await expect(controlPlane.createConsoleSession("starter-terminal")).rejects.toBeInstanceOf(
     ComputerConsoleUnavailableError,
   );
@@ -524,6 +561,7 @@ function createBrowserComputerRecord(): PersistedComputer {
     runtime: {
       browser: "chromium",
       persistentProfile: true,
+      runtimeUser: "computerd-b-research-browser",
     },
   };
 }
@@ -562,6 +600,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const browserViewports = new Map<string, { width: number; height: number }>();
 
   return {
+    async deleteBrowserRuntimeIdentity() {},
+    async ensureBrowserRuntimeIdentity() {},
+    async prepareBrowserRuntime() {},
     async createAutomationSession(computer) {
       return {
         computerName: computer.name,
@@ -573,6 +614,20 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         authorization: {
           mode: "none",
         },
+      };
+    },
+    async createAudioSession(computer) {
+      return {
+        computerName: computer.name,
+        protocol: "http-audio-stream",
+        connect: {
+          mode: "relative-websocket-path",
+          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
+        },
+        authorization: {
+          mode: "none",
+        },
+        mimeType: "audio/ogg",
       };
     },
     async createMonitorSession(computer) {
@@ -653,6 +708,15 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       return {
         computerName: computer.name,
         url: `ws://127.0.0.1:9222/devtools/browser/${computer.name}`,
+        release() {},
+      };
+    },
+    async openAudioStream(computer) {
+      return {
+        computerName: computer.name,
+        command: "ffmpeg",
+        args: ["-f", "ogg", "pipe:1"],
+        targetSelector: `computerd.computer.name=${computer.name}`,
         release() {},
       };
     },

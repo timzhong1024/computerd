@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import type { Duplex } from "node:stream";
 import { spawn as spawnPty } from "@lydell/node-pty";
@@ -7,6 +8,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { ZodError } from "zod";
 import {
   parseComputerAutomationSession,
+  parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
   parseComputerMonitorSession,
@@ -17,6 +19,7 @@ import {
   parseHostUnitSummaries,
   parseUpdateBrowserViewportInput,
   type ComputerAutomationSession,
+  type ComputerAudioSession,
   type ComputerConsoleSession,
   type ComputerDetail,
   type ComputerMonitorSession,
@@ -28,6 +31,7 @@ import {
 } from "@computerd/core";
 import {
   type BrowserAutomationLease,
+  type BrowserAudioStreamLease,
   type BrowserMonitorLease,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
@@ -46,10 +50,12 @@ class InvalidJsonBodyError extends Error {
 
 interface CreateAppOptions {
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
+  createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
+  openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   listComputers: () => Promise<ComputerSummary[]>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
   openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
@@ -70,10 +76,12 @@ interface CreateAppOptions {
 
 export function createApp({
   createAutomationSession,
+  createAudioSession,
   handleMcpRequest,
   createConsoleSession,
   openConsoleAttach,
   openAutomationAttach,
+  openAudioStream,
   listComputers,
   createMonitorSession,
   openMonitorAttach,
@@ -120,30 +128,6 @@ export function createApp({
         return;
       }
 
-      if (request.method === "GET" && url.pathname.startsWith("/api/computers/")) {
-        const websocketStubMatch =
-          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)\/ws$/.exec(
-            url.pathname,
-          );
-        if (websocketStubMatch) {
-          sendJson(response, 426, { error: "Websocket endpoint requires upgrade." });
-          return;
-        }
-
-        const actionMatch =
-          /^\/api\/computers\/(?<name>[^/]+)\/(?<action>start|stop|restart)$/.exec(url.pathname);
-        if (request.method === "GET" && actionMatch) {
-          sendJson(response, 404, { error: "Not Found" });
-          return;
-        }
-
-        if (request.method === "GET") {
-          const name = decodeURIComponent(url.pathname.slice("/api/computers/".length));
-          sendJson(response, 200, parseComputerDetail(await getComputer(name)));
-          return;
-        }
-      }
-
       if (request.method === "DELETE" && url.pathname.startsWith("/api/computers/")) {
         const name = decodeURIComponent(url.pathname.slice("/api/computers/".length));
         await deleteComputer(name);
@@ -175,7 +159,7 @@ export function createApp({
       }
 
       const computerSessionMatch =
-        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)-sessions$/.exec(
+        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation|audio)-sessions$/.exec(
           url.pathname,
         );
       if (request.method === "POST" && computerSessionMatch?.groups) {
@@ -202,10 +186,43 @@ export function createApp({
           return;
         }
 
+        if (matchedSurface === "audio") {
+          sendJson(response, 200, parseComputerAudioSession(await createAudioSession(name)));
+          return;
+        }
+
         sendJson(response, 200, parseComputerConsoleSession(await createConsoleSession(name)));
         return;
       }
 
+      const browserAudioMatch = /^\/api\/computers\/(?<name>[^/]+)\/audio$/.exec(url.pathname);
+      if (request.method === "GET" && browserAudioMatch?.groups?.name) {
+        const name = decodeURIComponent(browserAudioMatch.groups.name);
+        await streamAudioResponse(response, request, await openAudioStream(name));
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname.startsWith("/api/computers/")) {
+        const websocketStubMatch =
+          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)\/ws$/.exec(
+            url.pathname,
+          );
+        if (websocketStubMatch) {
+          sendJson(response, 426, { error: "Websocket endpoint requires upgrade." });
+          return;
+        }
+
+        const actionMatch =
+          /^\/api\/computers\/(?<name>[^/]+)\/(?<action>start|stop|restart)$/.exec(url.pathname);
+        if (request.method === "GET" && actionMatch) {
+          sendJson(response, 404, { error: "Not Found" });
+          return;
+        }
+
+        const name = decodeURIComponent(url.pathname.slice("/api/computers/".length));
+        sendJson(response, 200, parseComputerDetail(await getComputer(name)));
+        return;
+      }
       const computerScreenshotMatch = /^\/api\/computers\/(?<name>[^/]+)\/screenshots$/.exec(
         url.pathname,
       );
@@ -263,6 +280,11 @@ export function createApp({
 
       if (error instanceof UnsupportedComputerFeatureError) {
         sendJson(response, 409, { error: error.message });
+        return;
+      }
+
+      if (looksLikeConflictError(error)) {
+        sendJson(response, 409, { error: errorMessage(error) });
         return;
       }
 
@@ -643,6 +665,63 @@ function parseConsoleWireMessage(value: string) {
   return null;
 }
 
+async function streamAudioResponse(
+  response: ServerResponse,
+  request: IncomingMessage,
+  lease: BrowserAudioStreamLease,
+) {
+  response.statusCode = 200;
+  response.setHeader("content-type", "audio/ogg");
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("transfer-encoding", "chunked");
+
+  const child = spawn(lease.command, lease.args, {
+    env: {
+      ...process.env,
+      ...lease.env,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let cleanedUp = false;
+
+  child.stdout.on("data", (chunk: Buffer) => {
+    response.write(chunk);
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    console.error(`[audio_stream:${lease.computerName}] ${chunk.toString("utf8").trim()}`);
+  });
+  child.on("error", (error) => {
+    if (!response.headersSent) {
+      sendJson(response, 500, { error: error.message });
+      cleanup();
+      return;
+    }
+
+    cleanup();
+  });
+  child.on("close", () => {
+    cleanup();
+  });
+  request.on("close", cleanup);
+  response.on("close", cleanup);
+
+  function cleanup() {
+    if (cleanedUp) {
+      return;
+    }
+
+    cleanedUp = true;
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
+    lease.release();
+    if (!response.writableEnded) {
+      response.end();
+    }
+  }
+}
+
 function writeUpgradeError(socket: Duplex, statusCode: number, message: string) {
   socket.write(
     `HTTP/1.1 ${statusCode} ${httpStatusText(statusCode)}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${message}`,
@@ -663,6 +742,16 @@ function mapUpgradeStatusCode(error: unknown) {
   }
 
   return 500;
+}
+
+function looksLikeConflictError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (/does not support/i.test(error.message) ||
+      /must be running/i.test(error.message) ||
+      /already has an active/i.test(error.message) ||
+      /PipeWire node .* was not found/i.test(error.message))
+  );
 }
 
 function errorMessage(error: unknown) {
