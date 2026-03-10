@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createBrowserRuntimeUser } from "./browser-runtime";
 import type { ComputerMetadataStore, PersistedComputer } from "./types";
 
 export interface FileComputerMetadataStoreOptions {
@@ -17,7 +18,7 @@ export function createFileComputerMetadataStore({
         .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
         .map(async (entry) => {
           const payload = await readFile(join(directory, entry.name), "utf8");
-          return JSON.parse(payload) as PersistedComputer;
+          return normalizePersistedComputer(JSON.parse(payload) as PersistedComputer);
         }),
     );
 
@@ -44,6 +45,20 @@ export function createFileComputerMetadataStore({
       }
 
       await rm(metadataFilePath(directory, computer.unitName), { force: true });
+    },
+  };
+}
+
+function normalizePersistedComputer(computer: PersistedComputer): PersistedComputer {
+  if (computer.profile !== "browser" || computer.runtime.runtimeUser !== undefined) {
+    return computer;
+  }
+
+  return {
+    ...computer,
+    runtime: {
+      ...computer.runtime,
+      runtimeUser: createBrowserRuntimeUser(computer.name),
     },
   };
 }
