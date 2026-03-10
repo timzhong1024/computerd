@@ -105,7 +105,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
       }
 
       void attemptAudioPlayback(audio, {
-            onBlocked() {
+        onBlocked() {
           if (!cancelled && !audioUnlockedRef.current) {
             setAudioState("blocked");
           }
