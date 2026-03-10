@@ -361,6 +361,27 @@ test("renders monitor session shell and unavailable websocket state", async () =
   playSpy.mockRestore();
 });
 
+test("retries blocked monitor audio after clicking enable audio", async () => {
+  const playSpy = vi
+    .spyOn(HTMLMediaElement.prototype, "play")
+    .mockRejectedValueOnce(new DOMException("blocked", "NotAllowedError"))
+    .mockResolvedValueOnce(undefined);
+
+  renderApp("/computers/research-browser/monitor");
+
+  const button = await screen.findByRole("button", { name: "Enable audio" });
+  fireEvent.click(button);
+
+  await waitFor(() => {
+    expect(screen.getByTestId("monitor-state")).toHaveTextContent(
+      "video unavailable / audio connected",
+    );
+  });
+
+  expect(playSpy).toHaveBeenCalledTimes(2);
+  playSpy.mockRestore();
+});
+
 test("creates browser automation sessions and screenshot previews from the detail page", async () => {
   renderApp("/");
 

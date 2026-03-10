@@ -97,27 +97,23 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
     audio.src = nextUrl;
     safelyInvokeMediaMethod(audio, "load");
 
-    const tryPlay = () => {
-      void audio
-        .play()
-        .then(() => {
-          if (!cancelled) {
-            setAudioState("connected");
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setAudioState("blocked");
-          }
-        });
-    };
-
     const handleCanPlay = () => {
       if (cancelled) {
         return;
       }
 
-      tryPlay();
+      void attemptAudioPlayback(audio, {
+        onBlocked() {
+          if (!cancelled) {
+            setAudioState("blocked");
+          }
+        },
+        onConnected() {
+          if (!cancelled) {
+            setAudioState("connected");
+          }
+        },
+      });
     };
     const handlePlaying = () => {
       if (!cancelled) {
@@ -133,7 +129,18 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
     audio.addEventListener("canplay", handleCanPlay);
     audio.addEventListener("playing", handlePlaying);
     audio.addEventListener("error", handleError);
-    tryPlay();
+    void attemptAudioPlayback(audio, {
+      onBlocked() {
+        if (!cancelled) {
+          setAudioState("blocked");
+        }
+      },
+      onConnected() {
+        if (!cancelled) {
+          setAudioState("connected");
+        }
+      },
+    });
 
     return () => {
       cancelled = true;
@@ -233,14 +240,16 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
                 return;
               }
 
-              void audio
-                .play()
-                .then(() => {
-                  setAudioState("connected");
-                })
-                .catch(() => {
+              setAudioState("connecting");
+              safelyInvokeMediaMethod(audio, "load");
+              void attemptAudioPlayback(audio, {
+                onBlocked() {
                   setAudioState("blocked");
-                });
+                },
+                onConnected() {
+                  setAudioState("connected");
+                },
+              });
             }}
           >
             Enable audio
@@ -335,5 +344,20 @@ function safelyInvokeMediaMethod(audio: HTMLAudioElement, method: "load" | "paus
     audio[method]();
   } catch {
     // jsdom does not implement media methods; real browsers do.
+  }
+}
+
+async function attemptAudioPlayback(
+  audio: HTMLAudioElement,
+  options: {
+    onBlocked: () => void;
+    onConnected: () => void;
+  },
+) {
+  try {
+    await audio.play();
+    options.onConnected();
+  } catch {
+    options.onBlocked();
   }
 }
