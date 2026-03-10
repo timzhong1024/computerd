@@ -15,6 +15,7 @@ interface MonitorPageProps {
 export function MonitorPage({ computerName }: MonitorPageProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlockedRef = useRef(false);
   const lastViewportRef = useRef<string | null>(null);
   const [session, setSession] = useState<ComputerMonitorSession | null>(null);
   const [audioSession, setAudioSession] = useState<ComputerAudioSession | null>(null);
@@ -37,6 +38,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
     setError(null);
     setVideoState("connecting");
     setAudioState("connecting");
+    audioUnlockedRef.current = false;
 
     void Promise.allSettled([
       createMonitorSession(computerName),
@@ -98,13 +100,13 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
     safelyInvokeMediaMethod(audio, "load");
 
     const handleCanPlay = () => {
-      if (cancelled) {
+      if (cancelled || audioUnlockedRef.current) {
         return;
       }
 
       void attemptAudioPlayback(audio, {
-        onBlocked() {
-          if (!cancelled) {
+            onBlocked() {
+          if (!cancelled && !audioUnlockedRef.current) {
             setAudioState("blocked");
           }
         },
@@ -240,8 +242,8 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
                 return;
               }
 
+              audioUnlockedRef.current = true;
               setAudioState("connecting");
-              safelyInvokeMediaMethod(audio, "load");
               void attemptAudioPlayback(audio, {
                 onBlocked() {
                   setAudioState("blocked");
