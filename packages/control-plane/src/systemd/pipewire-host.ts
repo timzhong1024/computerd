@@ -155,16 +155,18 @@ async function prepareBrowserRuntimeDirectories(user: string, directories: strin
 
   await execFileAsync("/usr/bin/bash", [
     "-lc",
-    directories.map((directory) => `chown -R ${quoteShell(`${user}:${user}`)} ${quoteShell(directory)}`).join(" && "),
+    directories
+      .map((directory) => `chown -R ${quoteShell(`${user}:${user}`)} ${quoteShell(directory)}`)
+      .join(" && "),
   ]);
 }
 
-async function ensurePipeWireClientConfig(
-  computer: PersistedBrowserComputer,
-  directory: string,
-) {
+async function ensurePipeWireClientConfig(computer: PersistedBrowserComputer, directory: string) {
   await mkdir(directory, { recursive: true });
-  const slug = computer.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const slug = computer.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   const contents = `context.properties = {\n  application.name = "computerd-browser"\n  media.role = "browser"\n  node.name = "computerd-browser-${slug}"\n  computerd.computer.name = "${computer.name}"\n  computerd.computer.slug = "${slug}"\n}\n`;
   await writeFile(join(directory, "computerd-browser.conf"), contents);
 }

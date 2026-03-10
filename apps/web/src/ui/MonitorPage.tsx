@@ -38,29 +38,31 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
     setVideoState("connecting");
     setAudioState("connecting");
 
-    void Promise.allSettled([createMonitorSession(computerName), createAudioSession(computerName)])
-      .then(([monitorResult, audioResult]) => {
-        if (cancelled) {
-          return;
-        }
+    void Promise.allSettled([
+      createMonitorSession(computerName),
+      createAudioSession(computerName),
+    ]).then(([monitorResult, audioResult]) => {
+      if (cancelled) {
+        return;
+      }
 
-        if (monitorResult.status === "fulfilled") {
-          lastViewportRef.current =
-            monitorResult.value.viewport === undefined
-              ? null
-              : `${monitorResult.value.viewport.width}x${monitorResult.value.viewport.height}`;
-          setSession(monitorResult.value);
-        } else {
-          setError(formatError(monitorResult.reason));
-        }
+      if (monitorResult.status === "fulfilled") {
+        lastViewportRef.current =
+          monitorResult.value.viewport === undefined
+            ? null
+            : `${monitorResult.value.viewport.width}x${monitorResult.value.viewport.height}`;
+        setSession(monitorResult.value);
+      } else {
+        setError(formatError(monitorResult.reason));
+      }
 
-        if (audioResult.status === "fulfilled") {
-          setAudioSession(audioResult.value);
-        } else {
-          console.warn("Failed to create browser audio session.", audioResult.reason);
-          setAudioState("unavailable");
-        }
-      });
+      if (audioResult.status === "fulfilled") {
+        setAudioSession(audioResult.value);
+      } else {
+        console.warn("Failed to create browser audio session.", audioResult.reason);
+        setAudioState("unavailable");
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -231,11 +233,14 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
                 return;
               }
 
-              void audio.play().then(() => {
-                setAudioState("connected");
-              }).catch(() => {
-                setAudioState("blocked");
-              });
+              void audio
+                .play()
+                .then(() => {
+                  setAudioState("connected");
+                })
+                .catch(() => {
+                  setAudioState("blocked");
+                });
             }}
           >
             Enable audio
@@ -278,7 +283,9 @@ function formatMonitorStateLabel(
 
   const videoLabel = formatVideoState(videoState);
   const audioLabel =
-    audioSession === null && audioState === "connecting" ? "audio unavailable" : formatAudioState(audioState);
+    audioSession === null && audioState === "connecting"
+      ? "audio unavailable"
+      : formatAudioState(audioState);
 
   if (session !== null) {
     return `${videoLabel} / ${audioLabel}`;

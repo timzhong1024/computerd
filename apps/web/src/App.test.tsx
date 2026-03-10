@@ -460,8 +460,7 @@ function createComputerDetail(computer: FakeComputer) {
           browser: "chromium",
           persistentProfile: true,
           runtimeUser:
-            (computer.runtime.runtimeUser as string | undefined) ??
-            `computerd-b-${computer.name}`,
+            (computer.runtime.runtimeUser as string | undefined) ?? `computerd-b-${computer.name}`,
           profileDirectory:
             (computer.runtime.profileDirectory as string | undefined) ??
             `/var/lib/computerd/computers/${computer.name}/profile`,

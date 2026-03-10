@@ -161,9 +161,12 @@ test("serves computer and host unit APIs", async () => {
     protocol: "ttyd",
   });
 
-  const audioSessionResponse = await fetch(`${baseUrl}/api/computers/research-browser/audio-sessions`, {
-    method: "POST",
-  });
+  const audioSessionResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/audio-sessions`,
+    {
+      method: "POST",
+    },
+  );
   expect(audioSessionResponse.status).toBe(409);
 
   const automationSessionResponse = await fetch(

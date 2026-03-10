@@ -120,11 +120,11 @@ describe("createComputerdClient", () => {
             lastActionAt: "2026-03-10T00:00:00.000Z",
             primaryUnit: "computerd-research-browser.service",
           },
-        runtime: {
-          browser: "chromium",
-          persistentProfile: true,
-          runtimeUser: "computerd-b-research-browser",
-          profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
+          runtime: {
+            browser: "chromium",
+            persistentProfile: true,
+            runtimeUser: "computerd-b-research-browser",
+            profileDirectory: "/var/lib/computerd/computers/research-browser/profile",
             runtimeDirectory: "/run/computerd/computers/research-browser",
             display: {
               protocol: "x11",

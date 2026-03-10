@@ -1,8 +1,5 @@
 import { expect, test } from "vitest";
-import {
-  createPipeWireRuntimeEnvironment,
-  selectPipeWireNodeTarget,
-} from "./pipewire-host";
+import { createPipeWireRuntimeEnvironment, selectPipeWireNodeTarget } from "./pipewire-host";
 
 test("selects the newest matching pipewire browser audio node", () => {
   const target = selectPipeWireNodeTarget(
