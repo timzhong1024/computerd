@@ -139,6 +139,8 @@ function renderBrowserUnitFile(
       `${spec.viewport.width}x${spec.viewport.height}`,
     ),
     renderSystemdEnvironmentLine("XDG_CONFIG_HOME", spec.configDirectory),
+    renderSystemdEnvironmentLine("PULSE_SERVER", `unix:${spec.pulseServerPath}`),
+    renderSystemdEnvironmentLine("PULSE_SINK", spec.audioSinkName),
     renderSystemdEnvironmentLine(
       "PIPEWIRE_ALSA",
       renderPipeWireAlsaProperties(computer, spec.slug),
@@ -225,12 +227,15 @@ function buildBrowserExecStart(
   const pipewirePulseLogPath = join(spec.runtimeDirectory, "pipewire-pulse.log");
   const chromiumLogPath = join(spec.runtimeDirectory, "chromium.log");
   const x11vncLogPath = join(spec.runtimeDirectory, "x11vnc.log");
+  const pulseSocketPath = spec.pulseServerPath;
   const browserLaunchCommand = [
     `Xvfb ${escapeShellToken(spec.xvfbDisplay)} -screen 0 ${width}x${height}x24 -nolisten tcp >${escapeShellToken(xvfbLogPath)} 2>&1 & XVFB_PID=$!`,
     `export DISPLAY=${escapeShellToken(spec.xvfbDisplay)}`,
     `pipewire >${escapeShellToken(pipewireLogPath)} 2>&1 & PIPEWIRE_PID=$!`,
     `wireplumber >${escapeShellToken(wireplumberLogPath)} 2>&1 & WIREPLUMBER_PID=$!`,
     `pipewire-pulse >${escapeShellToken(pipewirePulseLogPath)} 2>&1 & PIPEWIRE_PULSE_PID=$!`,
+    `for _ in $(seq 1 50); do [ -S ${escapeShellToken(pulseSocketPath)} ] && break; sleep 0.1; done`,
+    `[ -S ${escapeShellToken(pulseSocketPath)} ]`,
     'if [ "$(id -u)" -eq 0 ]; then CHROMIUM_SANDBOX_FLAG=--no-sandbox; else CHROMIUM_SANDBOX_FLAG=; fi',
     `chromium $CHROMIUM_SANDBOX_FLAG --user-data-dir=${escapeShellToken(spec.profileDirectory)} --no-first-run --no-default-browser-check --autoplay-policy=no-user-gesture-required --remote-debugging-port=${spec.devtoolsPort} --window-size=${width},${height} >${escapeShellToken(chromiumLogPath)} 2>&1 & CHROMIUM_PID=$!`,
     `x11vnc -display ${escapeShellToken(spec.xvfbDisplay)} -forever -shared -rfbport ${spec.vncPort} -nopw -localhost >${escapeShellToken(x11vncLogPath)} 2>&1 & X11VNC_PID=$!`,

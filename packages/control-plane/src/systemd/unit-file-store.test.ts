@@ -59,6 +59,8 @@ test("renders browser exec start without invalid background separators", async (
   expect(unitFile).toContain("TimeoutStopSec=10s");
   expect(unitFile).toContain("RuntimeDirectoryMode=0700");
   expect(unitFile).toContain('Environment="COMPUTERD_BROWSER_VIEWPORT=1600x1000"');
+  expect(unitFile).toContain('Environment="PULSE_SERVER=unix:');
+  expect(unitFile).toContain('Environment="PULSE_SINK=auto_null"');
   expect(unitFile).toContain('Environment="PIPEWIRE_ALSA=');
   expect(unitFile).toContain('application.name = \\"computerd-browser\\"');
   expect(unitFile).not.toContain("pulseaudio --daemonize");
@@ -66,6 +68,7 @@ test("renders browser exec start without invalid background separators", async (
   expect(unitFile).toContain("dbus-run-session -- /usr/bin/bash -lc");
   expect(unitFile).toContain("/run/browser-smoke/pipewire.log");
   expect(unitFile).toContain("/run/browser-smoke/chromium.log");
+  expect(unitFile).toContain("[ -S ");
   expect(unitFile).not.toContain("/tmp/computerd-pipewire.log");
   expect(unitFile).not.toContain("/tmp/computerd-chromium.log");
   expect(unitFile).toContain("XVFB_PID=$$!");
