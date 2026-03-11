@@ -1,10 +1,11 @@
 import type {
   BrowserRuntime,
   BrowserViewport,
+  ComputerAccess,
   ComputerAutomationSession,
   ComputerAudioSession,
   ComputerConsoleSession,
-  ComputerAccess,
+  ComputerExecSession,
   ComputerDetail,
   ComputerLifecycle,
   ComputerMonitorSession,
@@ -17,10 +18,12 @@ import type {
   CreateBrowserRuntime,
   CreateBrowserComputerInput,
   CreateComputerInput,
-  CreateTerminalComputerInput,
+  CreateContainerComputerInput,
+  CreateContainerRuntime,
+  CreateHostComputerInput,
   HostUnitDetail,
   HostUnitSummary,
-  TerminalRuntime,
+  HostRuntime,
   UpdateBrowserViewportInput,
 } from "@computerd/core";
 
@@ -42,9 +45,9 @@ export interface PersistedComputerBase {
   lifecycle: ComputerLifecycle;
 }
 
-export interface PersistedTerminalComputer extends PersistedComputerBase {
-  profile: "terminal";
-  runtime: TerminalRuntime;
+export interface PersistedHostComputer extends PersistedComputerBase {
+  profile: "host";
+  runtime: HostRuntime;
 }
 
 export interface PersistedBrowserComputer extends PersistedComputerBase {
@@ -52,7 +55,18 @@ export interface PersistedBrowserComputer extends PersistedComputerBase {
   runtime: PersistedBrowserComputerRuntime;
 }
 
-export type PersistedComputer = PersistedTerminalComputer | PersistedBrowserComputer;
+export interface PersistedContainerComputer extends PersistedComputerBase {
+  profile: "container";
+  runtime: CreateContainerRuntime & {
+    containerId: string;
+    containerName: string;
+  };
+}
+
+export type PersistedComputer =
+  | PersistedHostComputer
+  | PersistedBrowserComputer
+  | PersistedContainerComputer;
 
 export interface UnitRuntimeState {
   unitName: string;
@@ -73,14 +87,19 @@ export interface UnitRuntimeState {
   result?: string;
 }
 
-export interface TerminalConsoleRuntimeSpec {
+export interface HostConsoleRuntimeSpec {
   directoryPath: string;
   sessionName: string;
   socketPath: string;
 }
 
 export interface ComputerRuntimePort {
+  createContainerComputer: (
+    input: CreateContainerComputerInput,
+    unitName: string,
+  ) => Promise<PersistedContainerComputer["runtime"]>;
   deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  deleteContainerComputer: (computer: PersistedContainerComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
   createAutomationSession: (
@@ -91,6 +110,9 @@ export interface ComputerRuntimePort {
   createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
   createScreenshot: (computer: PersistedBrowserComputer) => Promise<ComputerScreenshot>;
   deletePersistentUnit: (unitName: string) => Promise<void>;
+  getContainerRuntimeState: (
+    computer: PersistedContainerComputer,
+  ) => Promise<UnitRuntimeState | null>;
   getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
@@ -98,8 +120,11 @@ export interface ComputerRuntimePort {
   openAudioStream: (computer: PersistedBrowserComputer) => Promise<BrowserAudioStreamLease>;
   openMonitorAttach: (computer: PersistedBrowserComputer) => Promise<BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  restartContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  startContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  stopContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
   updateBrowserViewport: (
     computer: PersistedBrowserComputer,
     viewport: BrowserViewport,
@@ -151,15 +176,17 @@ export type {
   ComputerAutomationSession,
   ComputerAudioSession,
   ComputerConsoleSession,
+  ComputerExecSession,
   ComputerDetail,
   ComputerMonitorSession,
   ComputerSummary,
   ComputerScreenshot,
   CreateBrowserComputerInput,
   CreateComputerInput,
-  CreateTerminalComputerInput,
+  CreateContainerComputerInput,
+  CreateHostComputerInput,
   HostUnitDetail,
   HostUnitSummary,
-  TerminalRuntime,
+  HostRuntime,
   UpdateBrowserViewportInput,
 };

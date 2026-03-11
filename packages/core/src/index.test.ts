@@ -5,6 +5,7 @@ import {
   parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
+  parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
   parseCreateComputerInput,
@@ -12,21 +13,21 @@ import {
   parseUpdateBrowserViewportInput,
 } from "./index";
 
-test("parses terminal computer creation input", () => {
+test("parses host computer creation input", () => {
   const input = parseCreateComputerInput({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
       workingDirectory: "/workspace",
     },
   });
 
   expect(input).toMatchObject({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
     },
   });
 });
@@ -54,6 +55,77 @@ test("parses browser computer creation input with viewport", () => {
       },
     },
   });
+});
+
+test("parses container computer creation input", () => {
+  const input = parseCreateComputerInput({
+    name: "workspace-container",
+    profile: "container",
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+    },
+  });
+
+  expect(input).toMatchObject({
+    profile: "container",
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+    },
+  });
+});
+
+test("parses container computer details", () => {
+  const detail = parseComputerDetail({
+    name: "workspace-container",
+    unitName: "docker:workspace-container",
+    profile: "container",
+    state: "running",
+    createdAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      logs: true,
+    },
+    capabilities: createComputerCapabilities("container", "running", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    network: {
+      mode: "host",
+    },
+    lifecycle: {},
+    status: {
+      lastActionAt: "2026-03-09T08:00:00.000Z",
+      primaryUnit: "docker:workspace-container",
+    },
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+      containerId: "abc123",
+      containerName: "computerd-workspace-container",
+    },
+  });
+
+  expect(detail.profile).toBe("container");
+  if (detail.profile !== "container") {
+    throw new TypeError("Expected container computer detail");
+  }
+
+  expect(detail.runtime.provider).toBe("docker");
+  expect(detail.runtime.containerId).toBe("abc123");
 });
 
 test("parses browser computer details", () => {
@@ -195,11 +267,28 @@ test("parses computer screenshots", () => {
 
 test("parses computer console sessions", () => {
   const session = parseComputerConsoleSession({
-    computerName: "starter-terminal",
+    computerName: "starter-host",
     protocol: "ttyd",
     connect: {
       mode: "relative-websocket-path",
-      url: "/api/computers/starter-terminal/console/ws",
+      url: "/api/computers/starter-host/console/ws",
+    },
+    authorization: {
+      mode: "none",
+    },
+  });
+
+  expect(session.protocol).toBe("ttyd");
+  expect(session.authorization.mode).toBe("none");
+});
+
+test("parses computer exec sessions", () => {
+  const session = parseComputerExecSession({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/workspace-container/exec/ws",
     },
     authorization: {
       mode: "none",
@@ -228,11 +317,11 @@ test("rejects invalid session payloads", () => {
 
   expect(() =>
     parseComputerConsoleSession({
-      computerName: "starter-terminal",
+      computerName: "starter-host",
       protocol: "ttyd",
       connect: {
         mode: "tcp",
-        url: "/api/computers/starter-terminal/console/ws",
+        url: "/api/computers/starter-host/console/ws",
       },
       authorization: {
         mode: "none",
@@ -275,7 +364,14 @@ test("parses browser viewport updates", () => {
 });
 
 test("derives computer capabilities from profile and state", () => {
-  expect(createComputerCapabilities("terminal", "stopped")).toEqual({
+  expect(
+    createComputerCapabilities("host", "stopped", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+  ).toEqual({
     canInspect: true,
     canStart: true,
     canStop: false,
@@ -297,5 +393,17 @@ test("derives computer capabilities from profile and state", () => {
     automationAvailable: true,
     screenshotAvailable: true,
     audioAvailable: true,
+  });
+
+  expect(
+    createComputerCapabilities("container", "running", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+  ).toMatchObject({
+    consoleAvailable: true,
+    browserAvailable: false,
   });
 });

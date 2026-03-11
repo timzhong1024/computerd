@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const computerProfileSchema = z.enum(["terminal", "browser"]);
+export const computerProfileSchema = z.enum(["host", "browser", "container"]);
 export const computerStateSchema = z.enum(["stopped", "running"]);
 
 export const computerCapabilitiesSchema = z.object({
@@ -88,6 +88,14 @@ export const computerConsoleSessionSchema = z.object({
   expiresAt: z.string().datetime().optional(),
 });
 
+export const computerExecSessionSchema = z.object({
+  computerName: z.string().min(1),
+  protocol: z.literal("ttyd"),
+  connect: computerSessionConnectSchema,
+  authorization: computerSessionAuthorizationSchema,
+  expiresAt: z.string().datetime().optional(),
+});
+
 export const computerAccessSchema = z.object({
   console: computerConsoleAccessSchema.optional(),
   display: computerDisplayAccessSchema.optional(),
@@ -115,10 +123,23 @@ export const computerLifecycleSchema = z.object({
   autostart: z.boolean().optional(),
 });
 
-export const terminalRuntimeSchema = z.object({
-  execStart: z.string().min(1),
+export const hostRuntimeSchema = z.object({
+  command: z.string().min(1).optional(),
   workingDirectory: z.string().optional(),
   environment: z.record(z.string(), z.string()).optional(),
+});
+
+export const createContainerRuntimeSchema = z.object({
+  provider: z.literal("docker"),
+  image: z.string().min(1),
+  command: z.string().min(1).optional(),
+  workingDirectory: z.string().optional(),
+  environment: z.record(z.string(), z.string()).optional(),
+});
+
+export const containerRuntimeSchema = createContainerRuntimeSchema.extend({
+  containerId: z.string().min(1),
+  containerName: z.string().min(1),
 });
 
 export const createBrowserRuntimeSchema = z.object({
@@ -173,22 +194,27 @@ const computerDetailBaseSchema = computerSummaryBaseSchema.extend({
   }),
 });
 
-export const terminalComputerSummarySchema = computerSummaryBaseSchema.extend({
-  profile: z.literal("terminal"),
+export const hostComputerSummarySchema = computerSummaryBaseSchema.extend({
+  profile: z.literal("host"),
 });
 
 export const browserComputerSummarySchema = computerSummaryBaseSchema.extend({
   profile: z.literal("browser"),
 });
 
+export const containerComputerSummarySchema = computerSummaryBaseSchema.extend({
+  profile: z.literal("container"),
+});
+
 export const computerSummarySchema = z.discriminatedUnion("profile", [
-  terminalComputerSummarySchema,
+  hostComputerSummarySchema,
   browserComputerSummarySchema,
+  containerComputerSummarySchema,
 ]);
 
-export const terminalComputerDetailSchema = computerDetailBaseSchema.extend({
-  profile: z.literal("terminal"),
-  runtime: terminalRuntimeSchema,
+export const hostComputerDetailSchema = computerDetailBaseSchema.extend({
+  profile: z.literal("host"),
+  runtime: hostRuntimeSchema,
 });
 
 export const browserComputerDetailSchema = computerDetailBaseSchema.extend({
@@ -196,9 +222,15 @@ export const browserComputerDetailSchema = computerDetailBaseSchema.extend({
   runtime: browserRuntimeSchema,
 });
 
+export const containerComputerDetailSchema = computerDetailBaseSchema.extend({
+  profile: z.literal("container"),
+  runtime: containerRuntimeSchema,
+});
+
 export const computerDetailSchema = z.discriminatedUnion("profile", [
-  terminalComputerDetailSchema,
+  hostComputerDetailSchema,
   browserComputerDetailSchema,
+  containerComputerDetailSchema,
 ]);
 
 const createComputerBaseSchema = z.object({
@@ -211,9 +243,9 @@ const createComputerBaseSchema = z.object({
   lifecycle: computerLifecycleSchema.optional(),
 });
 
-export const createTerminalComputerInputSchema = createComputerBaseSchema.extend({
-  profile: z.literal("terminal"),
-  runtime: terminalRuntimeSchema,
+export const createHostComputerInputSchema = createComputerBaseSchema.extend({
+  profile: z.literal("host"),
+  runtime: hostRuntimeSchema,
 });
 
 export const createBrowserComputerInputSchema = createComputerBaseSchema.extend({
@@ -221,11 +253,17 @@ export const createBrowserComputerInputSchema = createComputerBaseSchema.extend(
   runtime: createBrowserRuntimeSchema,
 });
 
+export const createContainerComputerInputSchema = createComputerBaseSchema.extend({
+  profile: z.literal("container"),
+  runtime: createContainerRuntimeSchema,
+});
+
 export const updateBrowserViewportInputSchema = browserViewportSchema;
 
 export const createComputerInputSchema = z.discriminatedUnion("profile", [
-  createTerminalComputerInputSchema,
+  createHostComputerInputSchema,
   createBrowserComputerInputSchema,
+  createContainerComputerInputSchema,
 ]);
 
 export const hostUnitCapabilitiesSchema = z.object({
@@ -258,6 +296,7 @@ export type ComputerAudioSession = z.infer<typeof computerAudioSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
 export type ComputerConsoleSession = z.infer<typeof computerConsoleSessionSchema>;
+export type ComputerExecSession = z.infer<typeof computerExecSessionSchema>;
 export type ComputerDetail = z.infer<typeof computerDetailSchema>;
 export type ComputerLifecycle = z.infer<typeof computerLifecycleSchema>;
 export type ComputerMonitorSession = z.infer<typeof computerMonitorSessionSchema>;
@@ -273,11 +312,15 @@ export type ComputerSummary = z.infer<typeof computerSummarySchema>;
 export type CreateBrowserRuntime = z.infer<typeof createBrowserRuntimeSchema>;
 export type CreateBrowserComputerInput = z.infer<typeof createBrowserComputerInputSchema>;
 export type CreateComputerInput = z.infer<typeof createComputerInputSchema>;
-export type CreateTerminalComputerInput = z.infer<typeof createTerminalComputerInputSchema>;
+export type CreateContainerComputerInput = z.infer<typeof createContainerComputerInputSchema>;
+export type CreateContainerRuntime = z.infer<typeof createContainerRuntimeSchema>;
+export type CreateHostComputerInput = z.infer<typeof createHostComputerInputSchema>;
 export type HostUnitDetail = z.infer<typeof hostUnitDetailSchema>;
 export type HostUnitSummary = z.infer<typeof hostUnitSummarySchema>;
-export type TerminalComputerDetail = z.infer<typeof terminalComputerDetailSchema>;
-export type TerminalRuntime = z.infer<typeof terminalRuntimeSchema>;
+export type ContainerComputerDetail = z.infer<typeof containerComputerDetailSchema>;
+export type ContainerRuntime = z.infer<typeof containerRuntimeSchema>;
+export type HostComputerDetail = z.infer<typeof hostComputerDetailSchema>;
+export type HostRuntime = z.infer<typeof hostRuntimeSchema>;
 export type UpdateBrowserViewportInput = z.infer<typeof updateBrowserViewportInputSchema>;
 
 export function parseComputerSummaries(value: unknown) {
@@ -304,6 +347,10 @@ export function parseComputerConsoleSession(value: unknown) {
   return computerConsoleSessionSchema.parse(value);
 }
 
+export function parseComputerExecSession(value: unknown) {
+  return computerExecSessionSchema.parse(value);
+}
+
 export function parseComputerScreenshot(value: unknown) {
   return computerScreenshotSchema.parse(value);
 }
@@ -324,13 +371,18 @@ export function parseHostUnitDetail(value: unknown) {
   return hostUnitDetailSchema.parse(value);
 }
 
-export function createComputerCapabilities(profile: ComputerProfile, state: ComputerState) {
+export function createComputerCapabilities(
+  profile: ComputerProfile,
+  state: ComputerState,
+  access?: ComputerAccess,
+) {
   return {
     canInspect: true,
     canStart: state === "stopped",
     canStop: state === "running",
     canRestart: state === "running",
-    consoleAvailable: profile === "terminal",
+    consoleAvailable:
+      (profile === "host" || profile === "container") && access?.console?.mode === "pty",
     browserAvailable: profile === "browser",
     automationAvailable: profile === "browser" && state === "running",
     screenshotAvailable: profile === "browser" && state === "running",

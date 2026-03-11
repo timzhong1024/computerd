@@ -179,7 +179,7 @@ await client.updateBrowserViewport("chrome1", {
 
 ### Unsupported profile
 
-terminal computer 不支持 automation session。
+host computer 不支持 automation session。
 
 ### Auth model
 

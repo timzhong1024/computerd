@@ -22,9 +22,11 @@
   "dependencies": {
     "@computerd/core": "workspace:*",
     "dbus-next": "^0.10.2",
+    "dockerode": "^4.0.9",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@types/dockerode": "^3.3.41",
     "@types/ws": "^8.18.1"
   }
 }

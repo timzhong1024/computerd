@@ -3,11 +3,13 @@ import {
   parseComputerAudioSession,
   parseComputerDetail,
   parseComputerConsoleSession,
+  parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
   type ComputerAutomationSession,
   type ComputerAudioSession,
   type ComputerDetail,
+  type ComputerExecSession,
   type ComputerConsoleSession,
   type ComputerMonitorSession,
   type ComputerScreenshot,
@@ -27,6 +29,14 @@ export async function createConsoleSession(name: string): Promise<ComputerConsol
     `/api/computers/${encodeURIComponent(name)}/console-sessions`,
     undefined,
     parseComputerConsoleSession,
+  );
+}
+
+export async function createExecSession(name: string): Promise<ComputerExecSession> {
+  return await postJson(
+    `/api/computers/${encodeURIComponent(name)}/exec-sessions`,
+    undefined,
+    parseComputerExecSession,
   );
 }
 

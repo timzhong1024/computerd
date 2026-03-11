@@ -11,13 +11,13 @@ async function main() {
 
   const created = await controlPlane.createComputer({
     name,
-    profile: "terminal",
-    description: "Minimal bash-backed terminal computer example.",
+    profile: "host",
+    description: "Minimal bash-backed host computer example.",
     lifecycle: {
       autostart: true,
     },
     runtime: {
-      execStart: "/usr/bin/bash -i -l",
+      command: "/usr/bin/bash -i -l",
     },
   });
 

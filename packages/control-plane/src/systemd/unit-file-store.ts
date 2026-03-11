@@ -2,11 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createBrowserRuntimePaths, type BrowserRuntimePathsOptions } from "./browser-runtime";
 import { createConsoleRuntimePaths, type ConsoleRuntimePathsOptions } from "./console-runtime";
-import type {
-  PersistedBrowserComputer,
-  PersistedComputer,
-  PersistedTerminalComputer,
-} from "./types";
+import type { PersistedBrowserComputer, PersistedComputer, PersistedHostComputer } from "./types";
 
 export interface UnitFileStore {
   deleteUnitFile: (unitName: string) => Promise<void>;
@@ -37,18 +33,21 @@ export function createFileUnitStore({
 
   return {
     async writeUnitFile(computer) {
+      if (computer.profile === "container") {
+        throw new TypeError("Container computers do not render systemd unit files.");
+      }
       const contents =
-        computer.profile === "terminal"
-          ? renderTerminalUnitFile(computer, {
+        computer.profile === "host"
+          ? renderHostUnitFile(computer, {
               runtimeDirectory: terminalRuntimeDirectory,
             })
           : renderBrowserUnitFile(computer, {
               runtimeRootDirectory: browserRuntimeDirectory,
               stateRootDirectory: browserStateDirectory,
             });
-      if (computer.profile === "terminal") {
+      if (computer.profile === "host" && computer.access.console?.mode === "pty") {
         await consoleRuntimePaths.ensureComputerDirectory(computer);
-      } else {
+      } else if (computer.profile === "browser") {
         const spec = browserRuntimePaths.specForComputer(computer);
         await mkdir(spec.profileDirectory, { recursive: true });
         await mkdir(spec.runtimeDirectory, { recursive: true });
@@ -74,20 +73,23 @@ export function createFileUnitStore({
   };
 }
 
-function renderTerminalUnitFile(
-  computer: PersistedTerminalComputer,
+function renderHostUnitFile(
+  computer: PersistedHostComputer,
   consoleRuntimePathsOptions: ConsoleRuntimePathsOptions,
 ) {
-  const consoleRuntimePaths = createConsoleRuntimePaths(consoleRuntimePathsOptions);
-  const spec = consoleRuntimePaths.specForComputer(computer);
+  const hasConsole = computer.access.console?.mode === "pty";
+  const consoleRuntimePaths = hasConsole
+    ? createConsoleRuntimePaths(consoleRuntimePathsOptions)
+    : null;
+  const spec = consoleRuntimePaths?.specForComputer(computer);
   const lines = [
     "[Unit]",
-    `Description=${computer.description ?? `Computerd terminal ${computer.name}`}`,
+    `Description=${computer.description ?? `Computerd host ${computer.name}`}`,
     "",
     "[Service]",
     "Type=simple",
     "KillMode=control-group",
-    `ExecStart=${buildTerminalExecStart(computer, spec)}`,
+    `ExecStart=${hasConsole && spec ? buildHostConsoleExecStart(computer, spec) : buildHostServiceExecStart(computer)}`,
   ];
 
   if (computer.resources.cpuWeight !== undefined) {
@@ -165,8 +167,8 @@ function renderBrowserUnitFile(
   return `${lines.join("\n")}`;
 }
 
-function buildTerminalExecStart(
-  computer: PersistedTerminalComputer,
+function buildHostConsoleExecStart(
+  computer: PersistedHostComputer,
   spec: ReturnType<ReturnType<typeof createConsoleRuntimePaths>["specForComputer"]>,
 ) {
   const envAssignments = Object.entries(computer.runtime.environment ?? {})
@@ -177,7 +179,8 @@ function buildTerminalExecStart(
   const workingDirectory = computer.runtime.workingDirectory
     ? ` -c ${escapeShellToken(computer.runtime.workingDirectory)}`
     : "";
-  const tmuxCommand = `${envPrefix}/usr/bin/bash -lc ${escapeShellToken(computer.runtime.execStart)}`;
+  const hostCommand = computer.runtime.command ?? "/bin/sh -i";
+  const tmuxCommand = `${envPrefix}/usr/bin/bash -lc ${escapeShellToken(hostCommand)}`;
   const shellScript = [
     "set -eu",
     `mkdir -p ${escapeShellToken(spec.directoryPath)}`,
@@ -186,6 +189,26 @@ function buildTerminalExecStart(
     `trap 'tmux -S ${escapeShellToken(spec.socketPath)} kill-session -t ${escapeShellToken(spec.sessionName)} >/dev/null 2>&1 || true; rm -f ${escapeShellToken(spec.socketPath)}' EXIT INT TERM`,
     `while tmux -S ${escapeShellToken(spec.socketPath)} has-session -t ${escapeShellToken(spec.sessionName)} >/dev/null 2>&1; do sleep 1; done`,
   ].join("; ");
+
+  return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
+}
+
+function buildHostServiceExecStart(computer: PersistedHostComputer) {
+  const envAssignments = Object.entries(computer.runtime.environment ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${escapeShellToken(key)}=${escapeShellToken(value)}`)
+    .join(" ");
+  const envPrefix = envAssignments.length > 0 ? `env ${envAssignments} ` : "";
+  const hostCommand = computer.runtime.command ?? "/bin/sh -i";
+  const shellScript = [
+    "set -eu",
+    computer.runtime.workingDirectory
+      ? `cd ${escapeShellToken(computer.runtime.workingDirectory)}`
+      : null,
+    `${envPrefix}/usr/bin/bash -lc ${escapeShellToken(hostCommand)}`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("; ");
 
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
 }
@@ -250,7 +273,7 @@ function escapeEnvironmentAssignment(value: string) {
 }
 
 function renderSystemdEnvironmentLine(key: string, value: string) {
-  return `Environment=\"${escapeEnvironmentAssignment(`${key}=${value}`)}\"`;
+  return `Environment="${escapeEnvironmentAssignment(`${key}=${value}`)}"`;
 }
 
 function escapeShellToken(value: string) {

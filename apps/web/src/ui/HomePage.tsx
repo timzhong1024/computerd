@@ -40,10 +40,12 @@ export function HomePage() {
   const [isBusy, setIsBusy] = useState(false);
   const [form, setForm] = useState({
     name: "",
-    profile: "terminal",
-    execStart: "/usr/bin/bash -i -l",
+    profile: "host",
+    command: "/bin/sh -i",
     workingDirectory: "",
     browser: "chromium",
+    image: "ubuntu:24.04",
+    consoleEnabled: true,
   });
 
   useEffect(() => {
@@ -117,25 +119,56 @@ export function HomePage() {
 
     try {
       const payload =
-        form.profile === "terminal"
+        form.profile === "host"
           ? {
               name: form.name,
-              profile: "terminal" as const,
+              profile: "host" as const,
+              access: form.consoleEnabled
+                ? {
+                    console: {
+                      mode: "pty" as const,
+                      writable: true,
+                    },
+                    logs: true,
+                  }
+                : undefined,
               runtime: {
-                execStart: form.execStart,
+                ...(form.command.length > 0 ? { command: form.command } : {}),
                 ...(form.workingDirectory.length > 0
                   ? { workingDirectory: form.workingDirectory }
                   : {}),
               },
             }
-          : {
-              name: form.name,
-              profile: "browser" as const,
-              runtime: {
-                browser: form.browser as "chromium",
-                persistentProfile: true,
-              },
-            };
+          : form.profile === "container"
+            ? {
+                name: form.name,
+                profile: "container" as const,
+                access: form.consoleEnabled
+                  ? {
+                      console: {
+                        mode: "pty" as const,
+                        writable: true,
+                      },
+                      logs: true,
+                    }
+                  : undefined,
+                runtime: {
+                  provider: "docker" as const,
+                  image: form.image,
+                  ...(form.command.length > 0 ? { command: form.command } : {}),
+                  ...(form.workingDirectory.length > 0
+                    ? { workingDirectory: form.workingDirectory }
+                    : {}),
+                },
+              }
+            : {
+                name: form.name,
+                profile: "browser" as const,
+                runtime: {
+                  browser: form.browser as "chromium",
+                  persistentProfile: true,
+                },
+              };
 
       const detail = await postJson("/api/computers", payload, parseComputerDetail);
       setForm((current) => ({
@@ -313,7 +346,7 @@ export function HomePage() {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, name: event.target.value }))
                 }
-                placeholder="lab-terminal"
+                placeholder="lab-host"
                 required
               />
             </label>
@@ -330,22 +363,77 @@ export function HomePage() {
                   }))
                 }
               >
-                <option value="terminal">terminal</option>
+                <option value="host">host</option>
                 <option value="browser">browser</option>
+                <option value="container">container</option>
               </select>
             </label>
 
-            {form.profile === "terminal" ? (
+            <label>
+              Console
+              <input
+                name="consoleEnabled"
+                type="checkbox"
+                checked={form.consoleEnabled}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    consoleEnabled: event.target.checked,
+                  }))
+                }
+              />
+            </label>
+
+            {form.profile === "host" ? (
               <>
                 <label>
-                  ExecStart
+                  Command
                   <input
-                    name="execStart"
-                    value={form.execStart}
+                    name="command"
+                    value={form.command}
                     onChange={(event) =>
-                      setForm((current) => ({ ...current, execStart: event.target.value }))
+                      setForm((current) => ({ ...current, command: event.target.value }))
+                    }
+                    required={!form.consoleEnabled}
+                  />
+                </label>
+                <label>
+                  Working directory
+                  <input
+                    name="workingDirectory"
+                    value={form.workingDirectory}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        workingDirectory: event.target.value,
+                      }))
+                    }
+                    placeholder="/workspace"
+                  />
+                </label>
+              </>
+            ) : form.profile === "container" ? (
+              <>
+                <label>
+                  Image
+                  <input
+                    name="image"
+                    value={form.image}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, image: event.target.value }))
                     }
                     required
+                  />
+                </label>
+                <label>
+                  Command
+                  <input
+                    name="command"
+                    value={form.command}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, command: event.target.value }))
+                    }
+                    required={!form.consoleEnabled}
                   />
                 </label>
                 <label>
@@ -497,6 +585,16 @@ export function HomePage() {
                   Open console
                 </Link>
               ) : null}
+              {selectedComputer.profile === "container" ? (
+                <Link
+                  className="surface-link surface-link-secondary"
+                  data-testid="open-exec-link"
+                  to="/computers/$name/exec"
+                  params={{ name: selectedComputer.name }}
+                >
+                  Exec shell
+                </Link>
+              ) : null}
               {selectedComputer.profile === "browser" ? (
                 <button
                   type="button"
@@ -544,11 +642,25 @@ export function HomePage() {
               <div>
                 <dt>Runtime</dt>
                 <dd>
-                  {selectedComputer.profile === "terminal"
-                    ? selectedComputer.runtime.execStart
-                    : `${selectedComputer.runtime.browser} · profile ${selectedComputer.runtime.persistentProfile ? "persistent" : "ephemeral"}`}
+                  {selectedComputer.profile === "host"
+                    ? (selectedComputer.runtime.command ?? "[default shell]")
+                    : selectedComputer.profile === "container"
+                      ? `${selectedComputer.runtime.provider} · ${selectedComputer.runtime.image}`
+                      : `${selectedComputer.runtime.browser} · profile ${selectedComputer.runtime.persistentProfile ? "persistent" : "ephemeral"}`}
                 </dd>
               </div>
+              {selectedComputer.profile === "container" ? (
+                <>
+                  <div>
+                    <dt>Container id</dt>
+                    <dd>{selectedComputer.runtime.containerId}</dd>
+                  </div>
+                  <div>
+                    <dt>Container name</dt>
+                    <dd>{selectedComputer.runtime.containerName}</dd>
+                  </div>
+                </>
+              ) : null}
               {selectedComputer.profile === "browser" ? (
                 <>
                   <div>

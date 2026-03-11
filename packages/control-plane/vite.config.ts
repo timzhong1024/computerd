@@ -21,6 +21,7 @@ export default defineConfig({
         ...builtinModules,
         ...builtinModules.map((moduleName) => `node:${moduleName}`),
         "dbus-next",
+        "dockerode",
       ],
     },
     target: "es2023",

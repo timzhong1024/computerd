@@ -257,13 +257,14 @@ export function createSystemdRuntime({
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart:
-          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
         workingDirectory:
-          computer.profile === "terminal"
+          computer.profile === "host"
             ? computer.runtime.workingDirectory
-            : browserRuntimePaths.specForComputer(computer).stateDirectory,
-        environment: undefined,
+            : computer.profile === "browser"
+              ? browserRuntimePaths.specForComputer(computer).stateDirectory
+              : undefined,
+        environment: computer.profile === "host" ? computer.runtime.environment : undefined,
         cpuWeight: computer.resources.cpuWeight,
         memoryMaxMiB: computer.resources.memoryMaxMiB,
       };

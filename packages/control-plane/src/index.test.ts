@@ -5,17 +5,18 @@ import type {
   ComputerMetadataStore,
   ComputerRuntimePort,
   PersistedComputer,
-  PersistedTerminalComputer,
+  PersistedHostComputer,
   UnitRuntimeState,
 } from "./systemd/types";
 import {
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
+  UnsupportedComputerFeatureError,
   createControlPlane,
 } from "./index";
 
-test("creates and manages a terminal computer with persisted metadata", async () => {
+test("creates and manages a host computer with persisted metadata", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
   const controlPlane = createControlPlane(
@@ -28,8 +29,8 @@ test("creates and manages a terminal computer with persisted metadata", async ()
   );
 
   const created = await controlPlane.createComputer({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
     resources: {
       cpuWeight: 200,
       memoryMaxMiB: 512,
@@ -38,7 +39,7 @@ test("creates and manages a terminal computer with persisted metadata", async ()
       autostart: true,
     },
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
       workingDirectory: "/workspace",
       environment: {
         FOO: "bar",
@@ -46,25 +47,25 @@ test("creates and manages a terminal computer with persisted metadata", async ()
     },
   });
 
-  expect(created.profile).toBe("terminal");
+  expect(created.profile).toBe("host");
   expect(created.state).toBe("stopped");
   expect(created.resources).toMatchObject({
     cpuWeight: 200,
     memoryMaxMiB: 512,
   });
 
-  const started = await controlPlane.startComputer("lab-terminal");
+  const started = await controlPlane.startComputer("lab-host");
   expect(started.state).toBe("running");
 
-  const stopped = await controlPlane.stopComputer("lab-terminal");
+  const stopped = await controlPlane.stopComputer("lab-host");
   expect(stopped.state).toBe("stopped");
 
-  const restarted = await controlPlane.restartComputer("lab-terminal");
+  const restarted = await controlPlane.restartComputer("lab-host");
   expect(restarted.state).toBe("running");
 
-  const detail = await controlPlane.getComputer("lab-terminal");
+  const detail = await controlPlane.getComputer("lab-host");
   expect(detail.runtime).toMatchObject({
-    execStart: "/usr/bin/bash",
+    command: "/usr/bin/bash",
     workingDirectory: "/workspace",
     environment: {
       FOO: "bar",
@@ -73,7 +74,7 @@ test("creates and manages a terminal computer with persisted metadata", async ()
 
   const list = await controlPlane.listComputers();
   expect(list).toEqual(
-    expect.arrayContaining([expect.objectContaining({ name: "lab-terminal", state: "running" })]),
+    expect.arrayContaining([expect.objectContaining({ name: "lab-host", state: "running" })]),
   );
 });
 
@@ -178,19 +179,17 @@ test("deletes a running computer by stopping runtime and removing metadata", asy
   );
 
   await controlPlane.createComputer({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
     },
   });
-  await controlPlane.startComputer("lab-terminal");
+  await controlPlane.startComputer("lab-host");
 
-  await controlPlane.deleteComputer("lab-terminal");
+  await controlPlane.deleteComputer("lab-host");
 
-  await expect(controlPlane.getComputer("lab-terminal")).rejects.toBeInstanceOf(
-    ComputerNotFoundError,
-  );
+  await expect(controlPlane.getComputer("lab-host")).rejects.toBeInstanceOf(ComputerNotFoundError);
 });
 
 test("returns lightweight host inspect objects", async () => {
@@ -208,18 +207,78 @@ test("returns lightweight host inspect objects", async () => {
 test("development console sessions attach to a local bash shell without requiring running state", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
 
-  await expect(controlPlane.createConsoleSession("starter-terminal")).resolves.toMatchObject({
-    computerName: "starter-terminal",
+  await expect(controlPlane.createConsoleSession("starter-host")).resolves.toMatchObject({
+    computerName: "starter-host",
     protocol: "ttyd",
   });
 
-  const lease = await controlPlane.openConsoleAttach("starter-terminal");
+  const lease = await controlPlane.openConsoleAttach("starter-host");
   expect(lease).toMatchObject({
     command: "/bin/bash",
     args: ["-i", "-l"],
-    computerName: "starter-terminal",
+    computerName: "starter-host",
   });
   lease.release();
+});
+
+test("development container console and exec sessions require a running container", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+
+  await controlPlane.createComputer({
+    name: "workspace-container",
+    profile: "container",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      logs: true,
+    },
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+    },
+  });
+
+  await expect(controlPlane.createConsoleSession("workspace-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.createExecSession("workspace-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openConsoleAttach("workspace-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openExecAttach("workspace-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+
+  await controlPlane.startComputer("workspace-container");
+
+  await expect(controlPlane.createConsoleSession("workspace-container")).resolves.toMatchObject({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+  });
+  await expect(controlPlane.createExecSession("workspace-container")).resolves.toMatchObject({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+  });
+
+  const consoleLease = await controlPlane.openConsoleAttach("workspace-container");
+  expect(consoleLease).toMatchObject({
+    command: "docker",
+    args: ["attach", "development-workspace-container"],
+    computerName: "workspace-container",
+  });
+  consoleLease.release();
+
+  const execLease = await controlPlane.openExecAttach("workspace-container");
+  expect(execLease).toMatchObject({
+    command: "docker",
+    args: ["exec", "-it", "development-workspace-container", "/bin/sh"],
+    computerName: "workspace-container",
+  });
+  execLease.release();
 });
 
 test("rejects duplicate names and unknown computers", async () => {
@@ -234,19 +293,19 @@ test("rejects duplicate names and unknown computers", async () => {
     },
   );
   await controlPlane.createComputer({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
     },
   });
 
   await expect(
     controlPlane.createComputer({
-      name: "lab-terminal",
-      profile: "terminal",
+      name: "lab-host",
+      profile: "host",
       runtime: {
-        execStart: "/usr/bin/bash",
+        command: "/usr/bin/bash",
       },
     }),
   ).rejects.toBeInstanceOf(ComputerConflictError);
@@ -258,7 +317,7 @@ test("creates browser automation, monitor, screenshot, and console sessions from
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
   await metadataStore.putComputer(createBrowserComputerRecord());
-  const terminalRecord = createTerminalComputerRecord();
+  const terminalRecord = createHostComputerRecord();
   await metadataStore.putComputer(terminalRecord);
   await runtime.createPersistentUnit(createBrowserComputerRecord());
   await runtime.createPersistentUnit(terminalRecord);
@@ -277,9 +336,9 @@ test("creates browser automation, monitor, screenshot, and console sessions from
   const audioSession = await controlPlane.createAudioSession("research-browser");
   const automationSession = await controlPlane.createAutomationSession("research-browser");
   const screenshot = await controlPlane.createScreenshot("research-browser");
-  await controlPlane.startComputer("starter-terminal");
-  await ensureSocket("/tmp/computerd-test-terminals", "starter-terminal");
-  const consoleSession = await controlPlane.createConsoleSession("starter-terminal");
+  await controlPlane.startComputer("starter-host");
+  await ensureSocket("/tmp/computerd-test-terminals", "starter-host");
+  const consoleSession = await controlPlane.createConsoleSession("starter-host");
 
   expect(monitorSession).toMatchObject({
     computerName: "research-browser",
@@ -312,24 +371,28 @@ test("creates browser automation, monitor, screenshot, and console sessions from
     mimeType: "image/png",
   });
   expect(consoleSession).toMatchObject({
-    computerName: "starter-terminal",
+    computerName: "starter-host",
     protocol: "ttyd",
     connect: {
       mode: "relative-websocket-path",
-      url: "/api/computers/starter-terminal/console/ws",
+      url: "/api/computers/starter-host/console/ws",
     },
   });
 });
 
-test("waits for terminal console runtime readiness during start", async () => {
+test("waits for host console runtime readiness during start", async () => {
   const metadataStore = createMemoryMetadataStore();
-  const terminalRecord = createTerminalComputerRecord();
+  const terminalRecord = createHostComputerRecord();
   await metadataStore.putComputer(terminalRecord);
   const runtimeDirectory = "/tmp/computerd-delayed-terminals";
   await cleanupSocket(runtimeDirectory, terminalRecord.name);
 
   const runtime: ComputerRuntimePort = {
+    async createContainerComputer() {
+      throw new Error("not implemented");
+    },
     async deleteBrowserRuntimeIdentity() {},
+    async deleteContainerComputer() {},
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
     async createAutomationSession(computer) {
@@ -380,8 +443,7 @@ test("waits for terminal console runtime readiness during start", async () => {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart:
-          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
       };
     },
     async createScreenshot(computer) {
@@ -396,6 +458,9 @@ test("waits for terminal console runtime readiness during start", async () => {
       };
     },
     async deletePersistentUnit() {},
+    async getContainerRuntimeState() {
+      return null;
+    },
     async getRuntimeState() {
       return runtimeState;
     },
@@ -432,6 +497,9 @@ test("waits for terminal console runtime readiness during start", async () => {
     async restartUnit() {
       return runtimeState;
     },
+    async restartContainerComputer() {
+      return runtimeState;
+    },
     async startUnit() {
       setTimeout(() => {
         void ensureSocket(runtimeDirectory, terminalRecord.name);
@@ -439,7 +507,13 @@ test("waits for terminal console runtime readiness during start", async () => {
 
       return runtimeState;
     },
+    async startContainerComputer() {
+      return runtimeState;
+    },
     async stopUnit() {
+      return runtimeState;
+    },
+    async stopContainerComputer() {
       return runtimeState;
     },
     async updateBrowserViewport() {},
@@ -451,7 +525,7 @@ test("waits for terminal console runtime readiness during start", async () => {
     loadState: "loaded",
     activeState: "active",
     subState: "running",
-    execStart: terminalRecord.runtime.execStart,
+    execStart: terminalRecord.runtime.command,
   };
 
   const controlPlane = createControlPlane(
@@ -463,17 +537,17 @@ test("waits for terminal console runtime readiness during start", async () => {
     { metadataStore, runtime },
   );
 
-  const started = await controlPlane.startComputer("starter-terminal");
+  const started = await controlPlane.startComputer("starter-host");
 
   expect(started.state).toBe("running");
-  await expect(controlPlane.createConsoleSession("starter-terminal")).resolves.toMatchObject({
-    computerName: "starter-terminal",
+  await expect(controlPlane.createConsoleSession("starter-host")).resolves.toMatchObject({
+    computerName: "starter-host",
   });
 });
 
 test("rejects sessions for unsupported capabilities", async () => {
   const metadataStore = createMemoryMetadataStore();
-  await metadataStore.putComputer(createTerminalComputerRecord());
+  await metadataStore.putComputer(createHostComputerRecord());
   const controlPlane = createControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
@@ -482,9 +556,9 @@ test("rejects sessions for unsupported capabilities", async () => {
     { metadataStore, runtime: createMemoryRuntime("/tmp/computerd-test-terminals") },
   );
 
-  await expect(controlPlane.createMonitorSession("starter-terminal")).rejects.toBeInstanceOf(Error);
-  await expect(controlPlane.createAudioSession("starter-terminal")).rejects.toBeInstanceOf(Error);
-  await expect(controlPlane.createConsoleSession("starter-terminal")).rejects.toBeInstanceOf(
+  await expect(controlPlane.createMonitorSession("starter-host")).rejects.toBeInstanceOf(Error);
+  await expect(controlPlane.createAudioSession("starter-host")).rejects.toBeInstanceOf(Error);
+  await expect(controlPlane.createConsoleSession("starter-host")).rejects.toBeInstanceOf(
     ComputerConsoleUnavailableError,
   );
 });
@@ -492,7 +566,7 @@ test("rejects sessions for unsupported capabilities", async () => {
 test("acquires and releases a single active console attach", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const terminalRecord = createTerminalComputerRecord();
+  const terminalRecord = createHostComputerRecord();
   await metadataStore.putComputer(terminalRecord);
   await runtime.createPersistentUnit(terminalRecord);
   const controlPlane = createControlPlane(
@@ -503,17 +577,17 @@ test("acquires and releases a single active console attach", async () => {
     },
     { metadataStore, runtime },
   );
-  await controlPlane.startComputer("starter-terminal");
+  await controlPlane.startComputer("starter-host");
 
-  const lease = await controlPlane.openConsoleAttach("starter-terminal");
+  const lease = await controlPlane.openConsoleAttach("starter-host");
   expect(lease.command).toBe("tmux");
-  await expect(controlPlane.openConsoleAttach("starter-terminal")).rejects.toBeInstanceOf(
+  await expect(controlPlane.openConsoleAttach("starter-host")).rejects.toBeInstanceOf(
     ComputerConsoleUnavailableError,
   );
   lease.release();
 
-  await expect(controlPlane.openConsoleAttach("starter-terminal")).resolves.toMatchObject({
-    computerName: "starter-terminal",
+  await expect(controlPlane.openConsoleAttach("starter-host")).resolves.toMatchObject({
+    computerName: "starter-host",
   });
 });
 
@@ -566,12 +640,12 @@ function createBrowserComputerRecord(): PersistedComputer {
   };
 }
 
-function createTerminalComputerRecord(): PersistedTerminalComputer {
+function createHostComputerRecord(): PersistedHostComputer {
   return {
-    name: "starter-terminal",
-    unitName: "computerd-starter-terminal.service",
-    profile: "terminal",
-    description: "Seeded terminal computer",
+    name: "starter-host",
+    unitName: "computerd-starter-host.service",
+    profile: "host",
+    description: "Seeded host computer",
     createdAt: "2026-03-09T08:00:00.000Z",
     lastActionAt: "2026-03-09T08:00:00.000Z",
     access: {
@@ -590,7 +664,7 @@ function createTerminalComputerRecord(): PersistedTerminalComputer {
     },
     lifecycle: {},
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
     },
   };
 }
@@ -600,7 +674,17 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const browserViewports = new Map<string, { width: number; height: number }>();
 
   return {
+    async createContainerComputer(input, unitName) {
+      return {
+        ...input.runtime,
+        containerId: `container-${unitName}`,
+        containerName: unitName,
+      };
+    },
     async deleteBrowserRuntimeIdentity() {},
+    async deleteContainerComputer(computer) {
+      states.delete(computer.unitName);
+    },
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
     async createAutomationSession(computer) {
@@ -668,11 +752,10 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart:
-          computer.profile === "terminal" ? computer.runtime.execStart : "/usr/bin/bash -lc",
+        execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
         workingDirectory:
-          computer.profile === "terminal" ? computer.runtime.workingDirectory : runtimeDirectory,
-        environment: computer.profile === "terminal" ? computer.runtime.environment : undefined,
+          computer.profile === "host" ? computer.runtime.workingDirectory : runtimeDirectory,
+        environment: computer.profile === "host" ? computer.runtime.environment : undefined,
         cpuWeight: computer.resources.cpuWeight,
         memoryMaxMiB: computer.resources.memoryMaxMiB,
       };
@@ -694,6 +777,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async deletePersistentUnit(unitName) {
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
       states.delete(unitName);
+    },
+    async getContainerRuntimeState(computer) {
+      return states.get(computer.unitName) ?? null;
     },
     async getRuntimeState(unitName) {
       return states.get(unitName) ?? null;
@@ -737,6 +823,12 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.subState = "running";
       return state;
     },
+    async restartContainerComputer(computer) {
+      const state = requireState(states, computer.unitName);
+      state.activeState = "active";
+      state.subState = "running";
+      return state;
+    },
     async startUnit(unitName) {
       const state = requireState(states, unitName);
       if (state.execStart !== "/usr/bin/bash -lc") {
@@ -746,9 +838,21 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.subState = "running";
       return state;
     },
+    async startContainerComputer(computer) {
+      const state = requireState(states, computer.unitName);
+      state.activeState = "active";
+      state.subState = "running";
+      return state;
+    },
     async stopUnit(unitName) {
       const state = requireState(states, unitName);
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
+      state.activeState = "inactive";
+      state.subState = "dead";
+      return state;
+    },
+    async stopContainerComputer(computer) {
+      const state = requireState(states, computer.unitName);
       state.activeState = "inactive";
       state.subState = "dead";
       return state;

@@ -67,9 +67,11 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         network: computerNetworkSchema.optional(),
         lifecycle: computerLifecycleSchema.optional(),
         runtime: z.object({
-          execStart: z.string().min(1).optional(),
+          command: z.string().min(1).optional(),
           workingDirectory: z.string().optional(),
           environment: z.record(z.string(), z.string()).optional(),
+          provider: z.literal("docker").optional(),
+          image: z.string().optional(),
           browser: createBrowserRuntimeSchema.shape.browser.optional(),
           persistentProfile: z.boolean().optional(),
           viewport: createBrowserRuntimeSchema.shape.viewport.optional(),

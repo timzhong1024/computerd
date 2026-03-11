@@ -1,3 +1,4 @@
+import { builtinModules } from "node:module";
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
@@ -18,6 +19,11 @@ export default defineConfig({
     ssr: "src/index.ts",
     target: "node24",
     rollupOptions: {
+      external: [
+        ...builtinModules,
+        ...builtinModules.map((moduleName) => `node:${moduleName}`),
+        "dockerode",
+      ],
       output: {
         entryFileNames: "server.js",
       },

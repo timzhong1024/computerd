@@ -12,11 +12,11 @@ import { createComputerdMcpServer } from "./index";
 const connectedClients = new Set<Client>();
 const connectedServers = new Set<ReturnType<typeof createComputerdMcpServer>>();
 
-function createComputerDetail(name = "lab-terminal"): ComputerDetail {
+function createComputerDetail(name = "lab-host"): ComputerDetail {
   return {
     name,
     unitName: `computerd-${name}.service`,
-    profile: "terminal",
+    profile: "host",
     state: "running",
     createdAt: "2026-03-09T08:00:00.000Z",
     access: {
@@ -50,7 +50,7 @@ function createComputerDetail(name = "lab-terminal"): ComputerDetail {
       primaryUnit: `computerd-${name}.service`,
     },
     runtime: {
-      execStart: "/usr/bin/bash",
+      command: "/usr/bin/bash",
     },
   };
 }
@@ -181,18 +181,18 @@ test("invokes handlers and returns JSON payloads", async () => {
   const result = await client.callTool({
     name: "get_computer",
     arguments: {
-      name: "lab-terminal",
+      name: "lab-host",
     },
   });
   const content = result.content as Array<{ type: string; text?: string }>;
 
-  expect(getComputer).toHaveBeenCalledWith("lab-terminal");
+  expect(getComputer).toHaveBeenCalledWith("lab-host");
   expect(result.isError).not.toBe(true);
   if (content[0]?.type !== "text" || typeof content[0].text !== "string") {
     throw new TypeError("Expected a text MCP response");
   }
 
   await expect(JSON.parse(content[0].text)).toMatchObject({
-    name: "lab-terminal",
+    name: "lab-host",
   });
 });

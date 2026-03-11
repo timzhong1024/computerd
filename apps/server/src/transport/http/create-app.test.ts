@@ -39,7 +39,9 @@ test("serves computer and host unit APIs", async () => {
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
+    createExecSession: controlPlane.createExecSession,
     openConsoleAttach: controlPlane.openConsoleAttach,
+    openExecAttach: controlPlane.openExecAttach,
     openAutomationAttach: controlPlane.openAutomationAttach,
     openAudioStream: async (name) => ({
       computerName: name,
@@ -92,10 +94,10 @@ test("serves computer and host unit APIs", async () => {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      name: "lab-terminal",
-      profile: "terminal",
+      name: "lab-host",
+      profile: "host",
       runtime: {
-        execStart: "/usr/bin/bash",
+        command: "/usr/bin/bash",
       },
     }),
   });
@@ -103,15 +105,15 @@ test("serves computer and host unit APIs", async () => {
 
   expect(createResponse.status).toBe(201);
   expect(created).toMatchObject({
-    name: "lab-terminal",
-    profile: "terminal",
+    name: "lab-host",
+    profile: "host",
   });
 
   const listResponse = await fetch(`${baseUrl}/api/computers`);
   const list = await listResponse.json();
-  expect(list).toEqual(expect.arrayContaining([expect.objectContaining({ name: "lab-terminal" })]));
+  expect(list).toEqual(expect.arrayContaining([expect.objectContaining({ name: "lab-host" })]));
 
-  const startResponse = await fetch(`${baseUrl}/api/computers/lab-terminal/start`, {
+  const startResponse = await fetch(`${baseUrl}/api/computers/lab-host/start`, {
     method: "POST",
   });
   expect(startResponse.status).toBe(200);
@@ -126,7 +128,7 @@ test("serves computer and host unit APIs", async () => {
   );
 
   const monitorSessionResponse = await fetch(
-    `${baseUrl}/api/computers/starter-terminal/monitor-sessions`,
+    `${baseUrl}/api/computers/starter-host/monitor-sessions`,
     {
       method: "POST",
     },
@@ -150,14 +152,14 @@ test("serves computer and host unit APIs", async () => {
   });
 
   const consoleSessionResponse = await fetch(
-    `${baseUrl}/api/computers/starter-terminal/console-sessions`,
+    `${baseUrl}/api/computers/starter-host/console-sessions`,
     {
       method: "POST",
     },
   );
   expect(consoleSessionResponse.status).toBe(200);
   await expect(consoleSessionResponse.json()).resolves.toMatchObject({
-    computerName: "starter-terminal",
+    computerName: "starter-host",
     protocol: "ttyd",
   });
 
@@ -243,13 +245,13 @@ test("serves computer and host unit APIs", async () => {
     },
   });
 
-  const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-terminal/console/ws`);
+  const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-host/console/ws`);
   expect(consoleWsResponse.status).toBe(426);
 
   const monitorWsResponse = await fetch(`${baseUrl}/api/computers/research-browser/monitor/ws`);
   expect(monitorWsResponse.status).toBe(426);
 
-  const deleteResponse = await fetch(`${baseUrl}/api/computers/lab-terminal`, {
+  const deleteResponse = await fetch(`${baseUrl}/api/computers/lab-host`, {
     method: "DELETE",
   });
   expect(deleteResponse.status).toBe(204);
@@ -276,7 +278,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
-        path: "/api/computers/lab-terminal/start",
+        path: "/api/computers/lab-host/start",
         statusCode: 200,
       }),
       expect.objectContaining({
@@ -294,7 +296,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
-        path: "/api/computers/starter-terminal/console-sessions",
+        path: "/api/computers/starter-host/console-sessions",
         statusCode: 200,
       }),
       expect.objectContaining({
@@ -330,7 +332,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "GET",
-        path: "/api/computers/starter-terminal/console/ws",
+        path: "/api/computers/starter-host/console/ws",
         statusCode: 426,
       }),
       expect.objectContaining({
@@ -342,7 +344,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "DELETE",
-        path: "/api/computers/lab-terminal",
+        path: "/api/computers/lab-host",
         statusCode: 204,
       }),
     ]),
@@ -358,7 +360,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request_error",
         method: "POST",
-        path: "/api/computers/starter-terminal/monitor-sessions",
+        path: "/api/computers/starter-host/monitor-sessions",
       }),
       expect.objectContaining({
         type: "http_request_error",

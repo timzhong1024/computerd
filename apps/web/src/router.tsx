@@ -32,7 +32,13 @@ const consoleRoute = createRoute({
   component: ConsoleRouteComponent,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute, monitorRoute, consoleRoute]);
+const execRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/computers/$name/exec",
+  component: ExecRouteComponent,
+});
+
+const routeTree = rootRoute.addChildren([homeRoute, monitorRoute, consoleRoute, execRoute]);
 
 export function createAppRouter(history: RouterHistory) {
   return createRouter({
@@ -55,7 +61,12 @@ function MonitorRouteComponent() {
 
 function ConsoleRouteComponent() {
   const { name } = consoleRoute.useParams();
-  return <ConsolePage computerName={name} />;
+  return <ConsolePage computerName={name} mode="console" />;
+}
+
+function ExecRouteComponent() {
+  const { name } = execRoute.useParams();
+  return <ConsolePage computerName={name} mode="exec" />;
 }
 
 declare module "@tanstack/react-router" {

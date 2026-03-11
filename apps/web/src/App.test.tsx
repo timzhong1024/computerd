@@ -20,7 +20,7 @@ vi.mock("./transport/console-client", () => ({
 interface FakeComputer {
   name: string;
   unitName: string;
-  profile: "terminal" | "browser";
+  profile: "host" | "browser";
   state: "stopped" | "running";
   runtime: Record<string, unknown>;
 }
@@ -34,7 +34,7 @@ const hostUnits = [
     capabilities: {
       canInspect: true,
     },
-    execStart: "/usr/bin/dockerd",
+    command: "/usr/bin/dockerd",
     status: {
       activeState: "active",
       subState: "running",
@@ -50,12 +50,12 @@ let openSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   computers = [
     {
-      name: "starter-terminal",
-      unitName: "computerd-starter-terminal.service",
-      profile: "terminal",
+      name: "starter-host",
+      unitName: "computerd-starter-host.service",
+      profile: "host",
       state: "stopped",
       runtime: {
-        execStart: "/usr/bin/bash",
+        command: "/usr/bin/bash",
       },
     },
     {
@@ -292,12 +292,12 @@ afterEach(() => {
 test("renders computer inventory, host inspect, and monitor action links", async () => {
   renderApp("/");
 
-  expect(await screen.findAllByText("starter-terminal")).toHaveLength(2);
+  expect(await screen.findAllByText("starter-host")).toHaveLength(2);
   expect(await screen.findAllByText("docker.service")).toHaveLength(1);
   expect(
     screen.getByText("A computer control plane for homelab and agent workflows."),
   ).toBeInTheDocument();
-  expect(await screen.findByText("computerd-starter-terminal.service")).toBeInTheDocument();
+  expect(await screen.findByText("computerd-starter-host.service")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /research-browser/i }));
   expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open browser");
@@ -332,11 +332,11 @@ test("creates a browser computer and refreshes inventory", async () => {
 test("deletes a selected computer and refreshes the inventory", async () => {
   renderApp("/");
 
-  fireEvent.click(await screen.findByRole("button", { name: /starter-terminal/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /starter-host/i }));
   fireEvent.click(await screen.findByTestId("computer-action-delete"));
 
   await waitFor(() => {
-    expect(screen.queryByRole("button", { name: /starter-terminal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /starter-host/i })).not.toBeInTheDocument();
   });
   expect(screen.getByRole("button", { name: /research-browser/i })).toBeInTheDocument();
 });
@@ -439,14 +439,14 @@ test("surfaces monitor session request failures", async () => {
 });
 
 test("renders console placeholder route", async () => {
-  renderApp("/computers/starter-terminal/console");
+  renderApp("/computers/starter-host/console");
 
   expect(await screen.findByText("Console shell")).toBeInTheDocument();
   expect(await screen.findByTestId("console-shell")).toBeInTheDocument();
   expect(screen.getByTestId("console-state")).toHaveTextContent("connecting");
   expect(connectConsoleClient).toHaveBeenCalledWith(
     expect.objectContaining({
-      computerName: "starter-terminal",
+      computerName: "starter-host",
       onStateChange: expect.any(Function),
     }),
   );
@@ -468,7 +468,7 @@ function createComputerSummary(computer: FakeComputer) {
     state: computer.state,
     createdAt: "2026-03-09T08:00:00.000Z",
     access:
-      computer.profile === "terminal"
+      computer.profile === "host"
         ? {
             console: {
               mode: "pty",
@@ -487,7 +487,7 @@ function createComputerSummary(computer: FakeComputer) {
       canStart: computer.state === "stopped",
       canStop: computer.state === "running",
       canRestart: computer.state === "running",
-      consoleAvailable: computer.profile === "terminal",
+      consoleAvailable: computer.profile === "host",
       browserAvailable: computer.profile === "browser",
       automationAvailable: computer.profile === "browser" && computer.state === "running",
       screenshotAvailable: computer.profile === "browser" && computer.state === "running",

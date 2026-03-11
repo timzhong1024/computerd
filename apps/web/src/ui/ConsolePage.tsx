@@ -4,9 +4,10 @@ import { connectConsoleClient, type ConsoleConnectionState } from "../transport/
 
 interface ConsolePageProps {
   computerName: string;
+  mode?: "console" | "exec";
 }
 
-export function ConsolePage({ computerName }: ConsolePageProps) {
+export function ConsolePage({ computerName, mode = "console" }: ConsolePageProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ConsoleConnectionState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export function ConsolePage({ computerName }: ConsolePageProps) {
 
     const client = connectConsoleClient({
       computerName,
+      mode,
       onError: setError,
       onStateChange: (nextState) => {
         setState(nextState);
@@ -31,15 +33,19 @@ export function ConsolePage({ computerName }: ConsolePageProps) {
     return () => {
       client.dispose();
     };
-  }, [computerName]);
+  }, [computerName, mode]);
 
   return (
     <main className="app-shell monitor-shell">
       <section className="hero monitor-hero">
         <div>
-          <p className="eyebrow">Computer console</p>
+          <p className="eyebrow">Computer {mode}</p>
           <h1>{computerName}</h1>
-          <p className="lede">Interactive terminal surface backed by a tmux attach bridge.</p>
+          <p className="lede">
+            {mode === "exec"
+              ? "Interactive container exec shell bridged over websocket."
+              : "Interactive host or container console bridged over websocket."}
+          </p>
         </div>
         <div className="surface-actions">
           <Link className="surface-link surface-link-secondary" to="/">
@@ -63,7 +69,9 @@ export function ConsolePage({ computerName }: ConsolePageProps) {
           </span>
         </div>
         <p className="monitor-copy">
-          Console attach requests are bridged over websocket into a tmux-backed terminal session.
+          {mode === "exec"
+            ? "Exec attach requests open a temporary /bin/sh shell inside the running container."
+            : "Console attach requests are bridged over websocket into the computer's primary interactive shell."}
         </p>
         {error ? <p role="alert">{error}</p> : null}
         <div ref={shellRef} className="console-shell" data-testid="console-shell" />

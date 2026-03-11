@@ -11,6 +11,7 @@ import {
   parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
+  parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
   parseComputerSummaries,
@@ -22,6 +23,7 @@ import {
   type ComputerAudioSession,
   type ComputerConsoleSession,
   type ComputerDetail,
+  type ComputerExecSession,
   type ComputerMonitorSession,
   type ComputerScreenshot,
   type ComputerSummary,
@@ -53,7 +55,9 @@ interface CreateAppOptions {
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
+  createExecSession: (name: string) => Promise<ComputerExecSession>;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
+  openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   listComputers: () => Promise<ComputerSummary[]>;
@@ -79,7 +83,9 @@ export function createApp({
   createAudioSession,
   handleMcpRequest,
   createConsoleSession,
+  createExecSession,
   openConsoleAttach,
+  openExecAttach,
   openAutomationAttach,
   openAudioStream,
   listComputers,
@@ -159,7 +165,7 @@ export function createApp({
       }
 
       const computerSessionMatch =
-        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation|audio)-sessions$/.exec(
+        /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|exec|automation|audio)-sessions$/.exec(
           url.pathname,
         );
       if (request.method === "POST" && computerSessionMatch?.groups) {
@@ -191,6 +197,11 @@ export function createApp({
           return;
         }
 
+        if (matchedSurface === "exec") {
+          sendJson(response, 200, parseComputerExecSession(await createExecSession(name)));
+          return;
+        }
+
         sendJson(response, 200, parseComputerConsoleSession(await createConsoleSession(name)));
         return;
       }
@@ -204,7 +215,7 @@ export function createApp({
 
       if (request.method === "GET" && url.pathname.startsWith("/api/computers/")) {
         const websocketStubMatch =
-          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|automation)\/ws$/.exec(
+          /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|exec|automation)\/ws$/.exec(
             url.pathname,
           );
         if (websocketStubMatch) {
@@ -312,6 +323,7 @@ export function createApp({
       socket,
       head,
       openConsoleAttach,
+      openExecAttach,
       openAutomationAttach,
       openMonitorAttach,
       websocketServer,
@@ -391,6 +403,7 @@ async function handleUpgradeRequest({
   socket,
   head,
   openConsoleAttach,
+  openExecAttach,
   openAutomationAttach,
   openMonitorAttach,
   websocketServer,
@@ -399,6 +412,7 @@ async function handleUpgradeRequest({
   socket: Duplex;
   head: Buffer;
   openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
+  openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   websocketServer: WebSocketServer;
@@ -406,7 +420,7 @@ async function handleUpgradeRequest({
   const requestLog = createRequestLogContext(request);
   const url = new URL(request.url ?? "/", "http://localhost");
   const upgradeMatch =
-    /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>console|monitor|automation)\/ws$/.exec(
+    /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>console|exec|monitor|automation)\/ws$/.exec(
       url.pathname,
     );
   if (!upgradeMatch?.groups?.name || !upgradeMatch.groups.surface) {
@@ -421,6 +435,15 @@ async function handleUpgradeRequest({
   try {
     if (surface === "console") {
       const lease = await openConsoleAttach(computerName);
+      websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
+        logUpgradeRequestComplete(requestLog, 101);
+        bridgeConsoleWebSocket(websocket, lease);
+      });
+      return;
+    }
+
+    if (surface === "exec") {
+      const lease = await openExecAttach(computerName);
       websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
         logUpgradeRequestComplete(requestLog, 101);
         bridgeConsoleWebSocket(websocket, lease);

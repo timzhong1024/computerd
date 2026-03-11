@@ -34,7 +34,7 @@ interface ManagedThing {
 interface ComputerSummary {
   name: string;
   unitName: string;
-  profile: "terminal" | "browser";
+  profile: "host" | "browser" | "container";
   state: "stopped" | "running";
 }
 

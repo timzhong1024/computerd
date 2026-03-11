@@ -5,8 +5,8 @@
 最简单的 systemd 封装用法示例：
 
 - 通过 `createControlPlane()` 创建一个 control plane
-- 创建一个 `terminal` 类型的 persistent `computer`
-- 将 `ExecStart` 设为 `/usr/bin/bash -i -l`
+- 创建一个 `host` 类型的 persistent `computer`
+- 将 `runtime.command` 设为 `/usr/bin/bash -i -l`
 - 执行 `start -> get detail -> stop -> delete`
 
 运行方式：

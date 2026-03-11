@@ -1,7 +1,7 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
-import type { PersistedTerminalComputer, TerminalConsoleRuntimeSpec } from "./types";
+import type { HostConsoleRuntimeSpec, PersistedHostComputer } from "./types";
 
 export interface ConsoleRuntimePathsOptions {
   runtimeDirectory: string;
@@ -10,7 +10,7 @@ export interface ConsoleRuntimePathsOptions {
 export function createConsoleRuntimePaths({ runtimeDirectory }: ConsoleRuntimePathsOptions) {
   return {
     runtimeDirectory,
-    specForComputer(computer: Pick<PersistedTerminalComputer, "name">): TerminalConsoleRuntimeSpec {
+    specForComputer(computer: Pick<PersistedHostComputer, "name">): HostConsoleRuntimeSpec {
       const directoryPath = join(runtimeDirectory, slugify(computer.name));
       return {
         directoryPath,
@@ -18,16 +18,16 @@ export function createConsoleRuntimePaths({ runtimeDirectory }: ConsoleRuntimePa
         socketPath: join(directoryPath, "tmux.sock"),
       };
     },
-    async ensureComputerDirectory(computer: Pick<PersistedTerminalComputer, "name">) {
+    async ensureComputerDirectory(computer: Pick<PersistedHostComputer, "name">) {
       const spec = this.specForComputer(computer);
       await mkdir(spec.directoryPath, { recursive: true });
       return spec;
     },
-    async cleanupComputerDirectory(computer: Pick<PersistedTerminalComputer, "name">) {
+    async cleanupComputerDirectory(computer: Pick<PersistedHostComputer, "name">) {
       const spec = this.specForComputer(computer);
       await rm(spec.directoryPath, { recursive: true, force: true });
     },
-    async hasSocket(computer: Pick<PersistedTerminalComputer, "name">) {
+    async hasSocket(computer: Pick<PersistedHostComputer, "name">) {
       const spec = this.specForComputer(computer);
       try {
         await access(spec.socketPath, constants.R_OK | constants.W_OK);

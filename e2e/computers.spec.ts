@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("creates and starts a terminal computer", async ({ page }) => {
+test("creates and starts a host computer", async ({ page }) => {
   await page.goto("/");
-  const computerName = `lab-terminal-${Date.now()}`;
+  const computerName = `lab-host-${Date.now()}`;
 
   await page.getByLabel("Name").fill(computerName);
   await page.getByRole("button", { name: "Create computer" }).click();
@@ -40,9 +40,9 @@ test("creates and opens a browser computer", async ({ page }) => {
   await expect(popup.getByTestId("novnc-shell")).toBeVisible();
 });
 
-test("deletes a created terminal computer", async ({ page }) => {
+test("deletes a created host computer", async ({ page }) => {
   await page.goto("/");
-  const computerName = `delete-terminal-${Date.now()}`;
+  const computerName = `delete-host-${Date.now()}`;
 
   await page.getByLabel("Name").fill(computerName);
   await page.getByRole("button", { name: "Create computer" }).click();

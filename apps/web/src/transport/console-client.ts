@@ -1,6 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { createConsoleSession } from "./computer-sessions";
+import { createConsoleSession, createExecSession } from "./computer-sessions";
+import type { ComputerConsoleSession, ComputerExecSession } from "@computerd/core";
 
 export interface ConsoleClientHandle {
   dispose: () => void;
@@ -10,6 +11,7 @@ export type ConsoleConnectionState = "connecting" | "connected" | "disconnected"
 
 interface ConnectConsoleClientOptions {
   computerName: string;
+  mode?: "console" | "exec";
   onError?: (message: string) => void;
   onStateChange?: (state: ConsoleConnectionState) => void;
   target: HTMLDivElement;
@@ -17,6 +19,7 @@ interface ConnectConsoleClientOptions {
 
 export function connectConsoleClient({
   computerName,
+  mode = "console",
   onError,
   onStateChange,
   target,
@@ -46,9 +49,9 @@ export function connectConsoleClient({
   terminal.open(target);
   fitAddon.fit();
 
-  terminal.writeln(`computerd console shell prepared for ${computerName}`);
+  terminal.writeln(`computerd ${mode} shell prepared for ${computerName}`);
   terminal.writeln("");
-  terminal.writeln("$ requesting console session");
+  terminal.writeln(`$ requesting ${mode} session`);
 
   let websocket: WebSocket | null = null;
   const resizeObserver = new ResizeObserver(() => {
@@ -101,7 +104,10 @@ export function connectConsoleClient({
 
   async function connect() {
     try {
-      const session = await createConsoleSession(computerName);
+      const session =
+        mode === "exec"
+          ? await createExecSession(computerName)
+          : await createConsoleSession(computerName);
       if (disposed) {
         return;
       }
@@ -120,7 +126,7 @@ export function connectConsoleClient({
         }
 
         if (payload.type === "ready") {
-          terminal.writeln("$ console attached");
+          terminal.writeln(`$ ${mode} attached`);
           terminal.focus();
           updateState("connected");
           return;
@@ -158,7 +164,7 @@ export function connectConsoleClient({
   }
 }
 
-function buildConsoleWebSocketUrl(session: Awaited<ReturnType<typeof createConsoleSession>>) {
+function buildConsoleWebSocketUrl(session: ComputerConsoleSession | ComputerExecSession) {
   const baseUrl =
     session.connect.mode === "websocket-url"
       ? new URL(session.connect.url)
