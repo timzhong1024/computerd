@@ -51,7 +51,11 @@ export function createDockerRuntime({
           "computerd.profile": "container",
         },
       } satisfies Parameters<Docker["createContainer"]>[0];
-      const container = await createContainerWithAutoPull(dockerClient, input.runtime.image, createOptions);
+      const container = await createContainerWithAutoPull(
+        dockerClient,
+        input.runtime.image,
+        createOptions,
+      );
 
       return {
         ...input.runtime,
@@ -170,17 +174,14 @@ async function requireContainerRuntimeState(docker: Docker, computer: PersistedC
 async function pullImage(docker: Docker, image: string) {
   const stream = await docker.pull(image);
   await new Promise<void>((resolve, reject) => {
-    docker.modem.followProgress(
-      stream,
-      (error: Error | null) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+    docker.modem.followProgress(stream, (error: Error | null) => {
+      if (error) {
+        reject(error);
+        return;
+      }
 
-        resolve();
-      },
-    );
+      resolve();
+    });
   });
 }
 
