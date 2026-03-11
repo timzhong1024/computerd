@@ -34,7 +34,7 @@ export function createDockerRuntime({
     async createContainerComputer(input, unitName) {
       const containerName = unitName.replace(/\.service$/, "");
       const command = resolveContainerCommand(input);
-      const container = await dockerClient.createContainer({
+      const createOptions = {
         name: containerName,
         Image: input.runtime.image,
         Cmd: command,
@@ -50,7 +50,8 @@ export function createDockerRuntime({
           "computerd.computer.name": input.name,
           "computerd.profile": "container",
         },
-      });
+      } satisfies Parameters<Docker["createContainer"]>[0];
+      const container = await createContainerWithAutoPull(dockerClient, input.runtime.image, createOptions);
 
       return {
         ...input.runtime,
@@ -113,6 +114,23 @@ export function createDockerRuntime({
   };
 }
 
+async function createContainerWithAutoPull(
+  docker: Docker,
+  image: string,
+  options: Parameters<Docker["createContainer"]>[0],
+) {
+  try {
+    return await docker.createContainer(options);
+  } catch (error: unknown) {
+    if (!isMissingImageError(error)) {
+      throw error;
+    }
+
+    await pullImage(docker, image);
+    return await docker.createContainer(options);
+  }
+}
+
 function defaultContainerCommand(input: CreateContainerComputerInput) {
   if (input.access?.console?.mode === "pty") {
     return "/bin/sh -i";
@@ -149,6 +167,23 @@ async function requireContainerRuntimeState(docker: Docker, computer: PersistedC
   return toUnitRuntimeState(computer, inspection);
 }
 
+async function pullImage(docker: Docker, image: string) {
+  const stream = await docker.pull(image);
+  await new Promise<void>((resolve, reject) => {
+    docker.modem.followProgress(
+      stream,
+      (error: Error | null) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      },
+    );
+  });
+}
+
 function toUnitRuntimeState(
   computer: PersistedContainerComputer,
   inspection: Awaited<ReturnType<Docker.Container["inspect"]>>,
@@ -183,6 +218,15 @@ function fromDockerEnvironment(environment: string[] | undefined) {
 
 function isMissingContainerError(error: unknown) {
   return error instanceof Error && /no such container/i.test(error.message);
+}
+
+function isMissingImageError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (/no such image/i.test(error.message) ||
+      /not found: manifest unknown/i.test(error.message) ||
+      /pull access denied/i.test(error.message))
+  );
 }
 
 function looksLikeAlreadyStartedError(error: unknown) {
