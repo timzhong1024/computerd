@@ -131,7 +131,9 @@ export function HomePage() {
                     },
                     logs: true,
                   }
-                : undefined,
+                : {
+                    logs: true,
+                  },
               runtime: {
                 ...(form.command.length > 0 ? { command: form.command } : {}),
                 ...(form.workingDirectory.length > 0
@@ -151,7 +153,9 @@ export function HomePage() {
                       },
                       logs: true,
                     }
-                  : undefined,
+                  : {
+                      logs: true,
+                    },
                 runtime: {
                   provider: "docker" as const,
                   image: form.image,

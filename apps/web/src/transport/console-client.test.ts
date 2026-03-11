@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import { connectConsoleClient } from "./console-client";
-import { createConsoleSession } from "./computer-sessions";
+import { createConsoleSession, createExecSession } from "./computer-sessions";
 
 const fitMock = vi.fn();
 
@@ -128,6 +128,7 @@ vi.mock("@xterm/xterm", () => ({
 
 vi.mock("./computer-sessions", () => ({
   createConsoleSession: vi.fn(),
+  createExecSession: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -136,6 +137,7 @@ beforeEach(() => {
   fakeSockets = [];
   fakeTerminal = new FakeTerminal();
   vi.mocked(createConsoleSession).mockReset();
+  vi.mocked(createExecSession).mockReset();
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.stubGlobal("WebSocket", FakeWebSocket);
 });
@@ -218,4 +220,32 @@ test("surfaces session request failures as terminal errors", async () => {
   expect(states).toEqual(["connecting", "error"]);
   expect(errors).toEqual(["console unavailable"]);
   expect(fakeTerminal.writes.join("")).toContain("$ error: console unavailable");
+});
+
+test("requests exec sessions when connecting in exec mode", async () => {
+  vi.mocked(createExecSession).mockResolvedValue({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+    connect: {
+      mode: "relative-websocket-path",
+      url: "/api/computers/workspace-container/exec/ws",
+    },
+    authorization: {
+      mode: "none",
+    },
+  });
+
+  const target = document.createElement("div");
+
+  connectConsoleClient({
+    computerName: "workspace-container",
+    mode: "exec",
+    target,
+  });
+
+  await Promise.resolve();
+
+  expect(createExecSession).toHaveBeenCalledWith("workspace-container");
+  expect(createConsoleSession).not.toHaveBeenCalled();
+  expect(fakeSockets[0]?.url).toBe("ws://localhost:3000/api/computers/workspace-container/exec/ws");
 });

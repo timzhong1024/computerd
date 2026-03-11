@@ -20,8 +20,9 @@ vi.mock("./transport/console-client", () => ({
 interface FakeComputer {
   name: string;
   unitName: string;
-  profile: "host" | "browser";
+  profile: "host" | "browser" | "container";
   state: "stopped" | "running";
+  access?: Record<string, unknown>;
   runtime: Record<string, unknown>;
 }
 
@@ -452,6 +453,32 @@ test("renders console placeholder route", async () => {
   );
 });
 
+test("shows exec shell without console link for exec-only containers", async () => {
+  computers.unshift({
+    name: "workspace-container",
+    unitName: "docker:workspace-container",
+    profile: "container",
+    state: "running",
+    access: {
+      logs: true,
+    },
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+      containerId: "container-123",
+      containerName: "workspace-container",
+    },
+  });
+
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /workspace-container/i }));
+
+  expect(await screen.findByTestId("open-exec-link")).toBeInTheDocument();
+  expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
+});
+
 function renderApp(initialPath: string) {
   const history = createMemoryHistory({
     initialEntries: [initialPath],
@@ -468,7 +495,8 @@ function createComputerSummary(computer: FakeComputer) {
     state: computer.state,
     createdAt: "2026-03-09T08:00:00.000Z",
     access:
-      computer.profile === "host"
+      computer.access ??
+      (computer.profile === "host"
         ? {
             console: {
               mode: "pty",
@@ -476,18 +504,29 @@ function createComputerSummary(computer: FakeComputer) {
             },
             logs: true,
           }
-        : {
-            display: {
-              mode: "virtual-display",
-            },
-            logs: true,
-          },
+        : computer.profile === "container"
+          ? {
+              console: {
+                mode: "pty",
+                writable: true,
+              },
+              logs: true,
+            }
+          : {
+              display: {
+                mode: "virtual-display",
+              },
+              logs: true,
+            }),
     capabilities: {
       canInspect: true,
       canStart: computer.state === "stopped",
       canStop: computer.state === "running",
       canRestart: computer.state === "running",
-      consoleAvailable: computer.profile === "host",
+      consoleAvailable:
+        computer.profile === "host" ||
+        (computer.profile === "container" &&
+          (computer.access?.console as { mode?: string } | undefined)?.mode === "pty"),
       browserAvailable: computer.profile === "browser",
       automationAvailable: computer.profile === "browser" && computer.state === "running",
       screenshotAvailable: computer.profile === "browser" && computer.state === "running",

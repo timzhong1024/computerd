@@ -43,8 +43,8 @@ export function ConsolePage({ computerName, mode = "console" }: ConsolePageProps
           <h1>{computerName}</h1>
           <p className="lede">
             {mode === "exec"
-              ? "Interactive container exec shell bridged over websocket."
-              : "Interactive host or container console bridged over websocket."}
+              ? "Interactive debug shell opened with docker exec over websocket."
+              : "Interactive console attached to the computer's primary process/stdin over websocket."}
           </p>
         </div>
         <div className="surface-actions">
@@ -70,8 +70,8 @@ export function ConsolePage({ computerName, mode = "console" }: ConsolePageProps
         </div>
         <p className="monitor-copy">
           {mode === "exec"
-            ? "Exec attach requests open a temporary /bin/sh shell inside the running container."
-            : "Console attach requests are bridged over websocket into the computer's primary interactive shell."}
+            ? "Exec opens a fresh /bin/sh inside the running container for debugging; it does not attach to the main process."
+            : "Console attaches to the computer's primary interactive process/stdin rather than starting a new shell."}
         </p>
         {error ? <p role="alert">{error}</p> : null}
         <div ref={shellRef} className="console-shell" data-testid="console-shell" />

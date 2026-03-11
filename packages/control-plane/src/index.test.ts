@@ -281,6 +281,86 @@ test("development container console and exec sessions require a running containe
   execLease.release();
 });
 
+test("development containers without console access still allow exec sessions", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+
+  await controlPlane.createComputer({
+    name: "exec-only-container",
+    profile: "container",
+    access: {
+      logs: true,
+    },
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+    },
+  });
+
+  await expect(controlPlane.createConsoleSession("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openConsoleAttach("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.createExecSession("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openExecAttach("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+
+  await controlPlane.startComputer("exec-only-container");
+
+  await expect(controlPlane.createConsoleSession("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openConsoleAttach("exec-only-container")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.createExecSession("exec-only-container")).resolves.toMatchObject({
+    computerName: "exec-only-container",
+    protocol: "ttyd",
+  });
+
+  const execLease = await controlPlane.openExecAttach("exec-only-container");
+  expect(execLease).toMatchObject({
+    command: "docker",
+    args: ["exec", "-it", "development-exec-only-container", "/bin/sh"],
+    computerName: "exec-only-container",
+  });
+  execLease.release();
+});
+
+test("rejects exec sessions for non-container computers", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  await metadataStore.putComputer(createHostComputerRecord());
+  await metadataStore.putComputer(createBrowserComputerRecord());
+  await runtime.createPersistentUnit(createHostComputerRecord());
+  await runtime.createPersistentUnit(createBrowserComputerRecord());
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+    },
+    { metadataStore, runtime },
+  );
+
+  await expect(controlPlane.createExecSession("starter-host")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openExecAttach("starter-host")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.createExecSession("research-browser")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+  await expect(controlPlane.openExecAttach("research-browser")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+});
+
 test("rejects duplicate names and unknown computers", async () => {
   const controlPlane = createControlPlane(
     {
