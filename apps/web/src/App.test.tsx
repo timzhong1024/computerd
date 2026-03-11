@@ -199,6 +199,27 @@ beforeEach(() => {
 
       if (
         url.startsWith("/api/computers/") &&
+        url.endsWith("/exec-sessions") &&
+        method === "POST"
+      ) {
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/exec-sessions".length),
+        );
+        return jsonResponse({
+          computerName: name,
+          protocol: "ttyd",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/exec/ws`,
+          },
+          authorization: {
+            mode: "none",
+          },
+        });
+      }
+
+      if (
+        url.startsWith("/api/computers/") &&
         url.endsWith("/automation-sessions") &&
         method === "POST"
       ) {
@@ -253,7 +274,8 @@ beforeEach(() => {
         const body = JSON.parse(String(init?.body));
         const nextComputer: FakeComputer = {
           name: body.name,
-          unitName: `computerd-${body.name}.service`,
+          unitName:
+            body.profile === "container" ? `docker:${body.name}` : `computerd-${body.name}.service`,
           profile: body.profile,
           state: "stopped",
           runtime:
@@ -262,7 +284,13 @@ beforeEach(() => {
                   ...body.runtime,
                   runtimeUser: `computerd-b-${body.name}`,
                 }
-              : body.runtime,
+              : body.profile === "container"
+                ? {
+                    ...body.runtime,
+                    containerId: `development-${body.name}`,
+                    containerName: body.name,
+                  }
+                : body.runtime,
         };
         computers = [...computers, nextComputer];
         return jsonResponse(createComputerDetail(nextComputer), 201);
@@ -328,6 +356,24 @@ test("creates a browser computer and refreshes inventory", async () => {
   await waitFor(() => {
     expect(screen.getByText(/chromium · profile persistent/i)).toBeInTheDocument();
   });
+});
+
+test("creates a container computer and shows exec shell affordance", async () => {
+  renderApp("/");
+
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "lab-container" },
+  });
+  fireEvent.change(screen.getByLabelText("Profile"), {
+    target: { value: "container" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create computer" }));
+
+  expect(await screen.findByRole("button", { name: /lab-container/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "lab-container" })).toBeInTheDocument();
+  expect(screen.getByText(/docker · ubuntu:24.04/i)).toBeInTheDocument();
+  expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
+  expect(screen.getByTestId("open-exec-link")).toBeInTheDocument();
 });
 
 test("deletes a selected computer and refreshes the inventory", async () => {
@@ -514,6 +560,21 @@ test("hides lifecycle and surface actions for broken computers", async () => {
   expect(screen.getByTestId("computer-action-restart")).toBeDisabled();
 });
 
+test("renders exec placeholder route", async () => {
+  renderApp("/computers/workspace-container/exec");
+
+  expect(await screen.findByText("Console shell")).toBeInTheDocument();
+  expect(await screen.findByTestId("console-shell")).toBeInTheDocument();
+  expect(screen.getByTestId("console-state")).toHaveTextContent("connecting");
+  expect(connectConsoleClient).toHaveBeenCalledWith(
+    expect.objectContaining({
+      computerName: "workspace-container",
+      mode: "exec",
+      onStateChange: expect.any(Function),
+    }),
+  );
+});
+
 function renderApp(initialPath: string) {
   const history = createMemoryHistory({
     initialEntries: [initialPath],
@@ -606,7 +667,19 @@ function createComputerDetail(computer: FakeComputer) {
             available: true,
           },
         }
-      : computer.runtime;
+      : computer.profile === "container"
+        ? {
+            provider: (computer.runtime.provider as string | undefined) ?? "docker",
+            image: (computer.runtime.image as string | undefined) ?? "ubuntu:24.04",
+            command: computer.runtime.command,
+            workingDirectory: computer.runtime.workingDirectory,
+            environment: computer.runtime.environment,
+            containerId:
+              (computer.runtime.containerId as string | undefined) ??
+              `development-${computer.name}`,
+            containerName: (computer.runtime.containerName as string | undefined) ?? computer.name,
+          }
+        : computer.runtime;
 
   return {
     ...createComputerSummary(computer),

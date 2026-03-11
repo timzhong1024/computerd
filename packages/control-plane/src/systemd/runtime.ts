@@ -2,11 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
-import {
-  createPipeWireRuntimeEnvironment,
-  createPipeWireHostManager,
-  resolvePipeWireNodeTarget,
-} from "./pipewire-host";
+import { createPipeWireRuntimeEnvironment, createPipeWireHostManager } from "./pipewire-host";
 import type {
   BrowserViewport,
   PersistedBrowserComputer,
@@ -142,10 +138,7 @@ export function createSystemdRuntime({
       };
     },
     async openAudioStream(computer) {
-      const target = await resolvePipeWireNodeTarget(computer, {
-        browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
-        browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
-      });
+      const spec = browserRuntimePaths.specForComputer(computer);
       const captureEnvironment = createPipeWireRuntimeEnvironment(computer, {
         browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
         browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
@@ -155,20 +148,13 @@ export function createSystemdRuntime({
         command: "/usr/bin/bash",
         args: [
           "-lc",
-          [
-            `pw-record --target ${quoteShell(`${target.id ?? target.selector}`)} --rate 48000 --channels 2 --format s16 -`,
-            "ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -f s16le -ar 48000 -ac 2 -i pipe:0 -c:a libopus -b:a 128k -frame_duration 20 -application lowdelay -f ogg pipe:1",
-          ].join(" | "),
+          `ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -f pulse -i ${quoteShell(spec.audioMonitorSourceName)} -c:a libopus -b:a 128k -frame_duration 20 -application lowdelay -f ogg pipe:1`,
         ],
         env: {
           ...captureEnvironment,
-          PIPEWIRE_PROPS: JSON.stringify({
-            "application.name": "computerd-audio-capture",
-            "computerd.computer.name": computer.name,
-          }),
+          PULSE_SERVER: `unix:${spec.pulseServerPath}`,
         },
-        targetNodeId: target.id,
-        targetSelector: target.selector,
+        targetSelector: `pulse-source=${spec.audioMonitorSourceName}`,
         release() {},
       };
     },

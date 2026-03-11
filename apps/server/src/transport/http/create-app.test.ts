@@ -561,3 +561,149 @@ test("returns broken computers and blocks broken actions with conflict responses
   const websocketStubResponse = await fetch(`${baseUrl}/api/computers/broken-host/console/ws`);
   expect(websocketStubResponse.status).toBe(409);
 });
+
+test("serves container session APIs across stopped and running states", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const app = createApp({
+    createAutomationSession: controlPlane.createAutomationSession,
+    createAudioSession: controlPlane.createAudioSession,
+    createConsoleSession: controlPlane.createConsoleSession,
+    createExecSession: controlPlane.createExecSession,
+    openConsoleAttach: controlPlane.openConsoleAttach,
+    openExecAttach: controlPlane.openExecAttach,
+    openAutomationAttach: controlPlane.openAutomationAttach,
+    openAudioStream: controlPlane.openAudioStream,
+    listComputers: controlPlane.listComputers,
+    createMonitorSession: controlPlane.createMonitorSession,
+    openMonitorAttach: controlPlane.openMonitorAttach,
+    createScreenshot: controlPlane.createScreenshot,
+    getComputer: controlPlane.getComputer,
+    createComputer: controlPlane.createComputer,
+    deleteComputer: controlPlane.deleteComputer,
+    startComputer: controlPlane.startComputer,
+    stopComputer: controlPlane.stopComputer,
+    restartComputer: controlPlane.restartComputer,
+    listHostUnits: controlPlane.listHostUnits,
+    getHostUnit: controlPlane.getHostUnit,
+    updateBrowserViewport: controlPlane.updateBrowserViewport,
+  });
+
+  servers.push(app);
+  app.listen(0, "127.0.0.1");
+  await once(app, "listening");
+
+  const address = app.address();
+  if (address === null || typeof address === "string") {
+    throw new TypeError("Expected a TCP server address");
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const createResponse = await fetch(`${baseUrl}/api/computers`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "workspace-container",
+      profile: "container",
+      access: {
+        console: {
+          mode: "pty",
+          writable: true,
+        },
+        logs: true,
+      },
+      runtime: {
+        provider: "docker",
+        image: "ubuntu:24.04",
+      },
+    }),
+  });
+
+  expect(createResponse.status).toBe(201);
+  await expect(createResponse.json()).resolves.toMatchObject({
+    name: "workspace-container",
+    profile: "container",
+    unitName: "docker:workspace-container",
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+    },
+  });
+
+  const stoppedConsoleResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/console-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(stoppedConsoleResponse.status).toBe(409);
+  await expect(stoppedConsoleResponse.json()).resolves.toMatchObject({
+    error: 'Computer "workspace-container" must be running before opening console sessions.',
+  });
+
+  const stoppedExecResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/exec-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(stoppedExecResponse.status).toBe(409);
+  await expect(stoppedExecResponse.json()).resolves.toMatchObject({
+    error: 'Computer "workspace-container" must be running before opening exec sessions.',
+  });
+
+  const startResponse = await fetch(`${baseUrl}/api/computers/workspace-container/start`, {
+    method: "POST",
+  });
+  expect(startResponse.status).toBe(200);
+  await expect(startResponse.json()).resolves.toMatchObject({
+    state: "running",
+  });
+
+  const consoleSessionResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/console-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(consoleSessionResponse.status).toBe(200);
+  await expect(consoleSessionResponse.json()).resolves.toMatchObject({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+    connect: {
+      url: "/api/computers/workspace-container/console/ws",
+    },
+  });
+
+  const execSessionResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/exec-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(execSessionResponse.status).toBe(200);
+  await expect(execSessionResponse.json()).resolves.toMatchObject({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+    connect: {
+      url: "/api/computers/workspace-container/exec/ws",
+    },
+  });
+
+  const execWsResponse = await fetch(`${baseUrl}/api/computers/workspace-container/exec/ws`);
+  expect(execWsResponse.status).toBe(426);
+
+  const stopResponse = await fetch(`${baseUrl}/api/computers/workspace-container/stop`, {
+    method: "POST",
+  });
+  expect(stopResponse.status).toBe(200);
+  await expect(stopResponse.json()).resolves.toMatchObject({
+    state: "stopped",
+  });
+
+  const deleteResponse = await fetch(`${baseUrl}/api/computers/workspace-container`, {
+    method: "DELETE",
+  });
+  expect(deleteResponse.status).toBe(204);
+});
