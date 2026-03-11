@@ -24,7 +24,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
   const [audioState, setAudioState] = useState<AudioConnectionState>("connecting");
 
   useEffect(() => {
-    document.title = `${computerName} - Computerd Browser`;
+    document.title = `${computerName} - Computerd Monitor`;
     return () => {
       document.title = "Computerd";
     };

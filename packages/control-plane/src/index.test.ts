@@ -6,6 +6,7 @@ import type {
   ComputerRuntimePort,
   PersistedComputer,
   PersistedHostComputer,
+  PersistedVmComputer,
   UnitRuntimeState,
 } from "./systemd/types";
 import {
@@ -79,6 +80,31 @@ test("creates and manages a host computer with persisted metadata", async () => 
   );
 });
 
+test("rejects vm create input with more than one nic", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+
+  await expect(
+    controlPlane.createComputer({
+      name: "multi-nic-vm",
+      profile: "vm",
+      runtime: {
+        hypervisor: "qemu",
+        nics: [
+          { name: "primary", ipv4: { type: "dhcp" } },
+          { name: "secondary", ipv4: { type: "disabled" } },
+        ],
+        source: {
+          kind: "qcow2",
+          baseImagePath: "/images/ubuntu-cloud.qcow2",
+          cloudInit: {
+            user: "ubuntu",
+          },
+        },
+      },
+    }),
+  ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
+});
+
 test("creates and manages a browser computer with persisted metadata", async () => {
   const controlPlane = createControlPlane(
     {
@@ -116,6 +142,101 @@ test("creates and manages a browser computer with persisted metadata", async () 
     width: 1280,
     height: 800,
   });
+});
+
+test("creates and manages a qcow2 vm computer with monitor and console support", async () => {
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_VM_RUNTIME_DIR: "/tmp/computerd-test-vms",
+      COMPUTERD_VM_STATE_DIR: "/tmp/computerd-test-vm-state",
+    },
+    {
+      metadataStore: createMemoryMetadataStore(),
+      runtime: createMemoryRuntime("/tmp/computerd-test-terminals"),
+    },
+  );
+
+  const created = await controlPlane.createComputer({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "dhcp",
+          },
+          ipv6: {
+            type: "disabled",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  });
+
+  expect(created.profile).toBe("vm");
+  if (created.profile !== "vm") {
+    throw new TypeError("Expected vm detail");
+  }
+  expect(created.runtime.hypervisor).toBe("qemu");
+
+  await controlPlane.startComputer("linux-vm");
+  await expect(controlPlane.createMonitorSession("linux-vm")).resolves.toMatchObject({
+    computerName: "linux-vm",
+    protocol: "vnc",
+  });
+  await expect(controlPlane.createConsoleSession("linux-vm")).resolves.toMatchObject({
+    computerName: "linux-vm",
+    protocol: "ttyd",
+  });
+});
+
+test("vm detail preserves an explicit nic mac address", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+
+  const created = await controlPlane.createComputer({
+    name: "vm-explicit-mac",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          macAddress: "52:54:00:aa:bb:cc",
+          ipv4: {
+            type: "dhcp",
+          },
+          ipv6: {
+            type: "disabled",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  });
+
+  expect(created.profile).toBe("vm");
+  if (created.profile !== "vm") {
+    throw new TypeError("Expected vm detail");
+  }
+
+  expect(created.runtime.nics[0]?.macAddress).toBe("52:54:00:aa:bb:cc");
 });
 
 test("updates browser viewport and persists it across detail reads", async () => {
@@ -333,6 +454,29 @@ test("development containers without console access still allow exec sessions", 
   execLease.release();
 });
 
+test("vm console attach uses node to bridge the serial socket", async () => {
+  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+
+  await expect(controlPlane.createConsoleSession("linux-vm")).resolves.toMatchObject({
+    computerName: "linux-vm",
+    protocol: "ttyd",
+  });
+
+  const lease = await controlPlane.openConsoleAttach("linux-vm");
+  expect(lease).toMatchObject({
+    command: process.execPath,
+    computerName: "linux-vm",
+  });
+  expect(lease.args).toEqual(
+    expect.arrayContaining([
+      "-e",
+      expect.stringContaining("node:net"),
+      expect.stringContaining("/run/computerd/computers/linux-vm/vm/serial.sock"),
+    ]),
+  );
+  lease.release();
+});
+
 test("rejects exec sessions for non-container computers", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
@@ -399,6 +543,7 @@ test("reports broken state for host, browser, and container computers whose runt
   await metadataStore.putComputer(createHostComputerRecord());
   await metadataStore.putComputer(createBrowserComputerRecord());
   await metadataStore.putComputer(createContainerComputerRecord());
+  await metadataStore.putComputer(createVmComputerRecord());
   const controlPlane = createControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
@@ -420,12 +565,17 @@ test("reports broken state for host, browser, and container computers whose runt
     profile: "container",
     state: "broken",
   });
+  await expect(controlPlane.getComputer("linux-vm")).resolves.toMatchObject({
+    profile: "vm",
+    state: "broken",
+  });
 
   await expect(controlPlane.listComputers()).resolves.toEqual(
     expect.arrayContaining([
       expect.objectContaining({ name: "starter-host", state: "broken" }),
       expect.objectContaining({ name: "research-browser", state: "broken" }),
       expect.objectContaining({ name: "workspace-container", state: "broken" }),
+      expect.objectContaining({ name: "linux-vm", state: "broken" }),
     ]),
   );
 });
@@ -561,8 +711,12 @@ test("waits for host console runtime readiness during start", async () => {
     async createContainerComputer() {
       throw new Error("not implemented");
     },
+    async createVmComputer() {
+      throw new Error("not implemented");
+    },
     async deleteBrowserRuntimeIdentity() {},
     async deleteContainerComputer() {},
+    async deleteVmComputer() {},
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
     async createAutomationSession(computer) {
@@ -875,6 +1029,59 @@ function createContainerComputerRecord(): PersistedComputer {
   };
 }
 
+function createVmComputerRecord(): PersistedVmComputer {
+  return {
+    name: "linux-vm",
+    unitName: "computerd-linux-vm.service",
+    profile: "vm",
+    description: "Seeded VM computer",
+    createdAt: "2026-03-09T08:00:00.000Z",
+    lastActionAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      display: {
+        mode: "vnc",
+      },
+      logs: true,
+    },
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    network: {
+      mode: "host",
+    },
+    lifecycle: {},
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "dhcp",
+          },
+          ipv6: {
+            type: "disabled",
+          },
+        },
+      ],
+      accelerator: "kvm",
+      architecture: "x86_64",
+      machine: "q35",
+      source: {
+        kind: "qcow2",
+        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  };
+}
+
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
   const browserViewports = new Map<string, { width: number; height: number }>();
@@ -887,9 +1094,21 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         containerName: unitName,
       };
     },
+    async createVmComputer(input) {
+      return {
+        ...input.runtime,
+        accelerator: "kvm",
+        architecture: "x86_64",
+        machine: "q35",
+      };
+    },
     async deleteBrowserRuntimeIdentity() {},
     async deleteContainerComputer(computer) {
       states.delete(computer.unitName);
+    },
+    async deleteVmComputer(computer) {
+      states.delete(computer.unitName);
+      await rm(join(runtimeDirectory, computer.name), { recursive: true, force: true });
     },
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
@@ -934,12 +1153,10 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         viewport: {
           width:
             browserViewports.get(computer.unitName)?.width ??
-            computer.runtime.viewport?.width ??
-            1440,
+            (computer.profile === "browser" ? (computer.runtime.viewport?.width ?? 1440) : 1440),
           height:
             browserViewports.get(computer.unitName)?.height ??
-            computer.runtime.viewport?.height ??
-            900,
+            (computer.profile === "browser" ? (computer.runtime.viewport?.height ?? 900) : 900),
         },
       };
     },
@@ -949,6 +1166,8 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
           computer.unitName,
           computer.runtime.viewport ?? { width: 1440, height: 900 },
         );
+      } else if (computer.profile === "vm") {
+        browserViewports.set(computer.unitName, { width: 1440, height: 900 });
       }
 
       const state: UnitRuntimeState = {
@@ -958,7 +1177,12 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         loadState: "loaded",
         activeState: "inactive",
         subState: "dead",
-        execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
+        execStart:
+          computer.profile === "host"
+            ? computer.runtime.command
+            : computer.profile === "vm"
+              ? "/usr/bin/qemu-system-x86_64"
+              : "/usr/bin/bash -lc",
         workingDirectory:
           computer.profile === "host" ? computer.runtime.workingDirectory : runtimeDirectory,
         environment: computer.profile === "host" ? computer.runtime.environment : undefined,

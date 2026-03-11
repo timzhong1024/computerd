@@ -79,6 +79,177 @@ test("parses container computer creation input", () => {
   });
 });
 
+test("parses qcow2 vm computer creation input", () => {
+  const input = parseCreateComputerInput({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "static",
+            address: "192.168.250.10",
+            prefixLength: 24,
+          },
+          ipv6: {
+            type: "disabled",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  });
+
+  expect(input).toMatchObject({
+    profile: "vm",
+    runtime: {
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "static",
+            address: "192.168.250.10",
+            prefixLength: 24,
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+      },
+    },
+  });
+});
+
+test("parses qcow2 vm creation input with cloud-init explicitly disabled", () => {
+  const input = parseCreateComputerInput({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "disabled",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        cloudInit: {
+          enabled: false,
+        },
+      },
+    },
+  });
+
+  expect(input).toMatchObject({
+    profile: "vm",
+    runtime: {
+      source: {
+        kind: "qcow2",
+        cloudInit: {
+          enabled: false,
+        },
+      },
+    },
+  });
+});
+
+test("parses vm computer details", () => {
+  const detail = parseComputerDetail({
+    name: "linux-vm",
+    unitName: "computerd-linux-vm.service",
+    profile: "vm",
+    state: "running",
+    createdAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      display: {
+        mode: "vnc",
+      },
+      logs: true,
+    },
+    capabilities: createComputerCapabilities("vm", "running", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      display: {
+        mode: "vnc",
+      },
+    }),
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    network: {
+      mode: "host",
+    },
+    lifecycle: {},
+    status: {
+      lastActionAt: "2026-03-09T08:00:00.000Z",
+      primaryUnit: "computerd-linux-vm.service",
+    },
+    runtime: {
+      hypervisor: "qemu",
+      accelerator: "kvm",
+      architecture: "x86_64",
+      machine: "q35",
+      bridge: "br0",
+      nics: [
+        {
+          name: "primary",
+          macAddress: "52:54:00:12:34:56",
+          ipConfigApplied: false,
+          ipv4: {
+            type: "static",
+            address: "192.168.250.10",
+            prefixLength: 24,
+          },
+          ipv6: {
+            type: "disabled",
+          },
+        },
+      ],
+      source: {
+        kind: "iso",
+        isoPath: "/images/ubuntu.iso",
+        diskSizeGiB: 32,
+      },
+      diskImagePath: "/var/lib/computerd/computers/linux-vm/vm/disk.qcow2",
+      serialSocketPath: "/run/computerd/computers/linux-vm/vm/serial.sock",
+      vncDisplay: 14,
+      vncPort: 5914,
+      displayViewport: {
+        width: 1440,
+        height: 900,
+      },
+    },
+  });
+
+  expect(detail.profile).toBe("vm");
+  if (detail.profile !== "vm") {
+    throw new TypeError("Expected vm computer detail");
+  }
+
+  expect(detail.runtime.vncPort).toBe(5914);
+  expect(detail.runtime.bridge).toBe("br0");
+  expect(detail.runtime.nics[0]?.macAddress).toBe("52:54:00:12:34:56");
+});
+
 test("parses container computer details", () => {
   const detail = parseComputerDetail({
     name: "workspace-container",

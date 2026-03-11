@@ -45,6 +45,21 @@ export function HomePage() {
     workingDirectory: "",
     browser: "chromium",
     image: "ubuntu:24.04",
+    vmSourceKind: "qcow2",
+    baseImagePath: "/var/lib/images/ubuntu-cloud.qcow2",
+    isoPath: "/var/lib/images/ubuntu.iso",
+    diskSizeGiB: "32",
+    cloudInitEnabled: true,
+    cloudInitUser: "ubuntu",
+    cloudInitPassword: "",
+    cloudInitSshAuthorizedKey: "",
+    vmNicMacAddress: "",
+    vmIpv4Mode: "disabled",
+    vmIpv4Address: "",
+    vmIpv4PrefixLength: "24",
+    vmIpv6Mode: "disabled",
+    vmIpv6Address: "",
+    vmIpv6PrefixLength: "64",
     consoleEnabled: true,
   });
 
@@ -165,14 +180,90 @@ export function HomePage() {
                     : {}),
                 },
               }
-            : {
-                name: form.name,
-                profile: "browser" as const,
-                runtime: {
-                  browser: form.browser as "chromium",
-                  persistentProfile: true,
-                },
-              };
+            : form.profile === "browser"
+              ? {
+                  name: form.name,
+                  profile: "browser" as const,
+                  runtime: {
+                    browser: form.browser as "chromium",
+                    persistentProfile: true,
+                  },
+                }
+              : {
+                  name: form.name,
+                  profile: "vm" as const,
+                  access: {
+                    ...(form.consoleEnabled
+                      ? {
+                          console: {
+                            mode: "pty" as const,
+                            writable: true,
+                          },
+                        }
+                      : {}),
+                    display: {
+                      mode: "vnc" as const,
+                    },
+                    logs: true,
+                  },
+                  runtime: {
+                    hypervisor: "qemu" as const,
+                    nics: [
+                      {
+                        name: "primary",
+                        ...(form.vmNicMacAddress.trim().length > 0
+                          ? { macAddress: form.vmNicMacAddress.trim() }
+                          : {}),
+                        ipv4:
+                          form.vmIpv4Mode === "static"
+                            ? {
+                                type: "static" as const,
+                                address: form.vmIpv4Address.trim(),
+                                prefixLength: Number(form.vmIpv4PrefixLength),
+                              }
+                            : { type: form.vmIpv4Mode as "disabled" | "dhcp" },
+                        ipv6:
+                          form.vmIpv6Mode === "static"
+                            ? {
+                                type: "static" as const,
+                                address: form.vmIpv6Address.trim(),
+                                prefixLength: Number(form.vmIpv6PrefixLength),
+                              }
+                            : {
+                                type: form.vmIpv6Mode as "disabled" | "dhcp" | "slaac",
+                              },
+                      },
+                    ],
+                    source:
+                      form.vmSourceKind === "qcow2"
+                        ? {
+                            kind: "qcow2" as const,
+                            baseImagePath: form.baseImagePath,
+                            cloudInit: form.cloudInitEnabled
+                              ? {
+                                  user: form.cloudInitUser,
+                                  ...(form.cloudInitPassword.length > 0
+                                    ? { password: form.cloudInitPassword }
+                                    : {}),
+                                  ...(form.cloudInitSshAuthorizedKey.length > 0
+                                    ? {
+                                        sshAuthorizedKeys: [form.cloudInitSshAuthorizedKey],
+                                      }
+                                    : {}),
+                                }
+                              : {
+                                  enabled: false as const,
+                                },
+                          }
+                        : {
+                            kind: "iso" as const,
+                            isoPath: form.isoPath,
+                            ...(form.diskSizeGiB.length > 0
+                              ? { diskSizeGiB: Number(form.diskSizeGiB) }
+                              : {}),
+                          },
+                  },
+                };
 
       const detail = await postJson("/api/computers", payload, parseComputerDetail);
       setForm((current) => ({
@@ -277,12 +368,18 @@ export function HomePage() {
     }
   }
 
-  function handleOpenBrowserWindow() {
-    if (selectedComputer === null || selectedComputer.profile !== "browser") {
+  function handleOpenMonitorWindow() {
+    if (
+      selectedComputer === null ||
+      (selectedComputer.profile !== "browser" && selectedComputer.profile !== "vm")
+    ) {
       return;
     }
 
-    const viewport = selectedComputer.runtime.display.viewport;
+    const viewport =
+      selectedComputer.profile === "browser"
+        ? selectedComputer.runtime.display.viewport
+        : selectedComputer.runtime.displayViewport;
     const chromeWidth = 32;
     const chromeHeight = 96;
     const fullWidth = viewport.width + chromeWidth;
@@ -312,7 +409,7 @@ export function HomePage() {
       `top=${top}`,
     ].join(",");
 
-    const popup = window.open(url, `computerd-browser-${selectedComputer.name}`, features);
+    const popup = window.open(url, `computerd-monitor-${selectedComputer.name}`, features);
     if (popup === null) {
       window.location.assign(url);
       return;
@@ -372,6 +469,7 @@ export function HomePage() {
                 <option value="host">host</option>
                 <option value="browser">browser</option>
                 <option value="container">container</option>
+                <option value="vm">vm</option>
               </select>
             </label>
 
@@ -457,7 +555,7 @@ export function HomePage() {
                   />
                 </label>
               </>
-            ) : (
+            ) : form.profile === "browser" ? (
               <>
                 <label>
                   Browser
@@ -471,6 +569,220 @@ export function HomePage() {
                     <option value="chromium">chromium</option>
                   </select>
                 </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  Source
+                  <select
+                    name="vmSourceKind"
+                    value={form.vmSourceKind}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, vmSourceKind: event.target.value }))
+                    }
+                  >
+                    <option value="qcow2">qcow2</option>
+                    <option value="iso">iso</option>
+                  </select>
+                </label>
+                {form.vmSourceKind === "qcow2" ? (
+                  <>
+                    <label>
+                      Base qcow2 image
+                      <input
+                        name="baseImagePath"
+                        value={form.baseImagePath}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, baseImagePath: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Cloud-init enabled
+                      <input
+                        name="cloudInitEnabled"
+                        type="checkbox"
+                        checked={form.cloudInitEnabled}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            cloudInitEnabled: event.target.checked,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Cloud-init user
+                      <input
+                        name="cloudInitUser"
+                        value={form.cloudInitUser}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, cloudInitUser: event.target.value }))
+                        }
+                        required={form.cloudInitEnabled}
+                        disabled={!form.cloudInitEnabled}
+                      />
+                    </label>
+                    <label>
+                      Cloud-init password
+                      <input
+                        name="cloudInitPassword"
+                        value={form.cloudInitPassword}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            cloudInitPassword: event.target.value,
+                          }))
+                        }
+                        placeholder="optional"
+                        disabled={!form.cloudInitEnabled}
+                      />
+                    </label>
+                    <label>
+                      SSH authorized key
+                      <input
+                        name="cloudInitSshAuthorizedKey"
+                        value={form.cloudInitSshAuthorizedKey}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            cloudInitSshAuthorizedKey: event.target.value,
+                          }))
+                        }
+                        placeholder="ssh-ed25519 AAAA..."
+                        disabled={!form.cloudInitEnabled}
+                      />
+                    </label>
+                    <label>
+                      Primary NIC MAC
+                      <input
+                        name="vmNicMacAddress"
+                        value={form.vmNicMacAddress}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            vmNicMacAddress: event.target.value,
+                          }))
+                        }
+                        placeholder="auto-generated"
+                      />
+                    </label>
+                    <label>
+                      IPv4 mode
+                      <select
+                        name="vmIpv4Mode"
+                        value={form.vmIpv4Mode}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, vmIpv4Mode: event.target.value }))
+                        }
+                      >
+                        <option value="disabled">disabled</option>
+                        <option value="dhcp">dhcp</option>
+                        <option value="static">static</option>
+                      </select>
+                    </label>
+                    <label>
+                      IPv4 address
+                      <input
+                        name="vmIpv4Address"
+                        value={form.vmIpv4Address}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, vmIpv4Address: event.target.value }))
+                        }
+                        placeholder="192.168.250.10"
+                        disabled={form.vmIpv4Mode !== "static"}
+                      />
+                    </label>
+                    <label>
+                      IPv4 prefix
+                      <input
+                        name="vmIpv4PrefixLength"
+                        type="number"
+                        min="1"
+                        max="32"
+                        value={form.vmIpv4PrefixLength}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            vmIpv4PrefixLength: event.target.value,
+                          }))
+                        }
+                        disabled={form.vmIpv4Mode !== "static"}
+                      />
+                    </label>
+                    <label>
+                      IPv6 mode
+                      <select
+                        name="vmIpv6Mode"
+                        value={form.vmIpv6Mode}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, vmIpv6Mode: event.target.value }))
+                        }
+                      >
+                        <option value="disabled">disabled</option>
+                        <option value="dhcp">dhcp</option>
+                        <option value="slaac">slaac</option>
+                        <option value="static">static</option>
+                      </select>
+                    </label>
+                    <label>
+                      IPv6 address
+                      <input
+                        name="vmIpv6Address"
+                        value={form.vmIpv6Address}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, vmIpv6Address: event.target.value }))
+                        }
+                        placeholder="fd00::10"
+                        disabled={form.vmIpv6Mode !== "static"}
+                      />
+                    </label>
+                    <label>
+                      IPv6 prefix
+                      <input
+                        name="vmIpv6PrefixLength"
+                        type="number"
+                        min="1"
+                        max="128"
+                        value={form.vmIpv6PrefixLength}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            vmIpv6PrefixLength: event.target.value,
+                          }))
+                        }
+                        disabled={form.vmIpv6Mode !== "static"}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      Install ISO
+                      <input
+                        name="isoPath"
+                        value={form.isoPath}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, isoPath: event.target.value }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Disk size (GiB)
+                      <input
+                        name="diskSizeGiB"
+                        type="number"
+                        min="1"
+                        value={form.diskSizeGiB}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, diskSizeGiB: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </>
+                )}
               </>
             )}
 
@@ -573,15 +885,16 @@ export function HomePage() {
             </div>
             <div className="surface-actions">
               {!isSelectedComputerBroken &&
-              selectedComputer.access.display?.mode === "virtual-display" ? (
+              (selectedComputer.access.display?.mode === "virtual-display" ||
+                selectedComputer.access.display?.mode === "vnc") ? (
                 <button
                   type="button"
                   className="surface-link"
                   data-testid="open-monitor-link"
-                  disabled={!selectedComputer.capabilities.browserAvailable}
-                  onClick={handleOpenBrowserWindow}
+                  disabled={selectedComputer.state !== "running"}
+                  onClick={handleOpenMonitorWindow}
                 >
-                  Open browser
+                  Open monitor
                 </button>
               ) : null}
               {!isSelectedComputerBroken && selectedComputer.access.console?.mode === "pty" ? (
@@ -655,7 +968,9 @@ export function HomePage() {
                     ? (selectedComputer.runtime.command ?? "[default shell]")
                     : selectedComputer.profile === "container"
                       ? `${selectedComputer.runtime.provider} · ${selectedComputer.runtime.image}`
-                      : `${selectedComputer.runtime.browser} · profile ${selectedComputer.runtime.persistentProfile ? "persistent" : "ephemeral"}`}
+                      : selectedComputer.profile === "vm"
+                        ? `${selectedComputer.runtime.hypervisor} · ${selectedComputer.runtime.source.kind}`
+                        : `${selectedComputer.runtime.browser} · profile ${selectedComputer.runtime.persistentProfile ? "persistent" : "ephemeral"}`}
                 </dd>
               </div>
               {selectedComputer.profile === "container" ? (
@@ -683,6 +998,74 @@ export function HomePage() {
                   <div>
                     <dt>Screenshot</dt>
                     <dd>{selectedComputer.runtime.screenshot.format}</dd>
+                  </div>
+                </>
+              ) : null}
+              {selectedComputer.profile === "vm" ? (
+                <>
+                  <div>
+                    <dt>Disk image</dt>
+                    <dd>{selectedComputer.runtime.diskImagePath}</dd>
+                  </div>
+                  <div>
+                    <dt>Bridge</dt>
+                    <dd>{selectedComputer.runtime.bridge}</dd>
+                  </div>
+                  <div>
+                    <dt>Network mode</dt>
+                    <dd>{selectedComputer.network.mode}</dd>
+                  </div>
+                  <div>
+                    <dt>Cloud-init</dt>
+                    <dd>
+                      {selectedComputer.runtime.source.kind === "qcow2" &&
+                      selectedComputer.runtime.source.cloudInit.enabled === false
+                        ? "disabled"
+                        : "enabled"}
+                    </dd>
+                  </div>
+                  {selectedComputer.runtime.nics[0] ? (
+                    <div>
+                      <dt>Primary NIC</dt>
+                      <dd>
+                        {selectedComputer.runtime.nics[0].name} ·{" "}
+                        {selectedComputer.runtime.nics[0].macAddress} · auto apply{" "}
+                        {selectedComputer.runtime.nics[0].ipConfigApplied ? "yes" : "no"}
+                        {selectedComputer.runtime.nics[0].ipv4 ? (
+                          <>
+                            {" "}
+                            · IPv4{" "}
+                            {selectedComputer.runtime.nics[0].ipv4.type === "static"
+                              ? `${selectedComputer.runtime.nics[0].ipv4.address}/${selectedComputer.runtime.nics[0].ipv4.prefixLength}`
+                              : selectedComputer.runtime.nics[0].ipv4.type}
+                          </>
+                        ) : null}
+                        {selectedComputer.runtime.nics[0].ipv6 ? (
+                          <>
+                            {" "}
+                            · IPv6{" "}
+                            {selectedComputer.runtime.nics[0].ipv6.type === "static"
+                              ? `${selectedComputer.runtime.nics[0].ipv6.address}/${selectedComputer.runtime.nics[0].ipv6.prefixLength}`
+                              : selectedComputer.runtime.nics[0].ipv6.type}
+                          </>
+                        ) : null}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt>VNC</dt>
+                    <dd>
+                      display {selectedComputer.runtime.vncDisplay} · port{" "}
+                      {selectedComputer.runtime.vncPort}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Serial socket</dt>
+                    <dd>{selectedComputer.runtime.serialSocketPath}</dd>
+                  </div>
+                  <div>
+                    <dt>Machine</dt>
+                    <dd>{selectedComputer.runtime.machine}</dd>
                   </div>
                 </>
               ) : null}

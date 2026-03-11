@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const computerProfileSchema = z.enum(["host", "browser", "container"]);
+export const computerProfileSchema = z.enum(["host", "browser", "container", "vm"]);
 export const computerStateSchema = z.enum(["stopped", "running", "broken"]);
 
 export const computerCapabilitiesSchema = z.object({
@@ -21,7 +21,7 @@ export const computerConsoleAccessSchema = z.object({
 });
 
 export const computerDisplayAccessSchema = z.object({
-  mode: z.enum(["none", "virtual-display"]),
+  mode: z.enum(["none", "virtual-display", "vnc"]),
 });
 
 export const computerSessionConnectSchema = z.object({
@@ -148,6 +148,146 @@ export const createBrowserRuntimeSchema = z.object({
   viewport: browserViewportSchema.optional(),
 });
 
+function isValidIpv4Address(value: string) {
+  const octets = value.split(".");
+  if (octets.length !== 4) {
+    return false;
+  }
+
+  return octets.every((octet) => {
+    if (!/^\d+$/.test(octet)) {
+      return false;
+    }
+
+    const parsed = Number.parseInt(octet, 10);
+    return parsed >= 0 && parsed <= 255;
+  });
+}
+
+function isValidIpv6Address(value: string) {
+  return /^[0-9a-f:]+$/i.test(value) && value.includes(":");
+}
+
+function isValidMacAddress(value: string) {
+  return /^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$/i.test(value);
+}
+
+const vmNicIpv4DisabledSchema = z.object({
+  type: z.literal("disabled"),
+});
+
+const vmNicIpv4DhcpSchema = z.object({
+  type: z.literal("dhcp"),
+});
+
+const vmNicIpv4StaticSchema = z.object({
+  type: z.literal("static"),
+  address: z.string().refine(isValidIpv4Address, {
+    message: "Expected a valid IPv4 address.",
+  }),
+  prefixLength: z.number().int().min(1).max(32),
+});
+
+export const vmNicIpv4Schema = z.discriminatedUnion("type", [
+  vmNicIpv4DisabledSchema,
+  vmNicIpv4DhcpSchema,
+  vmNicIpv4StaticSchema,
+]);
+
+const vmNicIpv6DisabledSchema = z.object({
+  type: z.literal("disabled"),
+});
+
+const vmNicIpv6DhcpSchema = z.object({
+  type: z.literal("dhcp"),
+});
+
+const vmNicIpv6SlaacSchema = z.object({
+  type: z.literal("slaac"),
+});
+
+const vmNicIpv6StaticSchema = z.object({
+  type: z.literal("static"),
+  address: z.string().refine(isValidIpv6Address, {
+    message: "Expected a valid IPv6 address.",
+  }),
+  prefixLength: z.number().int().min(1).max(128),
+});
+
+export const vmNicIpv6Schema = z.discriminatedUnion("type", [
+  vmNicIpv6DisabledSchema,
+  vmNicIpv6DhcpSchema,
+  vmNicIpv6SlaacSchema,
+  vmNicIpv6StaticSchema,
+]);
+
+export const createVmNicSchema = z.object({
+  name: z.string().min(1),
+  macAddress: z
+    .string()
+    .refine(isValidMacAddress, { message: "Expected a valid MAC address." })
+    .optional(),
+  ipv4: vmNicIpv4Schema.optional(),
+  ipv6: vmNicIpv6Schema.optional(),
+});
+
+export const vmNicSchema = createVmNicSchema.extend({
+  macAddress: z.string().refine(isValidMacAddress, {
+    message: "Expected a valid MAC address.",
+  }),
+  ipConfigApplied: z.boolean(),
+});
+
+export const vmCloudInitEnabledSchema = z.object({
+  enabled: z.literal(true).optional(),
+  user: z.string().min(1),
+  password: z.string().min(1).optional(),
+  sshAuthorizedKeys: z.array(z.string().min(1)).optional(),
+});
+
+export const vmCloudInitDisabledSchema = z.object({
+  enabled: z.literal(false),
+});
+
+export const vmCloudInitSchema = z.union([vmCloudInitEnabledSchema, vmCloudInitDisabledSchema]);
+
+export const createVmRuntimeSourceQcow2Schema = z.object({
+  kind: z.literal("qcow2"),
+  baseImagePath: z.string().min(1),
+  cloudInit: vmCloudInitSchema,
+});
+
+export const createVmRuntimeSourceIsoSchema = z.object({
+  kind: z.literal("iso"),
+  isoPath: z.string().min(1),
+  diskSizeGiB: z.number().int().positive().optional(),
+});
+
+export const createVmRuntimeSourceSchema = z.discriminatedUnion("kind", [
+  createVmRuntimeSourceQcow2Schema,
+  createVmRuntimeSourceIsoSchema,
+]);
+
+export const createVmRuntimeSchema = z.object({
+  hypervisor: z.literal("qemu"),
+  source: createVmRuntimeSourceSchema,
+  nics: z.array(createVmNicSchema).min(1),
+});
+
+export const vmRuntimeSchema = createVmRuntimeSchema.extend({
+  accelerator: z.literal("kvm"),
+  architecture: z.literal("x86_64"),
+  machine: z.literal("q35"),
+  bridge: z.string().min(1),
+  diskImagePath: z.string().min(1),
+  cloudInitImagePath: z.string().min(1).optional(),
+  serialSocketPath: z.string().min(1),
+  nics: z.array(vmNicSchema).min(1),
+  vncDisplay: z.number().int().min(0),
+  vncPort: z.number().int().positive(),
+  displayViewport: browserViewportSchema,
+});
+
 export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
   runtimeUser: z.string().min(1),
   profileDirectory: z.string().min(1),
@@ -206,10 +346,15 @@ export const containerComputerSummarySchema = computerSummaryBaseSchema.extend({
   profile: z.literal("container"),
 });
 
+export const vmComputerSummarySchema = computerSummaryBaseSchema.extend({
+  profile: z.literal("vm"),
+});
+
 export const computerSummarySchema = z.discriminatedUnion("profile", [
   hostComputerSummarySchema,
   browserComputerSummarySchema,
   containerComputerSummarySchema,
+  vmComputerSummarySchema,
 ]);
 
 export const hostComputerDetailSchema = computerDetailBaseSchema.extend({
@@ -227,10 +372,16 @@ export const containerComputerDetailSchema = computerDetailBaseSchema.extend({
   runtime: containerRuntimeSchema,
 });
 
+export const vmComputerDetailSchema = computerDetailBaseSchema.extend({
+  profile: z.literal("vm"),
+  runtime: vmRuntimeSchema,
+});
+
 export const computerDetailSchema = z.discriminatedUnion("profile", [
   hostComputerDetailSchema,
   browserComputerDetailSchema,
   containerComputerDetailSchema,
+  vmComputerDetailSchema,
 ]);
 
 const createComputerBaseSchema = z.object({
@@ -258,12 +409,18 @@ export const createContainerComputerInputSchema = createComputerBaseSchema.exten
   runtime: createContainerRuntimeSchema,
 });
 
+export const createVmComputerInputSchema = createComputerBaseSchema.extend({
+  profile: z.literal("vm"),
+  runtime: createVmRuntimeSchema,
+});
+
 export const updateBrowserViewportInputSchema = browserViewportSchema;
 
 export const createComputerInputSchema = z.discriminatedUnion("profile", [
   createHostComputerInputSchema,
   createBrowserComputerInputSchema,
   createContainerComputerInputSchema,
+  createVmComputerInputSchema,
 ]);
 
 export const hostUnitCapabilitiesSchema = z.object({
@@ -315,12 +472,18 @@ export type CreateComputerInput = z.infer<typeof createComputerInputSchema>;
 export type CreateContainerComputerInput = z.infer<typeof createContainerComputerInputSchema>;
 export type CreateContainerRuntime = z.infer<typeof createContainerRuntimeSchema>;
 export type CreateHostComputerInput = z.infer<typeof createHostComputerInputSchema>;
+export type CreateVmComputerInput = z.infer<typeof createVmComputerInputSchema>;
+export type CreateVmRuntime = z.infer<typeof createVmRuntimeSchema>;
+export type CreateVmRuntimeSource = z.infer<typeof createVmRuntimeSourceSchema>;
 export type HostUnitDetail = z.infer<typeof hostUnitDetailSchema>;
 export type HostUnitSummary = z.infer<typeof hostUnitSummarySchema>;
 export type ContainerComputerDetail = z.infer<typeof containerComputerDetailSchema>;
 export type ContainerRuntime = z.infer<typeof containerRuntimeSchema>;
 export type HostComputerDetail = z.infer<typeof hostComputerDetailSchema>;
 export type HostRuntime = z.infer<typeof hostRuntimeSchema>;
+export type VmComputerDetail = z.infer<typeof vmComputerDetailSchema>;
+export type VmCloudInit = z.infer<typeof vmCloudInitSchema>;
+export type VmRuntime = z.infer<typeof vmRuntimeSchema>;
 export type UpdateBrowserViewportInput = z.infer<typeof updateBrowserViewportInputSchema>;
 
 export function parseComputerSummaries(value: unknown) {
@@ -383,7 +546,8 @@ export function createComputerCapabilities(
     canStop: !isBroken && state === "running",
     canRestart: !isBroken && state === "running",
     consoleAvailable:
-      (profile === "host" || profile === "container") && access?.console?.mode === "pty",
+      (profile === "host" || profile === "container" || profile === "vm") &&
+      access?.console?.mode === "pty",
     browserAvailable: profile === "browser",
     automationAvailable: profile === "browser" && state === "running",
     screenshotAvailable: profile === "browser" && state === "running",

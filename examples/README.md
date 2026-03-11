@@ -97,3 +97,18 @@ container computer 当前有两种交互面：
 - `exec` 当前更偏 operator-only / web-oriented surface，适合人类在前端临时排查
 
 这不是对 container exec 的永久否定；如果后续出现明确价值，再把它提升为更稳定的自动化能力。
+
+## VM Notes
+
+`vm` computer 第一版基于 `QEMU/KVM`：
+
+- monitor 走 QEMU VNC
+- console 走 QEMU serial
+- `qcow2` 路径支持最小 cloud-init
+- `iso` 路径用于手工安装系统
+
+运行前提：
+
+- 宿主必须有 `/dev/kvm`
+- 服务端需要配置默认 bridge，环境变量为 `COMPUTERD_VM_BRIDGE`
+- 当前不支持 SPICE、virtio-gpu、audio、NAT 或 per-VM network override

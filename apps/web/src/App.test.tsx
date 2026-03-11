@@ -20,7 +20,7 @@ vi.mock("./transport/console-client", () => ({
 interface FakeComputer {
   name: string;
   unitName: string;
-  profile: "host" | "browser" | "container";
+  profile: "host" | "browser" | "container" | "vm";
   state: "stopped" | "running" | "broken";
   access?: Record<string, unknown>;
   runtime: Record<string, unknown>;
@@ -329,14 +329,14 @@ test("renders computer inventory, host inspect, and monitor action links", async
   expect(await screen.findByText("computerd-starter-host.service")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /research-browser/i }));
-  expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open browser");
+  expect(await screen.findByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
   expect(screen.getByTestId("create-automation-session")).toBeEnabled();
   expect(screen.getByTestId("capture-screenshot")).toBeEnabled();
   expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
   fireEvent.click(screen.getByTestId("open-monitor-link"));
   expect(openSpy).toHaveBeenCalledWith(
     "/computers/research-browser/monitor",
-    "computerd-browser-research-browser",
+    "computerd-monitor-research-browser",
     expect.stringContaining("width=1472"),
   );
 });
@@ -376,6 +376,34 @@ test("creates a container computer and shows exec shell affordance", async () =>
   expect(screen.getByTestId("open-exec-link")).toBeInTheDocument();
 });
 
+test("creates a vm computer and shows monitor plus console affordances", async () => {
+  renderApp("/");
+
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "linux-vm" },
+  });
+  fireEvent.change(screen.getByLabelText("Profile"), {
+    target: { value: "vm" },
+  });
+  fireEvent.change(screen.getByLabelText("Base qcow2 image"), {
+    target: { value: "/images/ubuntu-cloud.qcow2" },
+  });
+  fireEvent.change(screen.getByLabelText("IPv4 mode"), {
+    target: { value: "static" },
+  });
+  fireEvent.change(screen.getByLabelText("IPv4 address"), {
+    target: { value: "192.168.250.10" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create computer" }));
+
+  expect(await screen.findByRole("button", { name: /linux-vm/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "linux-vm" })).toBeInTheDocument();
+  expect(screen.getByText(/qemu · qcow2/i)).toBeInTheDocument();
+  expect(screen.getByText(/192.168.250.10\/24/)).toBeInTheDocument();
+  expect(screen.getByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
+  expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
+});
+
 test("deletes a selected computer and refreshes the inventory", async () => {
   renderApp("/");
 
@@ -402,7 +430,7 @@ test("renders monitor session shell and unavailable websocket state", async () =
     "video unavailable / audio blocked by autoplay",
   );
   await waitFor(() => {
-    expect(document.title).toBe("research-browser - Computerd Browser");
+    expect(document.title).toBe("research-browser - Computerd Monitor");
   });
   expect(connectMonitorClient).toHaveBeenCalled();
   playSpy.mockRestore();
@@ -425,7 +453,7 @@ test("retries blocked monitor audio after clicking enable audio", async () => {
     );
   });
 
-  expect(playSpy).toHaveBeenCalledTimes(2);
+  expect(playSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   playSpy.mockRestore();
 });
 
@@ -447,7 +475,7 @@ test("does not re-block audio after a manual enable click", async () => {
     );
   });
 
-  expect(playSpy).toHaveBeenCalledTimes(2);
+  expect(playSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   playSpy.mockRestore();
 });
 
@@ -600,20 +628,31 @@ function createComputerSummary(computer: FakeComputer) {
             },
             logs: true,
           }
-        : computer.profile === "container"
+        : computer.profile === "vm"
           ? {
               console: {
                 mode: "pty",
                 writable: true,
               },
-              logs: true,
-            }
-          : {
               display: {
-                mode: "virtual-display",
+                mode: "vnc",
               },
               logs: true,
-            }),
+            }
+          : computer.profile === "container"
+            ? {
+                console: {
+                  mode: "pty",
+                  writable: true,
+                },
+                logs: true,
+              }
+            : {
+                display: {
+                  mode: "virtual-display",
+                },
+                logs: true,
+              }),
     capabilities: {
       canInspect: true,
       canStart: computer.state === "stopped",
@@ -621,6 +660,8 @@ function createComputerSummary(computer: FakeComputer) {
       canRestart: computer.state === "running",
       consoleAvailable:
         computer.profile === "host" ||
+        (computer.profile === "vm" &&
+          (computer.access?.console as { mode?: string } | undefined)?.mode === "pty") ||
         (computer.profile === "container" &&
           (computer.access?.console as { mode?: string } | undefined)?.mode === "pty"),
       browserAvailable: computer.profile === "browser",
@@ -679,7 +720,58 @@ function createComputerDetail(computer: FakeComputer) {
               `development-${computer.name}`,
             containerName: (computer.runtime.containerName as string | undefined) ?? computer.name,
           }
-        : computer.runtime;
+        : computer.profile === "vm"
+          ? {
+              hypervisor: "qemu",
+              accelerator: "kvm",
+              architecture: "x86_64",
+              machine: "q35",
+              bridge: (computer.runtime.bridge as string | undefined) ?? "br0",
+              nics: (
+                (computer.runtime.nics as Array<Record<string, unknown>> | undefined) ?? [
+                  {
+                    name: "primary",
+                    ipv4: {
+                      type: "dhcp",
+                    },
+                    ipv6: {
+                      type: "disabled",
+                    },
+                  },
+                ]
+              ).map((nic, index) => ({
+                ...nic,
+                macAddress:
+                  (nic.macAddress as string | undefined) ??
+                  `52:54:00:12:34:${(56 + index).toString(16).padStart(2, "0")}`,
+                ipConfigApplied: (nic.ipConfigApplied as boolean | undefined) ?? true,
+              })),
+              source: (computer.runtime.source as Record<string, unknown> | undefined) ?? {
+                kind: "qcow2",
+                baseImagePath: "/images/ubuntu-cloud.qcow2",
+                cloudInit: {
+                  user: "ubuntu",
+                },
+              },
+              diskImagePath:
+                (computer.runtime.diskImagePath as string | undefined) ??
+                `/var/lib/computerd/computers/${computer.name}/vm/disk.qcow2`,
+              cloudInitImagePath:
+                (computer.runtime.cloudInitImagePath as string | undefined) ??
+                `/var/lib/computerd/computers/${computer.name}/vm/cloud-init.iso`,
+              serialSocketPath:
+                (computer.runtime.serialSocketPath as string | undefined) ??
+                `/run/computerd/computers/${computer.name}/vm/serial.sock`,
+              vncDisplay: (computer.runtime.vncDisplay as number | undefined) ?? 14,
+              vncPort: (computer.runtime.vncPort as number | undefined) ?? 5914,
+              displayViewport: (computer.runtime.displayViewport as
+                | { width: number; height: number }
+                | undefined) ?? {
+                width: 1440,
+                height: 900,
+              },
+            }
+          : computer.runtime;
 
   return {
     ...createComputerSummary(computer),

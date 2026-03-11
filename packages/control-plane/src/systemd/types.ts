@@ -21,9 +21,12 @@ import type {
   CreateContainerComputerInput,
   CreateContainerRuntime,
   CreateHostComputerInput,
+  CreateVmComputerInput,
+  CreateVmRuntime,
   HostUnitDetail,
   HostUnitSummary,
   HostRuntime,
+  VmRuntime,
   UpdateBrowserViewportInput,
 } from "@computerd/core";
 
@@ -63,10 +66,20 @@ export interface PersistedContainerComputer extends PersistedComputerBase {
   };
 }
 
+export interface PersistedVmComputer extends PersistedComputerBase {
+  profile: "vm";
+  runtime: CreateVmRuntime & {
+    accelerator: "kvm";
+    architecture: "x86_64";
+    machine: "q35";
+  };
+}
+
 export type PersistedComputer =
   | PersistedHostComputer
   | PersistedBrowserComputer
-  | PersistedContainerComputer;
+  | PersistedContainerComputer
+  | PersistedVmComputer;
 
 export interface UnitRuntimeState {
   unitName: string;
@@ -93,20 +106,28 @@ export interface HostConsoleRuntimeSpec {
   socketPath: string;
 }
 
+export interface VmConsoleRuntimeSpec {
+  socketPath: string;
+}
+
 export interface ComputerRuntimePort {
   createContainerComputer: (
     input: CreateContainerComputerInput,
     unitName: string,
   ) => Promise<PersistedContainerComputer["runtime"]>;
+  createVmComputer: (input: CreateVmComputerInput) => Promise<PersistedVmComputer["runtime"]>;
   deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   deleteContainerComputer: (computer: PersistedContainerComputer) => Promise<void>;
+  deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
   createAutomationSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<ComputerAutomationSession>;
   createAudioSession: (computer: PersistedBrowserComputer) => Promise<ComputerAudioSession>;
-  createMonitorSession: (computer: PersistedBrowserComputer) => Promise<ComputerMonitorSession>;
+  createMonitorSession: (
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+  ) => Promise<ComputerMonitorSession>;
   createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
   createScreenshot: (computer: PersistedBrowserComputer) => Promise<ComputerScreenshot>;
   deletePersistentUnit: (unitName: string) => Promise<void>;
@@ -118,7 +139,9 @@ export interface ComputerRuntimePort {
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
   openAutomationAttach: (computer: PersistedBrowserComputer) => Promise<BrowserAutomationLease>;
   openAudioStream: (computer: PersistedBrowserComputer) => Promise<BrowserAudioStreamLease>;
-  openMonitorAttach: (computer: PersistedBrowserComputer) => Promise<BrowserMonitorLease>;
+  openMonitorAttach: (
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+  ) => Promise<BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   restartContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
@@ -185,8 +208,11 @@ export type {
   CreateComputerInput,
   CreateContainerComputerInput,
   CreateHostComputerInput,
+  CreateVmComputerInput,
+  CreateVmRuntime,
   HostUnitDetail,
   HostUnitSummary,
   HostRuntime,
+  VmRuntime,
   UpdateBrowserViewportInput,
 };

@@ -1,14 +1,18 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
 import { createPipeWireRuntimeEnvironment, createPipeWireHostManager } from "./pipewire-host";
+import { createVmRuntimePaths, resolveVmNicMacAddress, withPersistedVmRuntime } from "./vm-runtime";
 import type {
   BrowserViewport,
+  CreateVmComputerInput,
   PersistedBrowserComputer,
   HostUnitDetail,
   HostUnitSummary,
   PersistedComputer,
+  PersistedVmComputer,
   UnitRuntimeState,
 } from "./types";
 import {
@@ -23,7 +27,9 @@ import {
 } from "./dbus-client";
 
 export interface SystemdRuntime {
+  createVmComputer: (input: CreateVmComputerInput) => Promise<PersistedVmComputer["runtime"]>;
   deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
+  deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
   createAutomationSession: (
@@ -33,7 +39,7 @@ export interface SystemdRuntime {
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").ComputerAudioSession>;
   createMonitorSession: (
-    computer: PersistedBrowserComputer,
+    computer: PersistedBrowserComputer | PersistedVmComputer,
   ) => Promise<import("./types").ComputerMonitorSession>;
   createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
   createScreenshot: (
@@ -50,7 +56,7 @@ export interface SystemdRuntime {
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").BrowserAudioStreamLease>;
   openMonitorAttach: (
-    computer: PersistedBrowserComputer,
+    computer: PersistedBrowserComputer | PersistedVmComputer,
   ) => Promise<import("./types").BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
@@ -82,14 +88,42 @@ export function createSystemdRuntime({
     runtimeRootDirectory: unitFileStoreOptions.browserRuntimeDirectory,
     stateRootDirectory: unitFileStoreOptions.browserStateDirectory,
   });
+  const vmRuntimePaths = createVmRuntimePaths({
+    runtimeRootDirectory: unitFileStoreOptions.vmRuntimeDirectory,
+    stateRootDirectory: unitFileStoreOptions.vmStateDirectory,
+  });
   const pipeWireHostManager = createPipeWireHostManager({
     browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
     browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
   });
 
   return {
+    async createVmComputer(input) {
+      assertVmHostSupport(resolveVmBridgeName(input.network?.mode ?? "host", unitFileStoreOptions));
+      const runtime = withPersistedVmRuntime(input.runtime);
+      const spec = vmRuntimePaths.specForName(input.name);
+      await mkdir(spec.stateDirectory, { recursive: true });
+      await mkdir(spec.runtimeDirectory, { recursive: true });
+      if (runtime.source.kind === "qcow2") {
+        await assertPathExists(runtime.source.baseImagePath, "Base qcow2 image");
+        await createQcow2Overlay(runtime.source.baseImagePath, spec.diskImagePath);
+        if (runtime.source.cloudInit.enabled !== false) {
+          await createCloudInitSeed(spec, input.name, runtime.source.cloudInit, runtime.nics[0]!);
+        }
+      } else {
+        await assertPathExists(runtime.source.isoPath, "Install ISO");
+        await createBlankDisk(spec.diskImagePath, runtime.source.diskSizeGiB ?? 32);
+      }
+
+      return runtime;
+    },
     async deleteBrowserRuntimeIdentity(computer) {
       await pipeWireHostManager.deleteRuntimeIdentity(computer);
+    },
+    async deleteVmComputer(computer) {
+      const spec = vmRuntimePaths.specForComputer(computer);
+      await rm(spec.runtimeDirectory, { recursive: true, force: true });
+      await rm(spec.stateDirectory, { recursive: true, force: true });
     },
     async ensureBrowserRuntimeIdentity(computer) {
       await pipeWireHostManager.ensureRuntimeIdentity(computer);
@@ -98,7 +132,10 @@ export function createSystemdRuntime({
       await pipeWireHostManager.prepareRuntime(computer);
     },
     async createMonitorSession(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
+      const spec =
+        computer.profile === "browser"
+          ? browserRuntimePaths.specForComputer(computer)
+          : vmRuntimePaths.specForComputer(computer);
       return {
         computerName: computer.name,
         protocol: "vnc",
@@ -129,7 +166,10 @@ export function createSystemdRuntime({
       };
     },
     async openMonitorAttach(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
+      const spec =
+        computer.profile === "browser"
+          ? browserRuntimePaths.specForComputer(computer)
+          : vmRuntimePaths.specForComputer(computer);
       return {
         computerName: computer.name,
         host: "127.0.0.1",
@@ -249,7 +289,9 @@ export function createSystemdRuntime({
             ? computer.runtime.workingDirectory
             : computer.profile === "browser"
               ? browserRuntimePaths.specForComputer(computer).stateDirectory
-              : undefined,
+              : computer.profile === "vm"
+                ? vmRuntimePaths.specForComputer(computer).stateDirectory
+                : undefined,
         environment: computer.profile === "host" ? computer.runtime.environment : undefined,
         cpuWeight: computer.resources.cpuWeight,
         memoryMaxMiB: computer.resources.memoryMaxMiB,
@@ -416,6 +458,198 @@ async function resolveAutomationWebSocketUrl(port: number) {
   }
 
   return payload.webSocketDebuggerUrl;
+}
+
+function assertVmHostSupport(vmBridge: string) {
+  execFileSync("/usr/bin/bash", [
+    "-lc",
+    ["set -eu", "[ -e /dev/kvm ]", `[ -d ${quoteShell(`/sys/class/net/${vmBridge}`)} ]`].join("; "),
+  ]);
+}
+
+async function assertPathExists(path: string, label: string) {
+  try {
+    await access(path);
+  } catch {
+    throw new Error(`${label} "${path}" does not exist.`);
+  }
+}
+
+async function createQcow2Overlay(baseImagePath: string, diskImagePath: string) {
+  await execFileAsync("qemu-img", [
+    "create",
+    "-f",
+    "qcow2",
+    "-F",
+    "qcow2",
+    "-b",
+    baseImagePath,
+    diskImagePath,
+  ]);
+}
+
+async function createBlankDisk(diskImagePath: string, diskSizeGiB: number) {
+  await execFileAsync("qemu-img", ["create", "-f", "qcow2", diskImagePath, `${diskSizeGiB}G`]);
+}
+
+async function createCloudInitSeed(
+  spec: ReturnType<ReturnType<typeof createVmRuntimePaths>["specForName"]>,
+  computerName: string,
+  cloudInit: {
+    enabled?: true;
+    user: string;
+    password?: string;
+    sshAuthorizedKeys?: string[];
+  },
+  nic: {
+    macAddress?: string;
+    ipv4?:
+      | { type: "disabled" }
+      | { type: "dhcp" }
+      | { type: "static"; address: string; prefixLength: number };
+    ipv6?:
+      | { type: "disabled" }
+      | { type: "dhcp" }
+      | { type: "slaac" }
+      | { type: "static"; address: string; prefixLength: number };
+  },
+) {
+  await mkdir(spec.cloudInitDirectory, { recursive: true });
+  const userData = [
+    "#cloud-config",
+    `hostname: ${computerName}`,
+    "users:",
+    "  - default",
+    `  - name: ${cloudInit.user}`,
+    "    sudo: ALL=(ALL) NOPASSWD:ALL",
+    "    shell: /bin/bash",
+    cloudInit.password ? `    passwd: ${cloudInit.password}` : null,
+    cloudInit.sshAuthorizedKeys && cloudInit.sshAuthorizedKeys.length > 0
+      ? "    ssh_authorized_keys:"
+      : null,
+    ...(cloudInit.sshAuthorizedKeys ?? []).map((key) => `      - ${key}`),
+    cloudInit.password ? "chpasswd:\n  expire: false" : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  const metaData = [`instance-id: ${computerName}`, `local-hostname: ${computerName}`].join("\n");
+  await writeFile(spec.cloudInitUserDataPath, userData);
+  await writeFile(spec.cloudInitMetaDataPath, metaData);
+  if (shouldWriteNetworkConfig(nic)) {
+    const resolvedMacAddress = resolveVmNicMacAddress(spec, nic.macAddress, 0);
+    await writeFile(
+      spec.cloudInitNetworkConfigPath,
+      createCloudInitNetworkConfig(nic, resolvedMacAddress),
+    );
+  }
+  try {
+    await execFileAsync("cloud-localds", [
+      ...(shouldWriteNetworkConfig(nic)
+        ? [`--network-config=${spec.cloudInitNetworkConfigPath}`]
+        : []),
+      spec.cloudInitImagePath,
+      spec.cloudInitUserDataPath,
+      spec.cloudInitMetaDataPath,
+    ]);
+    return;
+  } catch {}
+
+  try {
+    await execFileAsync("genisoimage", [
+      "-output",
+      spec.cloudInitImagePath,
+      "-volid",
+      "cidata",
+      "-joliet",
+      "-rock",
+      spec.cloudInitUserDataPath,
+      spec.cloudInitMetaDataPath,
+      ...(shouldWriteNetworkConfig(nic) ? [spec.cloudInitNetworkConfigPath] : []),
+    ]);
+    return;
+  } catch {}
+
+  await execFileAsync("mkisofs", [
+    "-output",
+    spec.cloudInitImagePath,
+    "-volid",
+    "cidata",
+    "-joliet",
+    "-rock",
+    spec.cloudInitUserDataPath,
+    spec.cloudInitMetaDataPath,
+    ...(shouldWriteNetworkConfig(nic) ? [spec.cloudInitNetworkConfigPath] : []),
+  ]);
+}
+
+function createCloudInitNetworkConfig(
+  nic: {
+    ipv4?:
+      | { type: "disabled" }
+      | { type: "dhcp" }
+      | { type: "static"; address: string; prefixLength: number };
+    ipv6?:
+      | { type: "disabled" }
+      | { type: "dhcp" }
+      | { type: "slaac" }
+      | { type: "static"; address: string; prefixLength: number };
+  },
+  macAddress: string,
+) {
+  const lines = [
+    "version: 2",
+    "ethernets:",
+    "  primary:",
+    "    match:",
+    `      macaddress: ${macAddress}`,
+    "    set-name: ens3",
+  ];
+  const addresses: string[] = [];
+
+  if (nic.ipv4?.type === "dhcp") {
+    lines.push("    dhcp4: true");
+  } else if (nic.ipv4?.type === "static") {
+    lines.push("    dhcp4: false");
+    addresses.push(`${nic.ipv4.address}/${nic.ipv4.prefixLength}`);
+  } else {
+    lines.push("    dhcp4: false");
+  }
+
+  if (nic.ipv6?.type === "dhcp") {
+    lines.push("    dhcp6: true");
+  } else if (nic.ipv6?.type === "slaac") {
+    lines.push("    dhcp6: false", "    accept-ra: true");
+  } else if (nic.ipv6?.type === "static") {
+    lines.push("    dhcp6: false", "    accept-ra: false");
+    addresses.push(`${nic.ipv6.address}/${nic.ipv6.prefixLength}`);
+  } else {
+    lines.push("    dhcp6: false");
+  }
+
+  if (addresses.length > 0) {
+    lines.push("    addresses:", ...addresses.map((address) => `      - ${address}`));
+  }
+
+  return lines.join("\n");
+}
+
+function shouldWriteNetworkConfig(nic: {
+  ipv4?: { type: "disabled" | "dhcp" | "static" };
+  ipv6?: { type: "disabled" | "dhcp" | "slaac" | "static" };
+}) {
+  return nic.ipv4?.type !== undefined || nic.ipv6?.type !== undefined;
+}
+
+function resolveVmBridgeName(networkMode: "host" | "isolated", options: FileUnitStoreOptions) {
+  if (networkMode === "host") {
+    return options.vmHostBridge;
+  }
+
+  if (options.vmIsolatedBridge === undefined) {
+    throw new Error("Isolated VM bridge is not configured.");
+  }
+
+  return options.vmIsolatedBridge;
 }
 
 function quoteShell(value: string) {

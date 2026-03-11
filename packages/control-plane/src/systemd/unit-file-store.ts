@@ -2,7 +2,13 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createBrowserRuntimePaths, type BrowserRuntimePathsOptions } from "./browser-runtime";
 import { createConsoleRuntimePaths, type ConsoleRuntimePathsOptions } from "./console-runtime";
-import type { PersistedBrowserComputer, PersistedComputer, PersistedHostComputer } from "./types";
+import { createVmRuntimePaths, resolveVmNicMacAddress } from "./vm-runtime";
+import type {
+  PersistedBrowserComputer,
+  PersistedComputer,
+  PersistedHostComputer,
+  PersistedVmComputer,
+} from "./types";
 
 export interface UnitFileStore {
   deleteUnitFile: (unitName: string) => Promise<void>;
@@ -15,6 +21,10 @@ export interface FileUnitStoreOptions {
   browserRuntimeDirectory: string;
   browserStateDirectory: string;
   terminalRuntimeDirectory: string;
+  vmRuntimeDirectory: string;
+  vmStateDirectory: string;
+  vmHostBridge: string;
+  vmIsolatedBridge?: string;
 }
 
 export function createFileUnitStore({
@@ -22,6 +32,10 @@ export function createFileUnitStore({
   browserRuntimeDirectory,
   browserStateDirectory,
   terminalRuntimeDirectory,
+  vmRuntimeDirectory,
+  vmStateDirectory,
+  vmHostBridge,
+  vmIsolatedBridge,
 }: FileUnitStoreOptions): UnitFileStore {
   const consoleRuntimePaths = createConsoleRuntimePaths({
     runtimeDirectory: terminalRuntimeDirectory,
@@ -29,6 +43,10 @@ export function createFileUnitStore({
   const browserRuntimePaths = createBrowserRuntimePaths({
     runtimeRootDirectory: browserRuntimeDirectory,
     stateRootDirectory: browserStateDirectory,
+  });
+  const vmRuntimePaths = createVmRuntimePaths({
+    runtimeRootDirectory: vmRuntimeDirectory,
+    stateRootDirectory: vmStateDirectory,
   });
 
   return {
@@ -41,15 +59,26 @@ export function createFileUnitStore({
           ? renderHostUnitFile(computer, {
               runtimeDirectory: terminalRuntimeDirectory,
             })
-          : renderBrowserUnitFile(computer, {
-              runtimeRootDirectory: browserRuntimeDirectory,
-              stateRootDirectory: browserStateDirectory,
-            });
+          : computer.profile === "browser"
+            ? renderBrowserUnitFile(computer, {
+                runtimeRootDirectory: browserRuntimeDirectory,
+                stateRootDirectory: browserStateDirectory,
+              })
+            : renderVmUnitFile(computer, {
+                runtimeRootDirectory: vmRuntimeDirectory,
+                stateRootDirectory: vmStateDirectory,
+                vmHostBridge,
+                vmIsolatedBridge,
+              });
       if (computer.profile === "host" && computer.access.console?.mode === "pty") {
         await consoleRuntimePaths.ensureComputerDirectory(computer);
       } else if (computer.profile === "browser") {
         const spec = browserRuntimePaths.specForComputer(computer);
         await mkdir(spec.profileDirectory, { recursive: true });
+        await mkdir(spec.runtimeDirectory, { recursive: true });
+      } else if (computer.profile === "vm") {
+        const spec = vmRuntimePaths.specForComputer(computer);
+        await mkdir(spec.stateDirectory, { recursive: true });
         await mkdir(spec.runtimeDirectory, { recursive: true });
       }
       await mkdir(directory, { recursive: true });
@@ -169,6 +198,49 @@ function renderBrowserUnitFile(
   return `${lines.join("\n")}`;
 }
 
+function renderVmUnitFile(
+  computer: PersistedVmComputer,
+  vmRuntimePathsOptions: {
+    runtimeRootDirectory: string;
+    stateRootDirectory: string;
+    vmHostBridge: string;
+    vmIsolatedBridge?: string;
+  },
+) {
+  const vmRuntimePaths = createVmRuntimePaths({
+    runtimeRootDirectory: vmRuntimePathsOptions.runtimeRootDirectory,
+    stateRootDirectory: vmRuntimePathsOptions.stateRootDirectory,
+  });
+  const spec = vmRuntimePaths.specForComputer(computer);
+  const lines = [
+    "[Unit]",
+    `Description=${computer.description ?? `Computerd VM ${computer.name}`}`,
+    "",
+    "[Service]",
+    "Type=simple",
+    "KillMode=control-group",
+    "TimeoutStopSec=30s",
+    `WorkingDirectory=${spec.stateDirectory}`,
+    `ExecStart=${buildVmExecStart(computer, spec, resolveVmBridge(computer, vmRuntimePathsOptions.vmHostBridge, vmRuntimePathsOptions.vmIsolatedBridge))}`,
+    `ExecStopPost=${buildVmExecStopPost(spec)}`,
+  ];
+
+  if (computer.resources.cpuWeight !== undefined) {
+    lines.push(`CPUWeight=${computer.resources.cpuWeight}`);
+  }
+
+  if (computer.resources.memoryMaxMiB !== undefined) {
+    lines.push(`MemoryMax=${computer.resources.memoryMaxMiB * 1024 * 1024}`);
+  }
+
+  lines.push("");
+  lines.push("[Install]");
+  lines.push("WantedBy=multi-user.target");
+  lines.push("");
+
+  return `${lines.join("\n")}`;
+}
+
 function buildHostConsoleExecStart(
   computer: PersistedHostComputer,
   spec: ReturnType<ReturnType<typeof createConsoleRuntimePaths>["specForComputer"]>,
@@ -256,6 +328,61 @@ function buildBrowserExecStart(
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
 }
 
+function buildVmExecStart(
+  computer: PersistedVmComputer,
+  spec: ReturnType<ReturnType<typeof createVmRuntimePaths>["specForComputer"]>,
+  vmBridge: string,
+) {
+  const memoryMiB = computer.resources.memoryMaxMiB ?? 2048;
+  const vcpuCount = 1; // TODO: support multi core
+  const installationMediaArg =
+    computer.runtime.source.kind === "qcow2"
+      ? computer.runtime.source.cloudInit.enabled !== false
+        ? `-drive file=${escapeShellToken(spec.cloudInitImagePath)},if=virtio,media=cdrom,readonly=on`
+        : null
+      : `-drive file=${escapeShellToken(computer.runtime.source.isoPath)},if=virtio,media=cdrom,readonly=on`;
+  const primaryNicMacAddress = resolveVmNicMacAddress(
+    spec,
+    computer.runtime.nics[0]?.macAddress,
+    0,
+  );
+  const qemuArgs = [
+    "qemu-system-x86_64",
+    "-enable-kvm",
+    "-machine q35",
+    "-cpu host",
+    `-m ${memoryMiB}`,
+    `-smp ${vcpuCount}`,
+    "-display none",
+    `-vnc 127.0.0.1:${spec.vncDisplay}`,
+    `-serial unix:${spec.serialSocketPath},server=on,wait=off`,
+    `-drive file=${escapeShellToken(spec.diskImagePath)},if=virtio,format=qcow2`,
+    installationMediaArg,
+    `-netdev bridge,id=net0,br=${escapeShellToken(vmBridge)}`,
+    `-device virtio-net-pci,netdev=net0,mac=${primaryNicMacAddress}`,
+  ]
+    .filter((argument) => argument !== null)
+    .join(" ");
+  const shellScript = [
+    "set -eu",
+    `mkdir -p ${escapeShellToken(spec.stateDirectory)} ${escapeShellToken(spec.runtimeDirectory)}`,
+    `rm -f ${escapeShellToken(spec.serialSocketPath)}`,
+    `${qemuArgs}`,
+  ].join("; ");
+
+  return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
+}
+
+function resolveVmBridge(
+  computer: PersistedVmComputer,
+  vmHostBridge: string,
+  vmIsolatedBridge?: string,
+) {
+  return computer.network.mode === "host"
+    ? vmHostBridge
+    : (vmIsolatedBridge ?? "__computerd_missing_isolated_bridge__");
+}
+
 function buildBrowserExecStopPost(
   spec: ReturnType<ReturnType<typeof createBrowserRuntimePaths>["specForComputer"]>,
 ) {
@@ -270,6 +397,13 @@ function buildBrowserExecStopPost(
     `rm -rf ${escapeShellToken(spec.runtimeDirectory)}`,
   ].join("; ");
 
+  return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
+}
+
+function buildVmExecStopPost(
+  spec: ReturnType<ReturnType<typeof createVmRuntimePaths>["specForComputer"]>,
+) {
+  const shellScript = [`rm -f ${escapeShellToken(spec.serialSocketPath)}`].join("; ");
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
 }
 

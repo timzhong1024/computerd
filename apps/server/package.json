@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite-node src/index.ts",
+    "smoke:dist": "node ./scripts/smoke-dist-server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json"
@@ -16,7 +17,9 @@
     "@computerd/mcp": "workspace:*",
     "@lydell/node-pty": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "dockerode": "^4.0.9",
     "ws": "^8.19.0",
+    "x11": "^2.3.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

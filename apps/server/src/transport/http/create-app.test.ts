@@ -143,6 +143,70 @@ test("serves computer and host unit APIs", async () => {
     state: "running",
   });
 
+  const createVmResponse = await fetch(`${baseUrl}/api/computers`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "vm-smoke",
+      profile: "vm",
+      runtime: {
+        hypervisor: "qemu",
+        nics: [
+          {
+            name: "primary",
+            ipv4: {
+              type: "dhcp",
+            },
+            ipv6: {
+              type: "disabled",
+            },
+          },
+        ],
+        source: {
+          kind: "qcow2",
+          baseImagePath: "/images/ubuntu-cloud.qcow2",
+          cloudInit: {
+            user: "ubuntu",
+          },
+        },
+      },
+    }),
+  });
+  expect(createVmResponse.status).toBe(201);
+  await expect(createVmResponse.json()).resolves.toMatchObject({
+    name: "vm-smoke",
+    profile: "vm",
+  });
+
+  await fetch(`${baseUrl}/api/computers/vm-smoke/start`, {
+    method: "POST",
+  });
+  const vmMonitorSessionResponse = await fetch(
+    `${baseUrl}/api/computers/vm-smoke/monitor-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(vmMonitorSessionResponse.status).toBe(200);
+  await expect(vmMonitorSessionResponse.json()).resolves.toMatchObject({
+    computerName: "vm-smoke",
+    protocol: "vnc",
+  });
+
+  const vmConsoleSessionResponse = await fetch(
+    `${baseUrl}/api/computers/vm-smoke/console-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(vmConsoleSessionResponse.status).toBe(200);
+  await expect(vmConsoleSessionResponse.json()).resolves.toMatchObject({
+    computerName: "vm-smoke",
+    protocol: "ttyd",
+  });
+
   const execSessionResponse = await fetch(
     `${baseUrl}/api/computers/workspace-container/exec-sessions`,
     {
