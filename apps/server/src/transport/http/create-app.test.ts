@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { createControlPlane } from "@computerd/control-plane";
+import { BrokenComputerError } from "@computerd/control-plane";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "./create-app";
 
@@ -39,9 +40,30 @@ test("serves computer and host unit APIs", async () => {
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
-    createExecSession: controlPlane.createExecSession,
+    createExecSession: async (name) =>
+      name === "workspace-container"
+        ? {
+            computerName: name,
+            protocol: "ttyd",
+            connect: {
+              mode: "relative-websocket-path",
+              url: `/api/computers/${encodeURIComponent(name)}/exec/ws`,
+            },
+            authorization: {
+              mode: "none",
+            },
+          }
+        : await controlPlane.createExecSession(name),
     openConsoleAttach: controlPlane.openConsoleAttach,
-    openExecAttach: controlPlane.openExecAttach,
+    openExecAttach: async (name) =>
+      name === "workspace-container"
+        ? {
+            command: "docker",
+            args: ["exec", "-it", "workspace-container", "/bin/sh"],
+            computerName: name,
+            release() {},
+          }
+        : await controlPlane.openExecAttach(name),
     openAutomationAttach: controlPlane.openAutomationAttach,
     openAudioStream: async (name) => ({
       computerName: name,
@@ -119,6 +141,21 @@ test("serves computer and host unit APIs", async () => {
   expect(startResponse.status).toBe(200);
   await expect(startResponse.json()).resolves.toMatchObject({
     state: "running",
+  });
+
+  const execSessionResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/exec-sessions`,
+    {
+      method: "POST",
+    },
+  );
+  expect(execSessionResponse.status).toBe(200);
+  await expect(execSessionResponse.json()).resolves.toMatchObject({
+    computerName: "workspace-container",
+    protocol: "ttyd",
+    connect: {
+      url: "/api/computers/workspace-container/exec/ws",
+    },
   });
 
   const hostUnitsResponse = await fetch(`${baseUrl}/api/host-units`);
@@ -290,6 +327,12 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
+        path: "/api/computers/workspace-container/exec-sessions",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
         path: "/api/computers/research-browser/monitor-sessions",
         statusCode: 200,
       }),
@@ -374,4 +417,147 @@ test("serves computer and host unit APIs", async () => {
       }),
     ]),
   );
+});
+
+test("returns broken computers and blocks broken actions with conflict responses", async () => {
+  const brokenDetail = {
+    name: "broken-host",
+    unitName: "computerd-broken-host.service",
+    profile: "host" as const,
+    state: "broken" as const,
+    createdAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty" as const,
+        writable: true,
+      },
+      logs: true,
+    },
+    capabilities: {
+      canInspect: true,
+      canStart: false,
+      canStop: false,
+      canRestart: false,
+      consoleAvailable: true,
+      browserAvailable: false,
+      automationAvailable: false,
+      screenshotAvailable: false,
+      audioAvailable: false,
+    },
+    resources: {},
+    storage: {
+      rootMode: "persistent" as const,
+    },
+    network: {
+      mode: "host" as const,
+    },
+    lifecycle: {},
+    status: {
+      lastActionAt: "2026-03-09T08:00:00.000Z",
+      primaryUnit: "computerd-broken-host.service",
+    },
+    runtime: {
+      command: "/usr/bin/bash",
+    },
+  };
+  const brokenError = new BrokenComputerError(
+    "broken-host",
+    "Broken computers currently support inspect only.",
+  );
+  const app = createApp({
+    createAutomationSession: async () => {
+      throw brokenError;
+    },
+    createAudioSession: async () => {
+      throw brokenError;
+    },
+    createConsoleSession: async () => {
+      throw brokenError;
+    },
+    createExecSession: async () => {
+      throw brokenError;
+    },
+    openConsoleAttach: async () => {
+      throw brokenError;
+    },
+    openExecAttach: async () => {
+      throw brokenError;
+    },
+    openAutomationAttach: async () => {
+      throw brokenError;
+    },
+    openAudioStream: async () => {
+      throw brokenError;
+    },
+    listComputers: async () => [brokenDetail],
+    createMonitorSession: async () => {
+      throw brokenError;
+    },
+    openMonitorAttach: async () => {
+      throw brokenError;
+    },
+    createScreenshot: async () => {
+      throw brokenError;
+    },
+    getComputer: async () => brokenDetail,
+    createComputer: async () => brokenDetail,
+    deleteComputer: async () => {
+      throw brokenError;
+    },
+    startComputer: async () => {
+      throw brokenError;
+    },
+    stopComputer: async () => {
+      throw brokenError;
+    },
+    restartComputer: async () => {
+      throw brokenError;
+    },
+    listHostUnits: async () => [],
+    getHostUnit: async () => {
+      throw new Error("not used");
+    },
+    updateBrowserViewport: async () => {
+      throw brokenError;
+    },
+  });
+
+  servers.push(app);
+  app.listen(0, "127.0.0.1");
+  await once(app, "listening");
+
+  const address = app.address();
+  if (address === null || typeof address === "string") {
+    throw new TypeError("Expected a TCP server address");
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const listResponse = await fetch(`${baseUrl}/api/computers`);
+  expect(listResponse.status).toBe(200);
+  await expect(listResponse.json()).resolves.toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: "broken-host", state: "broken" })]),
+  );
+
+  const detailResponse = await fetch(`${baseUrl}/api/computers/broken-host`);
+  expect(detailResponse.status).toBe(200);
+  await expect(detailResponse.json()).resolves.toMatchObject({
+    name: "broken-host",
+    state: "broken",
+  });
+
+  for (const path of [
+    "/api/computers/broken-host/start",
+    "/api/computers/broken-host/stop",
+    "/api/computers/broken-host/restart",
+    "/api/computers/broken-host",
+    "/api/computers/broken-host/console-sessions",
+  ]) {
+    const method = path === "/api/computers/broken-host" ? "DELETE" : "POST";
+    const response = await fetch(`${baseUrl}${path}`, { method });
+    expect(response.status).toBe(409);
+  }
+
+  const websocketStubResponse = await fetch(`${baseUrl}/api/computers/broken-host/console/ws`);
+  expect(websocketStubResponse.status).toBe(409);
 });

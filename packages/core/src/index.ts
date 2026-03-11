@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const computerProfileSchema = z.enum(["host", "browser", "container"]);
-export const computerStateSchema = z.enum(["stopped", "running"]);
+export const computerStateSchema = z.enum(["stopped", "running", "broken"]);
 
 export const computerCapabilitiesSchema = z.object({
   canInspect: z.boolean(),
@@ -376,11 +376,12 @@ export function createComputerCapabilities(
   state: ComputerState,
   access?: ComputerAccess,
 ) {
+  const isBroken = state === "broken";
   return {
     canInspect: true,
-    canStart: state === "stopped",
-    canStop: state === "running",
-    canRestart: state === "running",
+    canStart: !isBroken && state === "stopped",
+    canStop: !isBroken && state === "running",
+    canRestart: !isBroken && state === "running",
     consoleAvailable:
       (profile === "host" || profile === "container") && access?.console?.mode === "pty",
     browserAvailable: profile === "browser",

@@ -5,6 +5,7 @@ import {
   parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
+  parseComputerSummaries,
   parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
@@ -126,6 +127,69 @@ test("parses container computer details", () => {
 
   expect(detail.runtime.provider).toBe("docker");
   expect(detail.runtime.containerId).toBe("abc123");
+});
+
+test("parses broken computer details", () => {
+  const detail = parseComputerDetail({
+    name: "orphaned-host",
+    unitName: "computerd-orphaned-host.service",
+    profile: "host",
+    state: "broken",
+    createdAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      logs: true,
+    },
+    capabilities: createComputerCapabilities("host", "broken", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    network: {
+      mode: "host",
+    },
+    lifecycle: {},
+    status: {
+      lastActionAt: "2026-03-09T08:00:00.000Z",
+      primaryUnit: "computerd-orphaned-host.service",
+    },
+    runtime: {
+      command: "/usr/bin/bash",
+    },
+  });
+
+  expect(detail.state).toBe("broken");
+  expect(detail.capabilities.canInspect).toBe(true);
+  expect(detail.capabilities.canStart).toBe(false);
+});
+
+test("parses broken computer summaries", () => {
+  const summaries = parseComputerSummaries([
+    {
+      name: "orphaned-browser",
+      unitName: "computerd-orphaned-browser.service",
+      profile: "browser",
+      state: "broken",
+      createdAt: "2026-03-09T08:00:00.000Z",
+      access: {
+        display: {
+          mode: "virtual-display",
+        },
+        logs: true,
+      },
+      capabilities: createComputerCapabilities("browser", "broken"),
+    },
+  ]);
+
+  expect(summaries[0]?.state).toBe("broken");
 });
 
 test("parses browser computer details", () => {
@@ -405,5 +469,24 @@ test("derives computer capabilities from profile and state", () => {
   ).toMatchObject({
     consoleAvailable: true,
     browserAvailable: false,
+  });
+
+  expect(
+    createComputerCapabilities("host", "broken", {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+  ).toEqual({
+    canInspect: true,
+    canStart: false,
+    canStop: false,
+    canRestart: false,
+    consoleAvailable: true,
+    browserAvailable: false,
+    automationAvailable: false,
+    screenshotAvailable: false,
+    audioAvailable: false,
   });
 });

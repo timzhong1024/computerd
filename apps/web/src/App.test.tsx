@@ -21,7 +21,7 @@ interface FakeComputer {
   name: string;
   unitName: string;
   profile: "host" | "browser" | "container";
-  state: "stopped" | "running";
+  state: "stopped" | "running" | "broken";
   access?: Record<string, unknown>;
   runtime: Record<string, unknown>;
 }
@@ -477,6 +477,41 @@ test("shows exec shell without console link for exec-only containers", async () 
 
   expect(await screen.findByTestId("open-exec-link")).toBeInTheDocument();
   expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
+});
+
+test("hides lifecycle and surface actions for broken computers", async () => {
+  computers.unshift({
+    name: "broken-container",
+    unitName: "docker:broken-container",
+    profile: "container",
+    state: "broken",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      logs: true,
+    },
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "sleep infinity",
+      containerId: "missing-container",
+      containerName: "broken-container",
+    },
+  });
+
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /broken-container/i }));
+
+  expect(await screen.findByTestId("computer-state")).toHaveTextContent("broken");
+  expect(screen.queryByTestId("open-console-link")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("open-exec-link")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("computer-action-delete")).not.toBeInTheDocument();
+  expect(screen.getByTestId("computer-action-start")).toBeDisabled();
+  expect(screen.getByTestId("computer-action-stop")).toBeDisabled();
+  expect(screen.getByTestId("computer-action-restart")).toBeDisabled();
 });
 
 function renderApp(initialPath: string) {

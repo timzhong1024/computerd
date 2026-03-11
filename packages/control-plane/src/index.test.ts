@@ -9,6 +9,7 @@ import type {
   UnitRuntimeState,
 } from "./systemd/types";
 import {
+  BrokenComputerError,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
@@ -393,6 +394,95 @@ test("rejects duplicate names and unknown computers", async () => {
   await expect(controlPlane.getComputer("missing")).rejects.toBeInstanceOf(ComputerNotFoundError);
 });
 
+test("reports broken state for host, browser, and container computers whose runtime entity is missing", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  await metadataStore.putComputer(createHostComputerRecord());
+  await metadataStore.putComputer(createBrowserComputerRecord());
+  await metadataStore.putComputer(createContainerComputerRecord());
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_TERMINAL_RUNTIME_DIR: "/tmp/computerd-test-terminals",
+    },
+    { metadataStore, runtime: createMemoryRuntime("/tmp/computerd-test-terminals") },
+  );
+
+  await expect(controlPlane.getComputer("starter-host")).resolves.toMatchObject({
+    profile: "host",
+    state: "broken",
+  });
+  await expect(controlPlane.getComputer("research-browser")).resolves.toMatchObject({
+    profile: "browser",
+    state: "broken",
+  });
+  await expect(controlPlane.getComputer("workspace-container")).resolves.toMatchObject({
+    profile: "container",
+    state: "broken",
+  });
+
+  await expect(controlPlane.listComputers()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "starter-host", state: "broken" }),
+      expect.objectContaining({ name: "research-browser", state: "broken" }),
+      expect.objectContaining({ name: "workspace-container", state: "broken" }),
+    ]),
+  );
+});
+
+test("rejects lifecycle, delete, and session actions for broken computers", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  await metadataStore.putComputer(createHostComputerRecord());
+  await metadataStore.putComputer(createBrowserComputerRecord());
+  await metadataStore.putComputer(createContainerComputerRecord());
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_TERMINAL_RUNTIME_DIR: "/tmp/computerd-test-terminals",
+    },
+    { metadataStore, runtime: createMemoryRuntime("/tmp/computerd-test-terminals") },
+  );
+
+  await expect(controlPlane.startComputer("starter-host")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.stopComputer("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.restartComputer("workspace-container")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.deleteComputer("workspace-container")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+
+  await expect(controlPlane.createConsoleSession("starter-host")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.openConsoleAttach("starter-host")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createMonitorSession("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createAudioSession("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createAutomationSession("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createScreenshot("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createExecSession("workspace-container")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.openExecAttach("workspace-container")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+});
+
 test("creates browser automation, monitor, screenshot, and console sessions from seeded capabilities", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
@@ -627,13 +717,16 @@ test("waits for host console runtime readiness during start", async () => {
 
 test("rejects sessions for unsupported capabilities", async () => {
   const metadataStore = createMemoryMetadataStore();
-  await metadataStore.putComputer(createHostComputerRecord());
+  const hostRecord = createHostComputerRecord();
+  await metadataStore.putComputer(hostRecord);
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  await runtime.createPersistentUnit(hostRecord);
   const controlPlane = createControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
     },
-    { metadataStore, runtime: createMemoryRuntime("/tmp/computerd-test-terminals") },
+    { metadataStore, runtime },
   );
 
   await expect(controlPlane.createMonitorSession("starter-host")).rejects.toBeInstanceOf(Error);
@@ -745,6 +838,39 @@ function createHostComputerRecord(): PersistedHostComputer {
     lifecycle: {},
     runtime: {
       command: "/usr/bin/bash",
+    },
+  };
+}
+
+function createContainerComputerRecord(): PersistedComputer {
+  return {
+    name: "workspace-container",
+    unitName: "docker:workspace-container",
+    profile: "container",
+    description: "Seeded container computer",
+    createdAt: "2026-03-09T08:00:00.000Z",
+    lastActionAt: "2026-03-09T08:00:00.000Z",
+    access: {
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+      logs: true,
+    },
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    network: {
+      mode: "host",
+    },
+    lifecycle: {},
+    runtime: {
+      provider: "docker",
+      image: "ubuntu:24.04",
+      command: "/bin/sh -i",
+      containerId: "container-workspace-container",
+      containerName: "workspace-container",
     },
   };
 }

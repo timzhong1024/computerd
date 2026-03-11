@@ -79,6 +79,13 @@ export class ComputerConsoleUnavailableError extends Error {
   }
 }
 
+export class BrokenComputerError extends Error {
+  constructor(name: string, action: string) {
+    super(`Computer "${name}" is broken because its backing runtime entity is missing. ${action}`);
+    this.name = "BrokenComputerError";
+  }
+}
+
 export interface ControlPlane {
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
@@ -278,6 +285,11 @@ export function createControlPlane(
     },
     async deleteComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      throwIfBroken(
+        record,
+        await getPersistedComputerRuntimeState(record, runtime),
+        "Delete is not supported for broken computers.",
+      );
       if (record.profile === "container") {
         await runtime.deleteContainerComputer(record);
       } else {
@@ -292,6 +304,11 @@ export function createControlPlane(
     },
     async startComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      throwIfBroken(
+        record,
+        await getPersistedComputerRuntimeState(record, runtime),
+        "Start is not supported for broken computers.",
+      );
       if (record.profile === "browser") {
         await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
@@ -313,6 +330,11 @@ export function createControlPlane(
     },
     async stopComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      throwIfBroken(
+        record,
+        await getPersistedComputerRuntimeState(record, runtime),
+        "Stop is not supported for broken computers.",
+      );
       if (record.profile === "container") {
         await runtime.stopContainerComputer(record);
       } else {
@@ -327,6 +349,11 @@ export function createControlPlane(
     },
     async restartComputer(name) {
       const record = await requireComputer(metadataStore, name);
+      throwIfBroken(
+        record,
+        await getPersistedComputerRuntimeState(record, runtime),
+        "Restart is not supported for broken computers.",
+      );
       if (record.profile === "browser") {
         await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
@@ -349,6 +376,11 @@ export function createControlPlane(
     async updateBrowserViewport(name, input) {
       const record = await requireComputer(metadataStore, name);
       const browserRecord = requireBrowserRecord(record);
+      throwIfBroken(
+        browserRecord,
+        await runtime.getRuntimeState(browserRecord.unitName),
+        "Viewport updates are not supported for broken computers.",
+      );
       const updated = withBrowserViewport(browserRecord, input);
       await metadataStore.putComputer(updated);
       await runtime.updateBrowserViewport(updated, input);
@@ -461,9 +493,16 @@ async function requireConsoleAvailable(
     return;
   }
 
+  throwIfBroken(
+    record,
+    await runtime.getRuntimeState(record.unitName),
+    "Console sessions are not supported for broken computers.",
+  );
+
   const isReady = await waitForConsoleRuntimeReady(record, runtime, consoleRuntimePaths, 3_000);
   if (!isReady) {
     const runtimeState = await runtime.getRuntimeState(record.unitName);
+    throwIfBroken(record, runtimeState, "Console sessions are not supported for broken computers.");
     if (mapComputerState(runtimeState) !== "running") {
       throw new ComputerConsoleUnavailableError(
         `Computer "${record.name}" must be running before opening a console.`,
@@ -575,7 +614,11 @@ async function toComputerDetail(
 }
 
 function mapComputerState(runtimeState: UnitRuntimeState | null) {
-  return runtimeState?.activeState === "active" ? ("running" as const) : ("stopped" as const);
+  if (runtimeState === null) {
+    return "broken" as const;
+  }
+
+  return runtimeState.activeState === "active" ? ("running" as const) : ("stopped" as const);
 }
 
 function assertSupportedCreateInput(
@@ -627,6 +670,11 @@ async function requireBrowserRunning(
   capability: string,
 ) {
   const runtimeState = await runtime.getRuntimeState(record.unitName);
+  throwIfBroken(
+    record,
+    runtimeState,
+    `Opening ${capability} is not supported for broken computers.`,
+  );
   if (mapComputerState(runtimeState) !== "running") {
     throw new UnsupportedComputerFeatureError(
       `Computer "${record.name}" must be running before opening ${capability}.`,
@@ -662,6 +710,11 @@ async function requireContainerRunning(
   capability: string,
 ) {
   const runtimeState = await runtime.getContainerRuntimeState(record);
+  throwIfBroken(
+    record,
+    runtimeState,
+    `Opening ${capability} is not supported for broken computers.`,
+  );
   if (mapComputerState(runtimeState) !== "running") {
     throw new UnsupportedComputerFeatureError(
       `Computer "${record.name}" must be running before opening ${capability}.`,
@@ -685,6 +738,16 @@ async function getPersistedComputerRuntimeState(
   }
 
   return await runtime.getRuntimeState(record.unitName);
+}
+
+function throwIfBroken(
+  record: PersistedComputer,
+  runtimeState: UnitRuntimeState | null,
+  action: string,
+) {
+  if (mapComputerState(runtimeState) === "broken") {
+    throw new BrokenComputerError(record.name, action);
+  }
 }
 
 function toUnitName(name: string) {

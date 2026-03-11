@@ -67,3 +67,33 @@ pnpm exec vite-node examples/playwright-connect.ts chrome1
 - browser computer 已创建
 - browser computer 已处于 `running`
 - `apps/server` 已提供 HTTP API
+
+## Host / Container Notes
+
+### Broken state
+
+computer 现在可能返回 `state = "broken"`：
+
+- metadata 还在
+- 但 backing runtime entity 已经丢失
+
+当前 `broken` 只支持 inspect：
+
+- 可以 list / get detail
+- 不支持 start / stop / restart
+- 不支持 delete
+- 不支持打开 console / monitor / automation / screenshot / exec
+
+### Container console vs exec
+
+container computer 当前有两种交互面：
+
+- `console`: 连接容器主进程的交互 stdin/stdout
+- `exec`: 在运行中的容器里临时打开一个新的 `/bin/sh`
+
+当前推荐：
+
+- 对 agent，优先使用 console-capable computer，也就是让容器主进程本身可交互
+- `exec` 当前更偏 operator-only / web-oriented surface，适合人类在前端临时排查
+
+这不是对 container exec 的永久否定；如果后续出现明确价值，再把它提升为更稳定的自动化能力。

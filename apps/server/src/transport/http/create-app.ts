@@ -35,6 +35,7 @@ import {
   type BrowserAutomationLease,
   type BrowserAudioStreamLease,
   type BrowserMonitorLease,
+  BrokenComputerError,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
@@ -218,7 +219,16 @@ export function createApp({
           /^\/api\/computers\/(?<name>[^/]+)\/(?<surface>monitor|console|exec|automation)\/ws$/.exec(
             url.pathname,
           );
-        if (websocketStubMatch) {
+        if (websocketStubMatch?.groups?.name) {
+          const name = decodeURIComponent(websocketStubMatch.groups.name);
+          const detail = await getComputer(name);
+          if (detail.state === "broken") {
+            sendJson(response, 409, {
+              error: `Computer "${name}" is broken because its backing runtime entity is missing. Websocket attach is not supported for broken computers.`,
+            });
+            return;
+          }
+
           sendJson(response, 426, { error: "Websocket endpoint requires upgrade." });
           return;
         }
@@ -285,6 +295,11 @@ export function createApp({
       }
 
       if (error instanceof ComputerConsoleUnavailableError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
+      if (error instanceof BrokenComputerError) {
         sendJson(response, 409, { error: error.message });
         return;
       }
@@ -759,7 +774,8 @@ function mapUpgradeStatusCode(error: unknown) {
   if (
     error instanceof UnsupportedComputerFeatureError ||
     error instanceof ComputerConsoleUnavailableError ||
-    error instanceof ComputerConflictError
+    error instanceof ComputerConflictError ||
+    error instanceof BrokenComputerError
   ) {
     return 409;
   }

@@ -321,6 +321,8 @@ export function HomePage() {
     popup.focus();
   }
 
+  const isSelectedComputerBroken = selectedComputer?.state === "broken";
+
   return (
     <main className="app-shell">
       <section className="hero">
@@ -557,18 +559,21 @@ export function HomePage() {
                 >
                   Restart
                 </button>
-                <button
-                  type="button"
-                  data-testid="computer-action-delete"
-                  disabled={isBusy}
-                  onClick={() => void handleDeleteComputer()}
-                >
-                  Delete
-                </button>
+                {!isSelectedComputerBroken ? (
+                  <button
+                    type="button"
+                    data-testid="computer-action-delete"
+                    disabled={isBusy}
+                    onClick={() => void handleDeleteComputer()}
+                  >
+                    Delete
+                  </button>
+                ) : null}
               </div>
             </div>
             <div className="surface-actions">
-              {selectedComputer.access.display?.mode === "virtual-display" ? (
+              {!isSelectedComputerBroken &&
+              selectedComputer.access.display?.mode === "virtual-display" ? (
                 <button
                   type="button"
                   className="surface-link"
@@ -579,7 +584,7 @@ export function HomePage() {
                   Open browser
                 </button>
               ) : null}
-              {selectedComputer.access.console?.mode === "pty" ? (
+              {!isSelectedComputerBroken && selectedComputer.access.console?.mode === "pty" ? (
                 <Link
                   className="surface-link surface-link-secondary"
                   data-testid="open-console-link"
@@ -589,7 +594,7 @@ export function HomePage() {
                   Open console
                 </Link>
               ) : null}
-              {selectedComputer.profile === "container" ? (
+              {!isSelectedComputerBroken && selectedComputer.profile === "container" ? (
                 <Link
                   className="surface-link surface-link-secondary"
                   data-testid="open-exec-link"
@@ -599,7 +604,7 @@ export function HomePage() {
                   Exec shell
                 </Link>
               ) : null}
-              {selectedComputer.profile === "browser" ? (
+              {!isSelectedComputerBroken && selectedComputer.profile === "browser" ? (
                 <button
                   type="button"
                   className="surface-link surface-link-secondary"
@@ -610,7 +615,7 @@ export function HomePage() {
                   Create automation session
                 </button>
               ) : null}
-              {selectedComputer.profile === "browser" ? (
+              {!isSelectedComputerBroken && selectedComputer.profile === "browser" ? (
                 <button
                   type="button"
                   className="surface-link surface-link-secondary"
