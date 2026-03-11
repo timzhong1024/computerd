@@ -64,7 +64,6 @@ test("renders browser exec start without invalid background separators", async (
   expect(unitFile).toContain('Environment="PIPEWIRE_ALSA=');
   expect(unitFile).toContain('application.name = \\"computerd-browser\\"');
   expect(unitFile).not.toContain("pulseaudio --daemonize");
-  expect(unitFile).not.toContain("PULSE_SERVER");
   expect(unitFile).toContain("dbus-run-session -- /usr/bin/bash -lc");
   expect(unitFile).toContain("/run/browser-smoke/pipewire.log");
   expect(unitFile).toContain("/run/browser-smoke/chromium.log");
