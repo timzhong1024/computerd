@@ -456,9 +456,12 @@ test("serves container session APIs across stopped and running states", async ()
     error: 'Computer "workspace-container" must be running before opening console sessions.',
   });
 
-  const stoppedExecResponse = await fetch(`${baseUrl}/api/computers/workspace-container/exec-sessions`, {
-    method: "POST",
-  });
+  const stoppedExecResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/exec-sessions`,
+    {
+      method: "POST",
+    },
+  );
   expect(stoppedExecResponse.status).toBe(409);
   await expect(stoppedExecResponse.json()).resolves.toMatchObject({
     error: 'Computer "workspace-container" must be running before opening exec sessions.',
@@ -487,9 +490,12 @@ test("serves container session APIs across stopped and running states", async ()
     },
   });
 
-  const execSessionResponse = await fetch(`${baseUrl}/api/computers/workspace-container/exec-sessions`, {
-    method: "POST",
-  });
+  const execSessionResponse = await fetch(
+    `${baseUrl}/api/computers/workspace-container/exec-sessions`,
+    {
+      method: "POST",
+    },
+  );
   expect(execSessionResponse.status).toBe(200);
   await expect(execSessionResponse.json()).resolves.toMatchObject({
     computerName: "workspace-container",

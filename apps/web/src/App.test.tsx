@@ -201,7 +201,9 @@ beforeEach(() => {
         url.endsWith("/exec-sessions") &&
         method === "POST"
       ) {
-        const name = decodeURIComponent(url.slice("/api/computers/".length, -"/exec-sessions".length));
+        const name = decodeURIComponent(
+          url.slice("/api/computers/".length, -"/exec-sessions".length),
+        );
         return jsonResponse({
           computerName: name,
           protocol: "ttyd",
@@ -287,7 +289,7 @@ beforeEach(() => {
                     containerId: `development-${body.name}`,
                     containerName: body.name,
                   }
-              : body.runtime,
+                : body.runtime,
         };
         computers = [...computers, nextComputer];
         return jsonResponse(createComputerDetail(nextComputer), 201);
@@ -601,8 +603,7 @@ function createComputerDetail(computer: FakeComputer) {
             containerId:
               (computer.runtime.containerId as string | undefined) ??
               `development-${computer.name}`,
-            containerName:
-              (computer.runtime.containerName as string | undefined) ?? computer.name,
+            containerName: (computer.runtime.containerName as string | undefined) ?? computer.name,
           }
         : computer.runtime;
 
