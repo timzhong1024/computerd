@@ -110,7 +110,8 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
       machine: "q35",
       source: {
         kind: "qcow2",
-        baseImagePath: "/var/lib/images/test.qcow2",
+        imageId: "filesystem-vm:test",
+        path: "/var/lib/images/test.qcow2",
         cloudInit: {
           enabled: false,
         },
@@ -185,7 +186,8 @@ test("uses explicit vm nic mac address in qemu args", async () => {
       machine: "q35",
       source: {
         kind: "qcow2",
-        baseImagePath: "/var/lib/images/test.qcow2",
+        imageId: "filesystem-vm:test",
+        path: "/var/lib/images/test.qcow2",
         cloudInit: {
           enabled: true,
           user: "ubuntu",

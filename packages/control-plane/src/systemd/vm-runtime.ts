@@ -30,6 +30,8 @@ export function createVmRuntimePaths({
         runtimeDirectory,
         networkMacAddress: stableMacAddress(slug),
         diskImagePath: join(stateDirectory, "disk.qcow2"),
+        snapshotsDirectory: join(stateDirectory, "snapshots"),
+        snapshotManifestPath: join(stateDirectory, "snapshots", "manifest.json"),
         cloudInitDirectory: join(stateDirectory, "cloud-init"),
         cloudInitUserDataPath: join(stateDirectory, "cloud-init", "user-data"),
         cloudInitMetaDataPath: join(stateDirectory, "cloud-init", "meta-data"),
@@ -45,6 +47,13 @@ export function createVmRuntimePaths({
       return this.specForName(computer.name);
     },
   };
+}
+
+export function createVmSnapshotImagePath(
+  spec: ReturnType<ReturnType<typeof createVmRuntimePaths>["specForName"]>,
+  snapshotId: string,
+) {
+  return join(spec.snapshotsDirectory, `${snapshotId}.qcow2`);
 }
 
 export function toVmRuntimeDetail(
@@ -77,9 +86,16 @@ export function toVmRuntimeDetail(
   };
 }
 
-export function withPersistedVmRuntime(runtime: CreateVmRuntime): PersistedVmComputer["runtime"] {
+export function withPersistedVmRuntime(
+  runtime: CreateVmRuntime,
+  imagePath: string,
+): PersistedVmComputer["runtime"] {
   return {
     ...runtime,
+    source: {
+      ...runtime.source,
+      path: imagePath,
+    },
     accelerator: "kvm",
     architecture: "x86_64",
     machine: "q35",

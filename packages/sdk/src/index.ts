@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { chromium, type Browser, type ConnectOverCDPOptions } from "playwright-core";
 import {
+  parseComputerSnapshot,
   parseComputerAutomationSession,
   parseComputerDetail,
   parseComputerMonitorSession,
@@ -10,6 +11,7 @@ import {
   type ComputerDetail,
   type ComputerMonitorSession,
   type ComputerScreenshot,
+  type ComputerSnapshot,
   type ComputerSessionConnect,
 } from "@computerd/core";
 
@@ -88,6 +90,44 @@ export function createComputerdClient({
     baseUrl: normalizedBaseUrl.toString(),
     async getComputer(name: string): Promise<ComputerDetail> {
       return await getJson(`/api/computers/${encodeURIComponent(name)}`, parseComputerDetail);
+    },
+    async listComputerSnapshots(name: string): Promise<ComputerSnapshot[]> {
+      return await getJson(`/api/computers/${encodeURIComponent(name)}/snapshots`, (value) => {
+        if (!Array.isArray(value)) {
+          throw new TypeError("Expected an array of computer snapshots.");
+        }
+
+        return value.map((entry) => parseComputerSnapshot(entry));
+      });
+    },
+    async createComputerSnapshot(name: string, snapshotName: string): Promise<ComputerSnapshot> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/snapshots`,
+        { name: snapshotName },
+        parseComputerSnapshot,
+      );
+    },
+    async restoreComputer(
+      name: string,
+      input: { target: "initial" } | { target: "snapshot"; snapshotName: string },
+    ): Promise<ComputerDetail> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/restore`,
+        input,
+        parseComputerDetail,
+      );
+    },
+    async deleteComputerSnapshot(name: string, snapshotName: string): Promise<void> {
+      const response = await fetchImplementation(
+        new URL(
+          `/api/computers/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(snapshotName)}`,
+          normalizedBaseUrl,
+        ),
+        {
+          method: "DELETE",
+        },
+      );
+      await parseJsonResponse(response, () => undefined);
     },
     async createBrowserAutomationSession(name: string): Promise<ComputerAutomationSession> {
       return await postJson(

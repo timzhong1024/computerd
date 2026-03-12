@@ -340,7 +340,7 @@ function buildVmExecStart(
       ? computer.runtime.source.cloudInit.enabled !== false
         ? `-drive file=${escapeShellToken(spec.cloudInitImagePath)},if=virtio,media=cdrom,readonly=on`
         : null
-      : `-drive file=${escapeShellToken(computer.runtime.source.isoPath)},if=virtio,media=cdrom,readonly=on`;
+      : `-drive file=${escapeShellToken(computer.runtime.source.path)},if=virtio,media=cdrom,readonly=on`;
   const primaryNicMacAddress = resolveVmNicMacAddress(
     spec,
     computer.runtime.nics[0]?.macAddress,

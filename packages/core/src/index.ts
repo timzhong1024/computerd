@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const computerProfileSchema = z.enum(["host", "browser", "container", "vm"]);
 export const computerStateSchema = z.enum(["stopped", "running", "broken"]);
+export const imageStatusSchema = z.enum(["available", "broken"]);
 
 export const computerCapabilitiesSchema = z.object({
   canInspect: z.boolean(),
@@ -80,6 +81,12 @@ export const computerScreenshotSchema = z.object({
   dataBase64: z.string().min(1),
 });
 
+export const computerSnapshotSchema = z.object({
+  name: z.string().min(1),
+  createdAt: z.string().datetime(),
+  sizeBytes: z.number().int().nonnegative(),
+});
+
 export const computerConsoleSessionSchema = z.object({
   computerName: z.string().min(1),
   protocol: z.literal("ttyd"),
@@ -122,6 +129,8 @@ export const computerNetworkSchema = z.object({
 export const computerLifecycleSchema = z.object({
   autostart: z.boolean().optional(),
 });
+
+export const imageProviderSchema = z.enum(["filesystem-vm", "docker"]);
 
 export const hostRuntimeSchema = z.object({
   command: z.string().min(1).optional(),
@@ -253,19 +262,32 @@ export const vmCloudInitSchema = z.union([vmCloudInitEnabledSchema, vmCloudInitD
 
 export const createVmRuntimeSourceQcow2Schema = z.object({
   kind: z.literal("qcow2"),
-  baseImagePath: z.string().min(1),
+  imageId: z.string().min(1),
   cloudInit: vmCloudInitSchema,
 });
 
 export const createVmRuntimeSourceIsoSchema = z.object({
   kind: z.literal("iso"),
-  isoPath: z.string().min(1),
+  imageId: z.string().min(1),
   diskSizeGiB: z.number().int().positive().optional(),
 });
 
 export const createVmRuntimeSourceSchema = z.discriminatedUnion("kind", [
   createVmRuntimeSourceQcow2Schema,
   createVmRuntimeSourceIsoSchema,
+]);
+
+export const vmRuntimeSourceQcow2Schema = createVmRuntimeSourceQcow2Schema.extend({
+  path: z.string().min(1),
+});
+
+export const vmRuntimeSourceIsoSchema = createVmRuntimeSourceIsoSchema.extend({
+  path: z.string().min(1),
+});
+
+export const vmRuntimeSourceSchema = z.discriminatedUnion("kind", [
+  vmRuntimeSourceQcow2Schema,
+  vmRuntimeSourceIsoSchema,
 ]);
 
 export const createVmRuntimeSchema = z.object({
@@ -278,6 +300,7 @@ export const vmRuntimeSchema = createVmRuntimeSchema.extend({
   accelerator: z.literal("kvm"),
   architecture: z.literal("x86_64"),
   machine: z.literal("q35"),
+  source: vmRuntimeSourceSchema,
   bridge: z.string().min(1),
   diskImagePath: z.string().min(1),
   cloudInitImagePath: z.string().min(1).optional(),
@@ -287,6 +310,50 @@ export const vmRuntimeSchema = createVmRuntimeSchema.extend({
   vncPort: z.number().int().positive(),
   displayViewport: browserViewportSchema,
 });
+
+const imageSummaryBaseSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["qcow2", "iso", "container"]),
+  provider: imageProviderSchema,
+  name: z.string().min(1),
+  status: imageStatusSchema,
+  createdAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+});
+
+export const vmImageSummarySchema = imageSummaryBaseSchema.extend({
+  kind: z.enum(["qcow2", "iso"]),
+  provider: z.literal("filesystem-vm"),
+});
+
+export const containerImageSummarySchema = imageSummaryBaseSchema.extend({
+  kind: z.literal("container"),
+  provider: z.literal("docker"),
+});
+
+export const imageSummarySchema = z.discriminatedUnion("provider", [
+  vmImageSummarySchema,
+  containerImageSummarySchema,
+]);
+
+export const vmImageDetailSchema = vmImageSummarySchema.extend({
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  format: z.enum(["qcow2", "iso"]).optional(),
+  sourceType: z.enum(["directory", "explicit-file"]),
+});
+
+export const containerImageDetailSchema = containerImageSummarySchema.extend({
+  reference: z.string().min(1),
+  imageId: z.string().min(1),
+  repoTags: z.array(z.string().min(1)),
+  sizeBytes: z.number().int().nonnegative(),
+});
+
+export const imageDetailSchema = z.discriminatedUnion("provider", [
+  vmImageDetailSchema,
+  containerImageDetailSchema,
+]);
 
 export const browserRuntimeSchema = createBrowserRuntimeSchema.extend({
   runtimeUser: z.string().min(1),
@@ -416,6 +483,20 @@ export const createVmComputerInputSchema = createComputerBaseSchema.extend({
 
 export const updateBrowserViewportInputSchema = browserViewportSchema;
 
+export const createComputerSnapshotInputSchema = z.object({
+  name: z.string().min(1),
+});
+
+export const restoreComputerInputSchema = z.discriminatedUnion("target", [
+  z.object({
+    target: z.literal("initial"),
+  }),
+  z.object({
+    target: z.literal("snapshot"),
+    snapshotName: z.string().min(1),
+  }),
+]);
+
 export const createComputerInputSchema = z.discriminatedUnion("profile", [
   createHostComputerInputSchema,
   createBrowserComputerInputSchema,
@@ -445,9 +526,15 @@ export const hostUnitDetailSchema = hostUnitSummarySchema.extend({
   recentLogs: z.array(z.string()),
 });
 
+export const pullContainerImageInputSchema = z.object({
+  reference: z.string().min(1),
+});
+
 export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
 export type BrowserViewport = z.infer<typeof browserViewportSchema>;
+export type ContainerImageDetail = z.infer<typeof containerImageDetailSchema>;
+export type ContainerImageSummary = z.infer<typeof containerImageSummarySchema>;
 export type ComputerAutomationSession = z.infer<typeof computerAutomationSessionSchema>;
 export type ComputerAudioSession = z.infer<typeof computerAudioSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
@@ -463,15 +550,19 @@ export type ComputerResources = z.infer<typeof computerResourcesSchema>;
 export type ComputerSessionAuthorization = z.infer<typeof computerSessionAuthorizationSchema>;
 export type ComputerSessionConnect = z.infer<typeof computerSessionConnectSchema>;
 export type ComputerScreenshot = z.infer<typeof computerScreenshotSchema>;
+export type ComputerSnapshot = z.infer<typeof computerSnapshotSchema>;
 export type ComputerState = z.infer<typeof computerStateSchema>;
 export type ComputerStorage = z.infer<typeof computerStorageSchema>;
 export type ComputerSummary = z.infer<typeof computerSummarySchema>;
+export type ContainerImagePullInput = z.infer<typeof pullContainerImageInputSchema>;
 export type CreateBrowserRuntime = z.infer<typeof createBrowserRuntimeSchema>;
 export type CreateBrowserComputerInput = z.infer<typeof createBrowserComputerInputSchema>;
 export type CreateComputerInput = z.infer<typeof createComputerInputSchema>;
+export type CreateComputerSnapshotInput = z.infer<typeof createComputerSnapshotInputSchema>;
 export type CreateContainerComputerInput = z.infer<typeof createContainerComputerInputSchema>;
 export type CreateContainerRuntime = z.infer<typeof createContainerRuntimeSchema>;
 export type CreateHostComputerInput = z.infer<typeof createHostComputerInputSchema>;
+export type RestoreComputerInput = z.infer<typeof restoreComputerInputSchema>;
 export type CreateVmComputerInput = z.infer<typeof createVmComputerInputSchema>;
 export type CreateVmRuntime = z.infer<typeof createVmRuntimeSchema>;
 export type CreateVmRuntimeSource = z.infer<typeof createVmRuntimeSourceSchema>;
@@ -481,8 +572,15 @@ export type ContainerComputerDetail = z.infer<typeof containerComputerDetailSche
 export type ContainerRuntime = z.infer<typeof containerRuntimeSchema>;
 export type HostComputerDetail = z.infer<typeof hostComputerDetailSchema>;
 export type HostRuntime = z.infer<typeof hostRuntimeSchema>;
+export type ImageDetail = z.infer<typeof imageDetailSchema>;
+export type ImageProvider = z.infer<typeof imageProviderSchema>;
+export type ImageStatus = z.infer<typeof imageStatusSchema>;
+export type ImageSummary = z.infer<typeof imageSummarySchema>;
 export type VmComputerDetail = z.infer<typeof vmComputerDetailSchema>;
 export type VmCloudInit = z.infer<typeof vmCloudInitSchema>;
+export type VmRuntimeSource = z.infer<typeof vmRuntimeSourceSchema>;
+export type VmImageDetail = z.infer<typeof vmImageDetailSchema>;
+export type VmImageSummary = z.infer<typeof vmImageSummarySchema>;
 export type VmRuntime = z.infer<typeof vmRuntimeSchema>;
 export type UpdateBrowserViewportInput = z.infer<typeof updateBrowserViewportInputSchema>;
 
@@ -492,6 +590,14 @@ export function parseComputerSummaries(value: unknown) {
 
 export function parseComputerDetail(value: unknown) {
   return computerDetailSchema.parse(value);
+}
+
+export function parseImageSummaries(value: unknown) {
+  return z.array(imageSummarySchema).parse(value);
+}
+
+export function parseImageDetail(value: unknown) {
+  return imageDetailSchema.parse(value);
 }
 
 export function parseComputerMonitorSession(value: unknown) {
@@ -518,8 +624,24 @@ export function parseComputerScreenshot(value: unknown) {
   return computerScreenshotSchema.parse(value);
 }
 
+export function parseComputerSnapshot(value: unknown) {
+  return computerSnapshotSchema.parse(value);
+}
+
+export function parseComputerSnapshots(value: unknown) {
+  return z.array(computerSnapshotSchema).parse(value);
+}
+
 export function parseCreateComputerInput(value: unknown) {
   return createComputerInputSchema.parse(value);
+}
+
+export function parseCreateComputerSnapshotInput(value: unknown) {
+  return createComputerSnapshotInputSchema.parse(value);
+}
+
+export function parseRestoreComputerInput(value: unknown) {
+  return restoreComputerInputSchema.parse(value);
 }
 
 export function parseUpdateBrowserViewportInput(value: unknown) {
@@ -532,6 +654,10 @@ export function parseHostUnitSummaries(value: unknown) {
 
 export function parseHostUnitDetail(value: unknown) {
   return hostUnitDetailSchema.parse(value);
+}
+
+export function parsePullContainerImageInput(value: unknown) {
+  return pullContainerImageInputSchema.parse(value);
 }
 
 export function createComputerCapabilities(

@@ -170,6 +170,129 @@ describe("createComputerdClient", () => {
     });
   });
 
+  test("lists, creates, restores, and deletes computer snapshots", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse([
+          {
+            name: "checkpoint-1",
+            createdAt: "2026-03-10T00:00:00.000Z",
+            sizeBytes: 2048,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          name: "checkpoint-2",
+          createdAt: "2026-03-11T00:00:00.000Z",
+          sizeBytes: 4096,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          name: "linux-vm",
+          unitName: "computerd-linux-vm.service",
+          profile: "vm",
+          state: "stopped",
+          createdAt: "2026-03-10T00:00:00.000Z",
+          access: {
+            console: {
+              mode: "pty",
+              writable: true,
+            },
+            display: {
+              mode: "vnc",
+            },
+            logs: true,
+          },
+          capabilities: {
+            canInspect: true,
+            canStart: true,
+            canStop: false,
+            canRestart: false,
+            consoleAvailable: true,
+            browserAvailable: false,
+            automationAvailable: false,
+            screenshotAvailable: false,
+            audioAvailable: false,
+          },
+          resources: {},
+          storage: {
+            rootMode: "persistent",
+          },
+          network: {
+            mode: "host",
+          },
+          lifecycle: {},
+          status: {
+            lastActionAt: "2026-03-10T00:00:00.000Z",
+            primaryUnit: "computerd-linux-vm.service",
+          },
+          runtime: {
+            hypervisor: "qemu",
+            accelerator: "kvm",
+            architecture: "x86_64",
+            machine: "q35",
+            bridge: "br0",
+            diskImagePath: "/var/lib/computerd/computers/linux-vm/vm/disk.qcow2",
+            serialSocketPath: "/run/computerd/computers/linux-vm/vm/serial.sock",
+            nics: [
+              {
+                name: "primary",
+                macAddress: "52:54:00:12:34:56",
+                ipConfigApplied: true,
+                ipv4: {
+                  type: "dhcp",
+                },
+              },
+            ],
+            source: {
+              kind: "qcow2",
+              imageId: "filesystem-vm:dev-qcow2",
+              path: "/images/base.qcow2",
+              cloudInit: {
+                user: "ubuntu",
+              },
+            },
+            vncDisplay: 20,
+            vncPort: 5920,
+            displayViewport: {
+              width: 1440,
+              height: 900,
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204, statusText: "No Content" }));
+
+    const client = createComputerdClient({
+      baseUrl: "http://computerd.test",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await expect(client.listComputerSnapshots("linux-vm")).resolves.toEqual([
+      expect.objectContaining({
+        name: "checkpoint-1",
+        sizeBytes: 2048,
+      }),
+    ]);
+    await expect(client.createComputerSnapshot("linux-vm", "checkpoint-2")).resolves.toMatchObject({
+      name: "checkpoint-2",
+    });
+    await expect(
+      client.restoreComputer("linux-vm", {
+        target: "initial",
+      }),
+    ).resolves.toMatchObject({
+      name: "linux-vm",
+      profile: "vm",
+    });
+    await expect(client.deleteComputerSnapshot("linux-vm", "checkpoint-2")).resolves.toBe(
+      undefined,
+    );
+  });
+
   test("resolves relative websocket paths against http and https base urls", () => {
     const httpClient = createComputerdClient({
       baseUrl: "http://127.0.0.1:3000/base/",

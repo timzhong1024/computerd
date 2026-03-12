@@ -66,7 +66,7 @@ vm computer 仍然是统一 `computer` 模型的一种 profile：
 
 - `runtime.hypervisor = "qemu"`
 - `runtime.source.kind = "qcow2"`
-- `runtime.source.baseImagePath`
+- `runtime.source.imageId`
 - `runtime.source.cloudInit`
 - `runtime.nics[]`
 
@@ -84,7 +84,7 @@ vm computer 仍然是统一 `computer` 模型的一种 profile：
 
 - `runtime.hypervisor = "qemu"`
 - `runtime.source.kind = "iso"`
-- `runtime.source.isoPath`
+- `runtime.source.imageId`
 - `runtime.source.diskSizeGiB?`
 - `runtime.nics[]`
 
@@ -92,6 +92,17 @@ vm computer 仍然是统一 `computer` 模型的一种 profile：
 
 - `iso` 路径不自动应用 guest IP 配置
 - 仍会保留 NIC 配置和 resolved MAC
+
+VM create 当前不再直接接受 path，而是引用 image inventory。
+
+也就是说：
+
+- `qcow2` VM 通过 `imageId` 选择基础镜像
+- `iso` VM 通过 `imageId` 选择安装介质
+
+image inventory 见：
+
+- [docs/image-management.md](/Users/timzhong/computerd/docs/image-management.md)
 
 ## Runtime Layout
 

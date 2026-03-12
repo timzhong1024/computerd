@@ -95,7 +95,7 @@ test("rejects vm create input with more than one nic", async () => {
         ],
         source: {
           kind: "qcow2",
-          baseImagePath: "/images/ubuntu-cloud.qcow2",
+          imageId: "filesystem-vm:dev-qcow2",
           cloudInit: {
             user: "ubuntu",
           },
@@ -153,6 +153,7 @@ test("creates and manages a qcow2 vm computer with monitor and console support",
       COMPUTERD_VM_STATE_DIR: "/tmp/computerd-test-vm-state",
     },
     {
+      imageProvider: createMemoryImageProvider(),
       metadataStore: createMemoryMetadataStore(),
       runtime: createMemoryRuntime("/tmp/computerd-test-terminals"),
     },
@@ -176,7 +177,7 @@ test("creates and manages a qcow2 vm computer with monitor and console support",
       ],
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
         cloudInit: {
           user: "ubuntu",
         },
@@ -212,6 +213,18 @@ test("prepares vm runtime before start and restart", async () => {
       throw new Error("not implemented");
     },
     async createVmComputer() {
+      throw new Error("not implemented");
+    },
+    async listVmSnapshots() {
+      return [];
+    },
+    async createVmSnapshot() {
+      throw new Error("not implemented");
+    },
+    async deleteVmSnapshot() {
+      throw new Error("not implemented");
+    },
+    async restoreVmComputer() {
       throw new Error("not implemented");
     },
     async deleteBrowserRuntimeIdentity() {},
@@ -344,7 +357,7 @@ test("vm detail preserves an explicit nic mac address", async () => {
       ],
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
         cloudInit: {
           user: "ubuntu",
         },
@@ -358,6 +371,208 @@ test("vm detail preserves an explicit nic mac address", async () => {
   }
 
   expect(created.runtime.nics[0]?.macAddress).toBe("52:54:00:aa:bb:cc");
+});
+
+test("creates, lists, restores, and deletes vm snapshots", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_VM_RUNTIME_DIR: "/tmp/computerd-test-vm-runtime",
+      COMPUTERD_VM_STATE_DIR: "/tmp/computerd-test-vm-state",
+    },
+    { imageProvider: createMemoryImageProvider(), metadataStore, runtime },
+  );
+
+  await controlPlane.createComputer({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "dhcp",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  });
+
+  const snapshot = await controlPlane.createComputerSnapshot("linux-vm", {
+    name: "checkpoint-1",
+  });
+  expect(snapshot.name).toBe("checkpoint-1");
+
+  await expect(controlPlane.listComputerSnapshots("linux-vm")).resolves.toEqual([
+    expect.objectContaining({
+      name: "checkpoint-1",
+      sizeBytes: 1024,
+    }),
+  ]);
+
+  await expect(
+    controlPlane.restoreComputer("linux-vm", {
+      target: "snapshot",
+      snapshotName: "checkpoint-1",
+    }),
+  ).resolves.toMatchObject({
+    name: "linux-vm",
+    profile: "vm",
+  });
+
+  await controlPlane.deleteComputerSnapshot("linux-vm", "checkpoint-1");
+  await expect(controlPlane.listComputerSnapshots("linux-vm")).resolves.toEqual([]);
+});
+
+test("restores vm initial state for qcow2 and iso sources", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+    },
+    { imageProvider: createMemoryImageProvider(), metadataStore, runtime },
+  );
+
+  await controlPlane.createComputer({
+    name: "qcow-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [{ name: "primary", ipv4: { type: "dhcp" } }],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: { user: "ubuntu" },
+      },
+    },
+  });
+  await controlPlane.createComputer({
+    name: "iso-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [{ name: "primary", ipv4: { type: "dhcp" } }],
+      source: {
+        kind: "iso",
+        imageId: "filesystem-vm:dev-iso",
+        diskSizeGiB: 64,
+      },
+    },
+  });
+
+  await expect(
+    controlPlane.restoreComputer("qcow-vm", {
+      target: "initial",
+    }),
+  ).resolves.toMatchObject({ name: "qcow-vm" });
+  await expect(
+    controlPlane.restoreComputer("iso-vm", {
+      target: "initial",
+    }),
+  ).resolves.toMatchObject({ name: "iso-vm" });
+});
+
+test("rejects vm snapshot mutations while running", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+    },
+    { imageProvider: createMemoryImageProvider(), metadataStore, runtime },
+  );
+
+  await controlPlane.createComputer({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [{ name: "primary", ipv4: { type: "dhcp" } }],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: { user: "ubuntu" },
+      },
+    },
+  });
+  await controlPlane.startComputer("linux-vm");
+
+  await expect(
+    controlPlane.createComputerSnapshot("linux-vm", {
+      name: "checkpoint-1",
+    }),
+  ).rejects.toThrow(/must be stopped/i);
+  await expect(
+    controlPlane.restoreComputer("linux-vm", {
+      target: "initial",
+    }),
+  ).rejects.toThrow(/must be stopped/i);
+  await expect(controlPlane.deleteComputerSnapshot("linux-vm", "checkpoint-1")).rejects.toThrow(
+    /must be stopped/i,
+  );
+});
+
+test("rejects duplicate and missing vm snapshots", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+    },
+    { imageProvider: createMemoryImageProvider(), metadataStore, runtime },
+  );
+
+  await controlPlane.createComputer({
+    name: "linux-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      nics: [{ name: "primary", ipv4: { type: "dhcp" } }],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: { user: "ubuntu" },
+      },
+    },
+  });
+
+  await controlPlane.createComputerSnapshot("linux-vm", {
+    name: "checkpoint-1",
+  });
+
+  await expect(
+    controlPlane.createComputerSnapshot("linux-vm", {
+      name: "checkpoint-1",
+    }),
+  ).rejects.toMatchObject({
+    name: "ComputerSnapshotConflictError",
+  });
+  await expect(
+    controlPlane.restoreComputer("linux-vm", {
+      target: "snapshot",
+      snapshotName: "missing",
+    }),
+  ).rejects.toMatchObject({
+    name: "ComputerSnapshotNotFoundError",
+  });
+  await expect(controlPlane.deleteComputerSnapshot("linux-vm", "missing")).rejects.toMatchObject({
+    name: "ComputerSnapshotNotFoundError",
+  });
 });
 
 test("updates browser viewport and persists it across detail reads", async () => {
@@ -836,6 +1051,18 @@ test("waits for host console runtime readiness during start", async () => {
     async createVmComputer() {
       throw new Error("not implemented");
     },
+    async listVmSnapshots() {
+      return [];
+    },
+    async createVmSnapshot() {
+      throw new Error("not implemented");
+    },
+    async deleteVmSnapshot() {
+      throw new Error("not implemented");
+    },
+    async restoreVmComputer() {
+      throw new Error("not implemented");
+    },
     async deleteBrowserRuntimeIdentity() {},
     async deleteContainerComputer() {},
     async deleteVmComputer() {},
@@ -1060,6 +1287,66 @@ function createMemoryMetadataStore(): ComputerMetadataStore {
   };
 }
 
+function createMemoryImageProvider() {
+  return {
+    async deleteContainerImage() {},
+    async getImage(id: string) {
+      if (id.startsWith("filesystem-vm:")) {
+        return {
+          id,
+          provider: "filesystem-vm" as const,
+          kind: id.endsWith("iso") ? ("iso" as const) : ("qcow2" as const),
+          name: id,
+          status: "available" as const,
+          path: id.endsWith("iso") ? "/images/dev.iso" : "/images/dev.qcow2",
+          sizeBytes: 1024,
+          sourceType: "explicit-file" as const,
+        };
+      }
+
+      return {
+        id,
+        provider: "docker" as const,
+        kind: "container" as const,
+        imageId: id.replace(/^docker:/, ""),
+        name: id,
+        reference: "ubuntu:24.04",
+        repoTags: ["ubuntu:24.04"],
+        sizeBytes: 1024,
+        status: "available" as const,
+      };
+    },
+    async listImages() {
+      return [];
+    },
+    async pullContainerImage(reference: string) {
+      return {
+        id: `docker:${reference}`,
+        provider: "docker" as const,
+        kind: "container" as const,
+        imageId: reference,
+        name: reference,
+        reference,
+        repoTags: [reference],
+        sizeBytes: 1024,
+        status: "available" as const,
+      };
+    },
+    async requireVmImage(id: string, kind: "qcow2" | "iso") {
+      return {
+        id,
+        provider: "filesystem-vm" as const,
+        kind,
+        name: id,
+        status: "available" as const,
+        path: kind === "iso" ? "/images/dev.iso" : "/images/dev.qcow2",
+        sizeBytes: 1024,
+        sourceType: "explicit-file" as const,
+      };
+    },
+  };
+}
+
 function createBrowserComputerRecord(): PersistedComputer {
   return {
     name: "research-browser",
@@ -1196,7 +1483,8 @@ function createVmComputerRecord(): PersistedVmComputer {
       machine: "q35",
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        path: "/images/ubuntu-cloud.qcow2",
         cloudInit: {
           user: "ubuntu",
         },
@@ -1208,6 +1496,10 @@ function createVmComputerRecord(): PersistedVmComputer {
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
   const browserViewports = new Map<string, { width: number; height: number }>();
+  const vmSnapshots = new Map<
+    string,
+    Array<{ name: string; createdAt: string; sizeBytes: number }>
+  >();
 
   return {
     async createContainerComputer(input, unitName) {
@@ -1217,9 +1509,13 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         containerName: unitName,
       };
     },
-    async createVmComputer(input) {
+    async createVmComputer(input, imagePath) {
       return {
         ...input.runtime,
+        source: {
+          ...input.runtime.source,
+          path: imagePath,
+        },
         accelerator: "kvm",
         architecture: "x86_64",
         machine: "q35",
@@ -1231,6 +1527,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     },
     async deleteVmComputer(computer) {
       states.delete(computer.unitName);
+      vmSnapshots.delete(computer.name);
       await rm(join(runtimeDirectory, computer.name), { recursive: true, force: true });
     },
     async ensureBrowserRuntimeIdentity() {},
@@ -1328,6 +1625,36 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         dataBase64: Buffer.from(`screenshot:${computer.name}`).toString("base64"),
       };
     },
+    async listVmSnapshots(computer) {
+      return vmSnapshots.get(computer.name) ?? [];
+    },
+    async createVmSnapshot(computer, input) {
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (snapshots.some((snapshot) => snapshot.name === input.name)) {
+        throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
+      }
+
+      const snapshot = {
+        name: input.name,
+        createdAt: new Date().toISOString(),
+        sizeBytes: 1024,
+      };
+      vmSnapshots.set(computer.name, [snapshot, ...snapshots]);
+      return snapshot;
+    },
+    async deleteVmSnapshot(computer, snapshotName) {
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (!snapshots.some((snapshot) => snapshot.name === snapshotName)) {
+        throw new Error(
+          `Snapshot "${snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
+
+      vmSnapshots.set(
+        computer.name,
+        snapshots.filter((snapshot) => snapshot.name !== snapshotName),
+      );
+    },
     async deletePersistentUnit(unitName) {
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
       states.delete(unitName);
@@ -1410,6 +1737,18 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.activeState = "inactive";
       state.subState = "dead";
       return state;
+    },
+    async restoreVmComputer(computer, input) {
+      if (input.target === "initial") {
+        return;
+      }
+
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (!snapshots.some((snapshot) => snapshot.name === input.snapshotName)) {
+        throw new Error(
+          `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
     },
     async updateBrowserViewport(computer, viewport) {
       browserViewports.set(computer.unitName, viewport);

@@ -1,10 +1,22 @@
 import { execFile, execFileSync } from "node:child_process";
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { promisify } from "node:util";
+import type {
+  ComputerSnapshot,
+  CreateComputerSnapshotInput,
+  RestoreComputerInput,
+} from "@computerd/core";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
 import { createPipeWireRuntimeEnvironment, createPipeWireHostManager } from "./pipewire-host";
-import { createVmRuntimePaths, resolveVmNicMacAddress, withPersistedVmRuntime } from "./vm-runtime";
+import {
+  createVmRuntimePaths,
+  createVmSnapshotImagePath,
+  resolveVmNicMacAddress,
+  withPersistedVmRuntime,
+} from "./vm-runtime";
 import type {
   BrowserViewport,
   CreateVmComputerInput,
@@ -27,7 +39,10 @@ import {
 } from "./dbus-client";
 
 export interface SystemdRuntime {
-  createVmComputer: (input: CreateVmComputerInput) => Promise<PersistedVmComputer["runtime"]>;
+  createVmComputer: (
+    input: CreateVmComputerInput,
+    imagePath: string,
+  ) => Promise<PersistedVmComputer["runtime"]>;
   deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
@@ -43,13 +58,19 @@ export interface SystemdRuntime {
     computer: PersistedBrowserComputer | PersistedVmComputer,
   ) => Promise<import("./types").ComputerMonitorSession>;
   createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
+  createVmSnapshot: (
+    computer: PersistedVmComputer,
+    input: CreateComputerSnapshotInput,
+  ) => Promise<ComputerSnapshot>;
   createScreenshot: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").ComputerScreenshot>;
   deletePersistentUnit: (unitName: string) => Promise<void>;
+  deleteVmSnapshot: (computer: PersistedVmComputer, snapshotName: string) => Promise<void>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
   getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
+  listVmSnapshots: (computer: PersistedVmComputer) => Promise<ComputerSnapshot[]>;
   openAutomationAttach: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").BrowserAutomationLease>;
@@ -60,6 +81,7 @@ export interface SystemdRuntime {
     computer: PersistedBrowserComputer | PersistedVmComputer,
   ) => Promise<import("./types").BrowserMonitorLease>;
   restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
+  restoreVmComputer: (computer: PersistedVmComputer, input: RestoreComputerInput) => Promise<void>;
   startUnit: (unitName: string) => Promise<UnitRuntimeState>;
   stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
   updateBrowserViewport: (
@@ -71,6 +93,7 @@ export interface SystemdRuntime {
 export interface CreateSystemdRuntimeOptions {
   dbusClient?: SystemdDbusClient;
   dbusClientOptions?: SystemdDbusClientOptions;
+  qemuImgCommand?: string;
   unitFileStore?: UnitFileStore;
   unitFileStoreOptions: FileUnitStoreOptions;
 }
@@ -79,6 +102,7 @@ const execFileAsync = promisify(execFile);
 
 export function createSystemdRuntime({
   dbusClientOptions,
+  qemuImgCommand = "qemu-img",
   unitFileStoreOptions,
   dbusClient,
   unitFileStore,
@@ -99,18 +123,18 @@ export function createSystemdRuntime({
   });
 
   return {
-    async createVmComputer(input) {
+    async createVmComputer(input: CreateVmComputerInput, imagePath: string) {
       assertVmHostSupport(resolveVmBridgeName(input.network?.mode ?? "host", unitFileStoreOptions));
-      const runtime = withPersistedVmRuntime(input.runtime);
+      const runtime = withPersistedVmRuntime(input.runtime, imagePath);
       const spec = vmRuntimePaths.specForName(input.name);
       await mkdir(spec.stateDirectory, { recursive: true });
       await mkdir(spec.runtimeDirectory, { recursive: true });
       if (runtime.source.kind === "qcow2") {
-        await assertPathExists(runtime.source.baseImagePath, "Base qcow2 image");
-        await createQcow2Overlay(runtime.source.baseImagePath, spec.diskImagePath);
+        await assertPathExists(runtime.source.path, "Base qcow2 image");
+        await createQcow2Overlay(qemuImgCommand, runtime.source.path, spec.diskImagePath);
       } else {
-        await assertPathExists(runtime.source.isoPath, "Install ISO");
-        await createBlankDisk(spec.diskImagePath, runtime.source.diskSizeGiB ?? 32);
+        await assertPathExists(runtime.source.path, "Install ISO");
+        await createBlankDisk(qemuImgCommand, spec.diskImagePath, runtime.source.diskSizeGiB ?? 32);
       }
 
       return runtime;
@@ -254,6 +278,96 @@ export function createSystemdRuntime({
         height: spec.viewport.height,
         dataBase64: stdout.trim(),
       };
+    },
+    async listVmSnapshots(computer) {
+      const spec = vmRuntimePaths.specForComputer(computer);
+      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+      return manifest
+        .map((snapshot) => ({
+          name: snapshot.name,
+          createdAt: snapshot.createdAt,
+          sizeBytes: snapshot.sizeBytes,
+        }))
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    },
+    async createVmSnapshot(computer, input) {
+      const spec = vmRuntimePaths.specForComputer(computer);
+      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+      if (manifest.some((snapshot) => snapshot.name === input.name)) {
+        throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
+      }
+
+      await mkdir(spec.snapshotsDirectory, { recursive: true });
+      const snapshotId = randomUUID();
+      const snapshotPath = createVmSnapshotImagePath(spec, snapshotId);
+      const tempSnapshotPath = `${snapshotPath}.tmp-${randomUUID()}`;
+      await cloneQcow2Image(qemuImgCommand, spec.diskImagePath, tempSnapshotPath);
+      await rename(tempSnapshotPath, snapshotPath);
+      const snapshotStat = await stat(snapshotPath);
+      const snapshot = {
+        id: snapshotId,
+        name: input.name,
+        createdAt: new Date().toISOString(),
+        sizeBytes: snapshotStat.size,
+        filePath: snapshotPath,
+      } satisfies PersistedVmSnapshot;
+      await writeVmSnapshotManifest(spec.snapshotManifestPath, [...manifest, snapshot]);
+      return {
+        name: snapshot.name,
+        createdAt: snapshot.createdAt,
+        sizeBytes: snapshot.sizeBytes,
+      };
+    },
+    async deleteVmSnapshot(computer, snapshotName) {
+      const spec = vmRuntimePaths.specForComputer(computer);
+      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+      const snapshot = manifest.find((entry) => entry.name === snapshotName);
+      if (snapshot === undefined) {
+        throw new Error(
+          `Snapshot "${snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
+
+      await rm(snapshot.filePath, { force: true });
+      await writeVmSnapshotManifest(
+        spec.snapshotManifestPath,
+        manifest.filter((entry) => entry.name !== snapshotName),
+      );
+    },
+    async restoreVmComputer(computer, input) {
+      const spec = vmRuntimePaths.specForComputer(computer);
+      if (input.target === "initial") {
+        await rm(spec.diskImagePath, { force: true });
+        if (computer.runtime.source.kind === "qcow2") {
+          await assertPathExists(computer.runtime.source.path, "Base qcow2 image");
+          await createQcow2Overlay(
+            qemuImgCommand,
+            computer.runtime.source.path,
+            spec.diskImagePath,
+          );
+          return;
+        }
+
+        await assertPathExists(computer.runtime.source.path, "Install ISO");
+        await createBlankDisk(
+          qemuImgCommand,
+          spec.diskImagePath,
+          computer.runtime.source.diskSizeGiB ?? 32,
+        );
+        return;
+      }
+
+      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+      const snapshot = manifest.find((entry) => entry.name === input.snapshotName);
+      if (snapshot === undefined) {
+        throw new Error(
+          `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
+
+      const tempDiskImagePath = `${spec.diskImagePath}.tmp-${randomUUID()}`;
+      await cloneQcow2Image(qemuImgCommand, snapshot.filePath, tempDiskImagePath);
+      await rename(tempDiskImagePath, spec.diskImagePath);
     },
     async updateBrowserViewport(computer, viewport) {
       const spec = browserRuntimePaths.specForComputer(computer);
@@ -492,8 +606,20 @@ async function assertPathExists(path: string, label: string) {
   }
 }
 
-async function createQcow2Overlay(baseImagePath: string, diskImagePath: string) {
-  await execFileAsync("qemu-img", [
+interface PersistedVmSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  sizeBytes: number;
+  filePath: string;
+}
+
+async function createQcow2Overlay(
+  qemuImgCommand: string,
+  baseImagePath: string,
+  diskImagePath: string,
+) {
+  await execFileAsync(qemuImgCommand, [
     "create",
     "-f",
     "qcow2",
@@ -505,8 +631,58 @@ async function createQcow2Overlay(baseImagePath: string, diskImagePath: string) 
   ]);
 }
 
-async function createBlankDisk(diskImagePath: string, diskSizeGiB: number) {
-  await execFileAsync("qemu-img", ["create", "-f", "qcow2", diskImagePath, `${diskSizeGiB}G`]);
+async function createBlankDisk(qemuImgCommand: string, diskImagePath: string, diskSizeGiB: number) {
+  await execFileAsync(qemuImgCommand, ["create", "-f", "qcow2", diskImagePath, `${diskSizeGiB}G`]);
+}
+
+async function cloneQcow2Image(qemuImgCommand: string, sourcePath: string, targetPath: string) {
+  await execFileAsync(qemuImgCommand, ["convert", "-O", "qcow2", sourcePath, targetPath]);
+}
+
+async function readVmSnapshotManifest(manifestPath: string): Promise<PersistedVmSnapshot[]> {
+  try {
+    const payload = await readFile(manifestPath, "utf8");
+    const parsed = JSON.parse(payload) as
+      | { snapshots?: PersistedVmSnapshot[] }
+      | PersistedVmSnapshot[];
+    const snapshots = Array.isArray(parsed) ? parsed : parsed.snapshots;
+    if (!Array.isArray(snapshots)) {
+      return [];
+    }
+
+    return snapshots.filter(isPersistedVmSnapshot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function writeVmSnapshotManifest(manifestPath: string, snapshots: PersistedVmSnapshot[]) {
+  await mkdir(dirname(manifestPath), { recursive: true });
+  const nextPayload = `${JSON.stringify({ snapshots }, null, 2)}\n`;
+  const tempPath = `${manifestPath}.tmp-${randomUUID()}`;
+  await writeFile(tempPath, nextPayload);
+  await rename(tempPath, manifestPath);
+}
+
+function isPersistedVmSnapshot(value: unknown): value is PersistedVmSnapshot {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "createdAt" in value &&
+    typeof value.createdAt === "string" &&
+    "sizeBytes" in value &&
+    typeof value.sizeBytes === "number" &&
+    "filePath" in value &&
+    typeof value.filePath === "string"
+  );
 }
 
 async function createCloudInitSeed(

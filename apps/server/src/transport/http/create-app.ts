@@ -14,10 +14,17 @@ import {
   parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
+  parseComputerSnapshot,
+  parseComputerSnapshots,
   parseComputerSummaries,
   parseCreateComputerInput,
+  parseCreateComputerSnapshotInput,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  parseImageDetail,
+  parseImageSummaries,
+  parsePullContainerImageInput,
+  parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
   type ComputerAutomationSession,
   type ComputerAudioSession,
@@ -26,21 +33,30 @@ import {
   type ComputerExecSession,
   type ComputerMonitorSession,
   type ComputerScreenshot,
+  type ComputerSnapshot,
   type ComputerSummary,
   type CreateComputerInput,
+  type CreateComputerSnapshotInput,
   type HostUnitDetail,
   type HostUnitSummary,
+  type ImageDetail,
+  type ImageSummary,
+  type RestoreComputerInput,
 } from "@computerd/core";
 import {
   type BrowserAutomationLease,
   type BrowserAudioStreamLease,
   type BrowserMonitorLease,
+  BrokenImageError,
   BrokenComputerError,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
+  ComputerSnapshotConflictError,
+  ComputerSnapshotNotFoundError,
   type ConsoleAttachLease,
   HostUnitNotFoundError,
+  ImageNotFoundError,
   UnsupportedComputerFeatureError,
 } from "@computerd/control-plane";
 
@@ -52,6 +68,7 @@ class InvalidJsonBodyError extends Error {
 }
 
 interface CreateAppOptions {
+  deleteContainerImage: (id: string) => Promise<void>;
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
@@ -62,16 +79,26 @@ interface CreateAppOptions {
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   listComputers: () => Promise<ComputerSummary[]>;
+  listComputerSnapshots: (name: string) => Promise<ComputerSnapshot[]>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
   openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   createScreenshot: (name: string) => Promise<ComputerScreenshot>;
   getComputer: (name: string) => Promise<ComputerDetail>;
+  getImage: (id: string) => Promise<ImageDetail>;
   createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
+  createComputerSnapshot: (
+    name: string,
+    input: CreateComputerSnapshotInput,
+  ) => Promise<ComputerSnapshot>;
   deleteComputer: (name: string) => Promise<void>;
+  deleteComputerSnapshot: (name: string, snapshotName: string) => Promise<void>;
   startComputer: (name: string) => Promise<ComputerDetail>;
   stopComputer: (name: string) => Promise<ComputerDetail>;
   restartComputer: (name: string) => Promise<ComputerDetail>;
+  restoreComputer: (name: string, input: RestoreComputerInput) => Promise<ComputerDetail>;
+  listImages: () => Promise<ImageSummary[]>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
+  pullContainerImage: (reference: string) => Promise<ImageDetail>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
   updateBrowserViewport: (
     name: string,
@@ -80,6 +107,7 @@ interface CreateAppOptions {
 }
 
 export function createApp({
+  deleteContainerImage,
   createAutomationSession,
   createAudioSession,
   handleMcpRequest,
@@ -90,16 +118,23 @@ export function createApp({
   openAutomationAttach,
   openAudioStream,
   listComputers,
+  listComputerSnapshots,
   createMonitorSession,
   openMonitorAttach,
   createScreenshot,
   getComputer,
+  getImage,
   createComputer,
+  createComputerSnapshot,
   deleteComputer,
+  deleteComputerSnapshot,
   startComputer,
   stopComputer,
   restartComputer,
+  restoreComputer,
+  listImages,
   listHostUnits,
+  pullContainerImage,
   getHostUnit,
   updateBrowserViewport,
 }: CreateAppOptions) {
@@ -120,6 +155,35 @@ export function createApp({
         }
       }
 
+      if (request.method === "GET" && url.pathname === "/api/images") {
+        sendJson(response, 200, parseImageSummaries(await listImages()));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/images/container/pull") {
+        const body = await readJsonBody(request);
+        const input = parsePullContainerImageInput(body);
+        sendJson(response, 201, parseImageDetail(await pullContainerImage(input.reference)));
+        return;
+      }
+
+      const containerImageDeleteMatch = /^\/api\/images\/container\/(?<id>.+)$/.exec(url.pathname);
+      if (request.method === "DELETE" && containerImageDeleteMatch?.groups?.id) {
+        await deleteContainerImage(decodeURIComponent(containerImageDeleteMatch.groups.id));
+        sendJson(response, 204, null);
+        return;
+      }
+
+      const imageDetailMatch = /^\/api\/images\/(?<id>.+)$/.exec(url.pathname);
+      if (request.method === "GET" && imageDetailMatch?.groups?.id) {
+        sendJson(
+          response,
+          200,
+          parseImageDetail(await getImage(decodeURIComponent(imageDetailMatch.groups.id))),
+        );
+        return;
+      }
+
       if (request.method === "GET" && url.pathname === "/api/computers") {
         sendJson(response, 200, parseComputerSummaries(await listComputers()));
         return;
@@ -132,6 +196,55 @@ export function createApp({
           201,
           parseComputerDetail(await createComputer(parseCreateComputerInput(body))),
         );
+        return;
+      }
+
+      const computerSnapshotsMatch = /^\/api\/computers\/(?<name>[^/]+)\/snapshots$/.exec(
+        url.pathname,
+      );
+      if (computerSnapshotsMatch?.groups?.name) {
+        const name = decodeURIComponent(computerSnapshotsMatch.groups.name);
+        if (request.method === "GET") {
+          sendJson(response, 200, parseComputerSnapshots(await listComputerSnapshots(name)));
+          return;
+        }
+
+        if (request.method === "POST") {
+          const body = await readJsonBody(request);
+          sendJson(
+            response,
+            201,
+            parseComputerSnapshot(
+              await createComputerSnapshot(name, parseCreateComputerSnapshotInput(body)),
+            ),
+          );
+          return;
+        }
+      }
+
+      const computerRestoreMatch = /^\/api\/computers\/(?<name>[^/]+)\/restore$/.exec(url.pathname);
+      if (request.method === "POST" && computerRestoreMatch?.groups?.name) {
+        const name = decodeURIComponent(computerRestoreMatch.groups.name);
+        const body = await readJsonBody(request);
+        sendJson(
+          response,
+          200,
+          parseComputerDetail(await restoreComputer(name, parseRestoreComputerInput(body))),
+        );
+        return;
+      }
+
+      const deleteSnapshotMatch =
+        /^\/api\/computers\/(?<name>[^/]+)\/snapshots\/(?<snapshotName>[^/]+)$/.exec(url.pathname);
+      if (
+        request.method === "DELETE" &&
+        deleteSnapshotMatch?.groups?.name &&
+        deleteSnapshotMatch.groups.snapshotName
+      ) {
+        const name = decodeURIComponent(deleteSnapshotMatch.groups.name);
+        const snapshotName = decodeURIComponent(deleteSnapshotMatch.groups.snapshotName);
+        await deleteComputerSnapshot(name, snapshotName);
+        sendJson(response, 204, null);
         return;
       }
 
@@ -294,12 +407,22 @@ export function createApp({
         return;
       }
 
+      if (error instanceof ComputerSnapshotConflictError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
       if (error instanceof ComputerConsoleUnavailableError) {
         sendJson(response, 409, { error: error.message });
         return;
       }
 
       if (error instanceof BrokenComputerError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
+      if (error instanceof BrokenImageError) {
         sendJson(response, 409, { error: error.message });
         return;
       }
@@ -314,7 +437,12 @@ export function createApp({
         return;
       }
 
-      if (error instanceof ComputerNotFoundError || error instanceof HostUnitNotFoundError) {
+      if (
+        error instanceof ComputerNotFoundError ||
+        error instanceof HostUnitNotFoundError ||
+        error instanceof ComputerSnapshotNotFoundError ||
+        error instanceof ImageNotFoundError
+      ) {
         sendJson(response, 404, { error: error.message });
         return;
       }
@@ -815,7 +943,8 @@ function mapUpgradeStatusCode(error: unknown) {
     error instanceof UnsupportedComputerFeatureError ||
     error instanceof ComputerConsoleUnavailableError ||
     error instanceof ComputerConflictError ||
-    error instanceof BrokenComputerError
+    error instanceof BrokenComputerError ||
+    error instanceof BrokenImageError
   ) {
     return 409;
   }

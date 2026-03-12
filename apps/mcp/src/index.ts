@@ -6,6 +6,7 @@ import {
   computerProfileSchema,
   computerResourcesSchema,
   computerStorageSchema,
+  parsePullContainerImageInput,
   parseCreateComputerInput,
 } from "@computerd/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,15 +14,19 @@ import { z } from "zod";
 import type { ControlPlane } from "@computerd/control-plane";
 
 export interface ComputerdMcpContext {
+  deleteContainerImage: ControlPlane["deleteContainerImage"];
   createAutomationSession: ControlPlane["createAutomationSession"];
   createComputer: ControlPlane["createComputer"];
   createMonitorSession: ControlPlane["createMonitorSession"];
   createScreenshot: ControlPlane["createScreenshot"];
   deleteComputer: ControlPlane["deleteComputer"];
   getComputer: ControlPlane["getComputer"];
+  getImage: ControlPlane["getImage"];
   listComputers: ControlPlane["listComputers"];
+  listImages: ControlPlane["listImages"];
   listHostUnits: ControlPlane["listHostUnits"];
   getHostUnit: ControlPlane["getHostUnit"];
+  pullContainerImage: ControlPlane["pullContainerImage"];
   restartComputer: ControlPlane["restartComputer"];
   startComputer: ControlPlane["startComputer"];
   stopComputer: ControlPlane["stopComputer"];
@@ -33,6 +38,50 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
     name: "computerd-mcp",
     version: "0.1.0",
   });
+
+  server.registerTool(
+    "list_images",
+    {
+      description: "List VM and container images visible to computerd.",
+    },
+    async () => createJsonToolResult(await context.listImages()),
+  );
+
+  server.registerTool(
+    "get_image",
+    {
+      description: "Inspect one image by id.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => createJsonToolResult(await context.getImage(id)),
+  );
+
+  server.registerTool(
+    "pull_container_image",
+    {
+      description: "Pull a container image into the Docker image store.",
+      inputSchema: {
+        reference: z.string().min(1),
+      },
+    },
+    async ({ reference }) =>
+      createJsonToolResult(
+        await context.pullContainerImage(parsePullContainerImageInput({ reference }).reference),
+      ),
+  );
+
+  server.registerTool(
+    "delete_container_image",
+    {
+      description: "Delete a container image by image inventory id.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => createJsonToolResult(await context.deleteContainerImage(id)),
+  );
 
   server.registerTool(
     "list_computers",
@@ -72,6 +121,40 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
           environment: z.record(z.string(), z.string()).optional(),
           provider: z.literal("docker").optional(),
           image: z.string().optional(),
+          imageId: z.string().optional(),
+          sourceKind: z.enum(["qcow2", "iso"]).optional(),
+          diskSizeGiB: z.number().int().positive().optional(),
+          nics: z
+            .array(
+              z.object({
+                name: z.string().min(1),
+                macAddress: z.string().optional(),
+                ipv4: z
+                  .object({
+                    type: z.enum(["disabled", "dhcp", "static"]),
+                    address: z.string().optional(),
+                    prefixLength: z.number().int().positive().optional(),
+                  })
+                  .optional(),
+                ipv6: z
+                  .object({
+                    type: z.enum(["disabled", "dhcp", "slaac", "static"]),
+                    address: z.string().optional(),
+                    prefixLength: z.number().int().positive().optional(),
+                  })
+                  .optional(),
+              }),
+            )
+            .optional(),
+          hypervisor: z.literal("qemu").optional(),
+          cloudInit: z
+            .object({
+              enabled: z.boolean().optional(),
+              user: z.string().min(1).optional(),
+              password: z.string().optional(),
+              sshAuthorizedKeys: z.array(z.string().min(1)).optional(),
+            })
+            .optional(),
           browser: createBrowserRuntimeSchema.shape.browser.optional(),
           persistentProfile: z.boolean().optional(),
           viewport: createBrowserRuntimeSchema.shape.viewport.optional(),

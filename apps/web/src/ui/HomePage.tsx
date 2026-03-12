@@ -3,15 +3,20 @@ import type { FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   parseComputerDetail,
+  parseComputerSnapshot,
+  parseComputerSnapshots,
   parseComputerSummaries,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  parseImageSummaries,
   type ComputerAutomationSession,
   type ComputerDetail,
   type ComputerScreenshot,
+  type ComputerSnapshot,
   type ComputerSummary,
   type HostUnitDetail,
   type HostUnitSummary,
+  type ImageSummary,
 } from "@computerd/core";
 import { createAutomationSession, createScreenshot } from "../transport/computer-sessions";
 import { deleteRequest, formatError, getJson, postJson } from "../transport/http";
@@ -29,6 +34,7 @@ type SelectedItem =
 export function HomePage() {
   const [computers, setComputers] = useState<ComputerSummary[]>([]);
   const [hostUnits, setHostUnits] = useState<HostUnitSummary[]>([]);
+  const [images, setImages] = useState<ImageSummary[]>([]);
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [selectedComputer, setSelectedComputer] = useState<ComputerDetail | null>(null);
   const [selectedHostUnit, setSelectedHostUnit] = useState<HostUnitDetail | null>(null);
@@ -36,6 +42,8 @@ export function HomePage() {
     null,
   );
   const [screenshot, setScreenshot] = useState<ComputerScreenshot | null>(null);
+  const [snapshots, setSnapshots] = useState<ComputerSnapshot[]>([]);
+  const [snapshotName, setSnapshotName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [form, setForm] = useState({
@@ -46,8 +54,8 @@ export function HomePage() {
     browser: "chromium",
     image: "ubuntu:24.04",
     vmSourceKind: "qcow2",
-    baseImagePath: "/var/lib/images/ubuntu-cloud.qcow2",
-    isoPath: "/var/lib/images/ubuntu.iso",
+    vmImageId: "filesystem-vm:dev-qcow2",
+    vmIsoImageId: "filesystem-vm:dev-iso",
     diskSizeGiB: "32",
     cloudInitEnabled: true,
     cloudInitUser: "ubuntu",
@@ -69,13 +77,27 @@ export function HomePage() {
 
   async function refreshInventory() {
     try {
-      const [nextComputers, nextHostUnits] = await Promise.all([
+      const [nextComputers, nextHostUnits, nextImages] = await Promise.all([
         getJson("/api/computers", parseComputerSummaries),
         getJson("/api/host-units", parseHostUnitSummaries),
+        getJson("/api/images", parseImageSummaries),
       ]);
 
       setComputers(nextComputers);
       setHostUnits(nextHostUnits);
+      setImages(nextImages);
+      setForm((current) => ({
+        ...current,
+        vmImageId: nextImages.some((image) => image.id === current.vmImageId)
+          ? current.vmImageId
+          : (nextImages.find(
+              (image) => image.provider === "filesystem-vm" && image.kind === "qcow2",
+            )?.id ?? current.vmImageId),
+        vmIsoImageId: nextImages.some((image) => image.id === current.vmIsoImageId)
+          ? current.vmIsoImageId
+          : (nextImages.find((image) => image.provider === "filesystem-vm" && image.kind === "iso")
+              ?.id ?? current.vmIsoImageId),
+      }));
 
       if (
         selectedItem?.kind === "computer" &&
@@ -108,6 +130,7 @@ export function HomePage() {
       setSelectedHostUnit(null);
       setAutomationSession(null);
       setScreenshot(null);
+      setSnapshots([]);
     } catch (caughtError) {
       setError(formatError(caughtError));
     }
@@ -115,6 +138,13 @@ export function HomePage() {
 
   async function loadComputer(name: string) {
     const detail = await getJson(`/api/computers/${encodeURIComponent(name)}`, parseComputerDetail);
+    const nextSnapshots =
+      detail.profile === "vm"
+        ? await getJson(
+            `/api/computers/${encodeURIComponent(name)}/snapshots`,
+            parseComputerSnapshots,
+          )
+        : [];
     setSelectedItem({
       kind: "computer",
       name,
@@ -123,6 +153,7 @@ export function HomePage() {
     setSelectedHostUnit(null);
     setAutomationSession(null);
     setScreenshot(null);
+    setSnapshots(nextSnapshots);
   }
 
   async function loadHostUnit(unitName: string) {
@@ -138,6 +169,7 @@ export function HomePage() {
     setSelectedComputer(null);
     setAutomationSession(null);
     setScreenshot(null);
+    setSnapshots([]);
   }
 
   async function handleCreateComputer(event: FormEvent<HTMLFormElement>) {
@@ -251,7 +283,7 @@ export function HomePage() {
                       form.vmSourceKind === "qcow2"
                         ? {
                             kind: "qcow2" as const,
-                            baseImagePath: form.baseImagePath,
+                            imageId: form.vmImageId,
                             cloudInit: form.cloudInitEnabled
                               ? {
                                   user: form.cloudInitUser,
@@ -270,7 +302,7 @@ export function HomePage() {
                           }
                         : {
                             kind: "iso" as const,
-                            isoPath: form.isoPath,
+                            imageId: form.vmIsoImageId,
                             ...(form.diskSizeGiB.length > 0
                               ? { diskSizeGiB: Number(form.diskSizeGiB) }
                               : {}),
@@ -292,12 +324,21 @@ export function HomePage() {
       setSelectedHostUnit(null);
       setAutomationSession(null);
       setScreenshot(null);
+      setSnapshots([]);
     } catch (caughtError) {
       setError(formatError(caughtError));
     } finally {
       setIsBusy(false);
     }
   }
+
+  const vmQcow2Images = images.filter(
+    (image) => image.provider === "filesystem-vm" && image.kind === "qcow2",
+  );
+  const vmIsoImages = images.filter(
+    (image) => image.provider === "filesystem-vm" && image.kind === "iso",
+  );
+  const containerImages = images.filter((image) => image.provider === "docker");
 
   async function handleComputerAction(action: "start" | "stop" | "restart") {
     if (selectedComputer === null) {
@@ -339,6 +380,7 @@ export function HomePage() {
       setSelectedHostUnit(null);
       setAutomationSession(null);
       setScreenshot(null);
+      setSnapshots([]);
       await refreshInventory();
     } catch (caughtError) {
       setError(formatError(caughtError));
@@ -374,6 +416,81 @@ export function HomePage() {
 
     try {
       setScreenshot(await createScreenshot(selectedComputer.name));
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleCreateSnapshot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      selectedComputer === null ||
+      selectedComputer.profile !== "vm" ||
+      snapshotName.trim().length === 0
+    ) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await postJson(
+        `/api/computers/${encodeURIComponent(selectedComputer.name)}/snapshots`,
+        { name: snapshotName.trim() },
+        parseComputerSnapshot,
+      );
+      setSnapshotName("");
+      await loadComputer(selectedComputer.name);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleRestoreSnapshot(
+    target: { target: "initial" } | { target: "snapshot"; snapshotName: string },
+  ) {
+    if (selectedComputer === null || selectedComputer.profile !== "vm") {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await postJson(
+        `/api/computers/${encodeURIComponent(selectedComputer.name)}/restore`,
+        target,
+        parseComputerDetail,
+      );
+      await loadComputer(selectedComputer.name);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteSnapshot(name: string) {
+    if (selectedComputer === null || selectedComputer.profile !== "vm") {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await deleteRequest(
+        `/api/computers/${encodeURIComponent(selectedComputer.name)}/snapshots/${encodeURIComponent(name)}`,
+      );
+      await loadComputer(selectedComputer.name);
+      await refreshInventory();
     } catch (caughtError) {
       setError(formatError(caughtError));
     } finally {
@@ -432,6 +549,12 @@ export function HomePage() {
   }
 
   const isSelectedComputerBroken = selectedComputer?.state === "broken";
+  const canMutateSnapshots =
+    selectedComputer !== null &&
+    selectedComputer.profile === "vm" &&
+    !isSelectedComputerBroken &&
+    selectedComputer.state === "stopped" &&
+    !isBusy;
 
   return (
     <main className="app-shell">
@@ -536,12 +659,18 @@ export function HomePage() {
                   <input
                     name="image"
                     value={form.image}
+                    list="container-image-options"
                     onChange={(event) =>
                       setForm((current) => ({ ...current, image: event.target.value }))
                     }
                     required
                   />
                 </label>
+                <datalist id="container-image-options">
+                  {containerImages.map((image) => (
+                    <option key={image.id} value={image.name} />
+                  ))}
+                </datalist>
                 <label>
                   Command
                   <input
@@ -601,15 +730,22 @@ export function HomePage() {
                 {form.vmSourceKind === "qcow2" ? (
                   <>
                     <label>
-                      Base qcow2 image
-                      <input
-                        name="baseImagePath"
-                        value={form.baseImagePath}
+                      Base image
+                      <select
+                        name="vmImageId"
+                        value={form.vmImageId}
                         onChange={(event) =>
-                          setForm((current) => ({ ...current, baseImagePath: event.target.value }))
+                          setForm((current) => ({ ...current, vmImageId: event.target.value }))
                         }
                         required
-                      />
+                      >
+                        {vmQcow2Images.map((image) => (
+                          <option key={image.id} value={image.id}>
+                            {image.name}
+                            {image.status === "broken" ? " (broken)" : ""}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label>
                       Cloud-init enabled
@@ -773,14 +909,21 @@ export function HomePage() {
                   <>
                     <label>
                       Install ISO
-                      <input
-                        name="isoPath"
-                        value={form.isoPath}
+                      <select
+                        name="vmIsoImageId"
+                        value={form.vmIsoImageId}
                         onChange={(event) =>
-                          setForm((current) => ({ ...current, isoPath: event.target.value }))
+                          setForm((current) => ({ ...current, vmIsoImageId: event.target.value }))
                         }
                         required
-                      />
+                      >
+                        {vmIsoImages.map((image) => (
+                          <option key={image.id} value={image.id}>
+                            {image.name}
+                            {image.status === "broken" ? " (broken)" : ""}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <label>
                       Disk size (GiB)
@@ -828,6 +971,38 @@ export function HomePage() {
               </li>
             ))}
           </ul>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h2>Images</h2>
+          </div>
+          <div className="detail-grid">
+            <div>
+              <strong>VM images</strong>
+              <ul className="item-list">
+                {images
+                  .filter((image) => image.provider === "filesystem-vm")
+                  .map((image) => (
+                    <li key={image.id}>
+                      <span>
+                        {image.name} <span className="meta">{image.kind}</span>
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+            <div>
+              <strong>Container images</strong>
+              <ul className="item-list">
+                {containerImages.map((image) => (
+                  <li key={image.id}>
+                    <span>{image.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div className="panel">
@@ -1083,6 +1258,86 @@ export function HomePage() {
                 </>
               ) : null}
             </dl>
+            {selectedComputer.profile === "vm" ? (
+              <section className="panel">
+                <div className="panel-header">
+                  <h3>Snapshots</h3>
+                  <button
+                    type="button"
+                    onClick={() => void loadComputer(selectedComputer.name)}
+                    disabled={isBusy}
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <form className="create-form" onSubmit={handleCreateSnapshot}>
+                  <label>
+                    Snapshot name
+                    <input
+                      name="snapshotName"
+                      value={snapshotName}
+                      onChange={(event) => setSnapshotName(event.target.value)}
+                      placeholder="checkpoint-1"
+                      disabled={!canMutateSnapshots}
+                      required
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!canMutateSnapshots || snapshotName.trim().length === 0}
+                  >
+                    Create snapshot
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="restore-initial"
+                    disabled={!canMutateSnapshots}
+                    onClick={() => void handleRestoreSnapshot({ target: "initial" })}
+                  >
+                    Restore initial
+                  </button>
+                </form>
+                <ul className="item-list" data-testid="vm-snapshot-list">
+                  {snapshots.length === 0 ? (
+                    <li>No snapshots yet.</li>
+                  ) : (
+                    snapshots.map((snapshot) => (
+                      <li key={snapshot.name}>
+                        <div className="item-button">
+                          <span>
+                            {snapshot.name} · {new Date(snapshot.createdAt).toLocaleString()} ·{" "}
+                            {snapshot.sizeBytes} bytes
+                          </span>
+                          <span className="actions">
+                            <button
+                              type="button"
+                              data-testid={`restore-snapshot-${snapshot.name}`}
+                              disabled={!canMutateSnapshots}
+                              onClick={() =>
+                                void handleRestoreSnapshot({
+                                  target: "snapshot",
+                                  snapshotName: snapshot.name,
+                                })
+                              }
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`delete-snapshot-${snapshot.name}`}
+                              disabled={!canMutateSnapshots}
+                              onClick={() => void handleDeleteSnapshot(snapshot.name)}
+                            >
+                              Delete
+                            </button>
+                          </span>
+                        </div>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </section>
+            ) : null}
             {selectedComputer.profile === "browser" && automationSession ? (
               <section className="panel">
                 <div className="panel-header">

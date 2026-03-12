@@ -46,6 +46,11 @@ const hostUnits = [
 ];
 
 let computers: FakeComputer[];
+let images: Array<Record<string, unknown>>;
+let snapshotsByComputer: Record<
+  string,
+  Array<{ name: string; createdAt: string; sizeBytes: number }>
+>;
 let openSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -94,6 +99,30 @@ beforeEach(() => {
       },
     },
   ];
+  snapshotsByComputer = {};
+  images = [
+    {
+      id: "filesystem-vm:dev-qcow2",
+      kind: "qcow2",
+      provider: "filesystem-vm",
+      name: "ubuntu-cloud.qcow2",
+      status: "available",
+    },
+    {
+      id: "filesystem-vm:dev-iso",
+      kind: "iso",
+      provider: "filesystem-vm",
+      name: "ubuntu.iso",
+      status: "available",
+    },
+    {
+      id: "docker:sha256:ubuntu-24-04",
+      kind: "container",
+      provider: "docker",
+      name: "ubuntu:24.04",
+      status: "available",
+    },
+  ];
 
   vi.mocked(connectMonitorClient).mockReset();
   vi.mocked(connectMonitorClient).mockImplementation(
@@ -119,6 +148,10 @@ beforeEach(() => {
 
       if (url === "/api/computers" && method === "GET") {
         return jsonResponse(computers.map((computer) => createComputerSummary(computer)));
+      }
+
+      if (url === "/api/images" && method === "GET") {
+        return jsonResponse(images);
       }
 
       if (url === "/api/host-units" && method === "GET") {
@@ -252,6 +285,48 @@ beforeEach(() => {
           height: 900,
           dataBase64: "c2NyZWVuc2hvdA==",
         });
+      }
+
+      if (url.startsWith("/api/computers/") && url.endsWith("/snapshots") && method === "GET") {
+        const name = decodeURIComponent(url.slice("/api/computers/".length, -"/snapshots".length));
+        return jsonResponse(snapshotsByComputer[name] ?? []);
+      }
+
+      if (url.startsWith("/api/computers/") && url.endsWith("/snapshots") && method === "POST") {
+        const name = decodeURIComponent(url.slice("/api/computers/".length, -"/snapshots".length));
+        const body = JSON.parse(String(init?.body)) as { name: string };
+        if (!snapshotsByComputer[name]) {
+          snapshotsByComputer[name] = [];
+        }
+
+        const snapshot = {
+          name: body.name,
+          createdAt: "2026-03-10T08:00:00.000Z",
+          sizeBytes: 2048,
+        };
+        snapshotsByComputer[name] = [snapshot, ...snapshotsByComputer[name]];
+        return jsonResponse(snapshot, 201);
+      }
+
+      if (url.startsWith("/api/computers/") && url.endsWith("/restore") && method === "POST") {
+        const name = decodeURIComponent(url.slice("/api/computers/".length, -"/restore".length));
+        const computer = computers.find((entry) => entry.name === name);
+        if (computer === undefined) {
+          return jsonResponse({ error: `Computer "${name}" was not found.` }, 404);
+        }
+
+        return jsonResponse(createComputerDetail(computer));
+      }
+
+      const deleteSnapshotMatch =
+        /^\/api\/computers\/(?<name>[^/]+)\/snapshots\/(?<snapshotName>[^/]+)$/.exec(url);
+      if (deleteSnapshotMatch?.groups && method === "DELETE") {
+        const name = decodeURIComponent(deleteSnapshotMatch.groups.name!);
+        const snapshotName = decodeURIComponent(deleteSnapshotMatch.groups.snapshotName!);
+        snapshotsByComputer[name] = (snapshotsByComputer[name] ?? []).filter(
+          (snapshot) => snapshot.name !== snapshotName,
+        );
+        return jsonResponse(null, 204);
       }
 
       if (url.startsWith("/api/computers/") && method === "GET") {
@@ -389,8 +464,8 @@ test("creates a vm computer and shows monitor plus console affordances", async (
   fireEvent.change(screen.getByLabelText("Profile"), {
     target: { value: "vm" },
   });
-  fireEvent.change(screen.getByLabelText("Base qcow2 image"), {
-    target: { value: "/images/ubuntu-cloud.qcow2" },
+  fireEvent.change(screen.getByLabelText("Base image"), {
+    target: { value: "filesystem-vm:dev-qcow2" },
   });
   fireEvent.change(screen.getByLabelText("IPv4 mode"), {
     target: { value: "static" },
@@ -406,6 +481,127 @@ test("creates a vm computer and shows monitor plus console affordances", async (
   expect(screen.getByText(/192.168.250.10\/24/)).toBeInTheDocument();
   expect(screen.getByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
   expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
+  expect(screen.getByTestId("vm-snapshot-list")).toHaveTextContent("No snapshots yet.");
+});
+
+test("manages vm snapshots from the detail page", async () => {
+  snapshotsByComputer["linux-vm"] = [
+    {
+      name: "baseline",
+      createdAt: "2026-03-09T08:00:00.000Z",
+      sizeBytes: 1024,
+    },
+  ];
+  computers.push({
+    name: "linux-vm",
+    unitName: "computerd-linux-vm.service",
+    profile: "vm",
+    state: "stopped",
+    runtime: {
+      hypervisor: "qemu",
+      accelerator: "kvm",
+      architecture: "x86_64",
+      machine: "q35",
+      bridge: "br0",
+      diskImagePath: "/var/lib/computerd/computers/linux-vm/vm/disk.qcow2",
+      serialSocketPath: "/run/computerd/computers/linux-vm/vm/serial.sock",
+      nics: [
+        {
+          name: "primary",
+          macAddress: "52:54:00:12:34:56",
+          ipConfigApplied: true,
+          ipv4: {
+            type: "dhcp",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+      vncDisplay: 20,
+      vncPort: 5920,
+      displayViewport: {
+        width: 1440,
+        height: 900,
+      },
+    },
+  });
+
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /linux-vm/i }));
+  expect(await screen.findByTestId("vm-snapshot-list")).toHaveTextContent("baseline");
+
+  fireEvent.change(screen.getByLabelText("Snapshot name"), {
+    target: { value: "checkpoint-2" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create snapshot" }));
+
+  await waitFor(() => {
+    expect(screen.getByTestId("vm-snapshot-list")).toHaveTextContent("checkpoint-2");
+  });
+
+  fireEvent.click(screen.getByTestId("restore-snapshot-checkpoint-2"));
+  await waitFor(() => {
+    expect(screen.getByRole("heading", { name: "linux-vm" })).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByTestId("delete-snapshot-checkpoint-2"));
+  await waitFor(() => {
+    expect(screen.getByTestId("vm-snapshot-list")).not.toHaveTextContent("checkpoint-2");
+  });
+});
+
+test("disables vm snapshot mutations while running", async () => {
+  computers.push({
+    name: "running-vm",
+    unitName: "computerd-running-vm.service",
+    profile: "vm",
+    state: "running",
+    runtime: {
+      hypervisor: "qemu",
+      accelerator: "kvm",
+      architecture: "x86_64",
+      machine: "q35",
+      bridge: "br0",
+      diskImagePath: "/var/lib/computerd/computers/running-vm/vm/disk.qcow2",
+      serialSocketPath: "/run/computerd/computers/running-vm/vm/serial.sock",
+      nics: [
+        {
+          name: "primary",
+          macAddress: "52:54:00:12:34:56",
+          ipConfigApplied: true,
+          ipv4: {
+            type: "dhcp",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+      vncDisplay: 20,
+      vncPort: 5920,
+      displayViewport: {
+        width: 1440,
+        height: 900,
+      },
+    },
+  });
+
+  renderApp("/");
+
+  fireEvent.click(await screen.findByRole("button", { name: /running-vm/i }));
+
+  expect(await screen.findByRole("button", { name: "Create snapshot" })).toBeDisabled();
+  expect(screen.getByTestId("restore-initial")).toBeDisabled();
 });
 
 test("deletes a selected computer and refreshes the inventory", async () => {
@@ -752,13 +948,21 @@ function createComputerDetail(computer: FakeComputer) {
                   `52:54:00:12:34:${(56 + index).toString(16).padStart(2, "0")}`,
                 ipConfigApplied: (nic.ipConfigApplied as boolean | undefined) ?? true,
               })),
-              source: (computer.runtime.source as Record<string, unknown> | undefined) ?? {
-                kind: "qcow2",
-                baseImagePath: "/images/ubuntu-cloud.qcow2",
-                cloudInit: {
-                  user: "ubuntu",
-                },
-              },
+              source:
+                (computer.runtime.source as Record<string, unknown> | undefined)?.kind === "iso"
+                  ? {
+                      path: "/images/ubuntu.iso",
+                      ...(computer.runtime.source as Record<string, unknown>),
+                    }
+                  : {
+                      kind: "qcow2",
+                      imageId: "filesystem-vm:dev-qcow2",
+                      path: "/images/ubuntu-cloud.qcow2",
+                      cloudInit: {
+                        user: "ubuntu",
+                      },
+                      ...(computer.runtime.source as Record<string, unknown> | undefined),
+                    },
               diskImagePath:
                 (computer.runtime.diskImagePath as string | undefined) ??
                 `/var/lib/computerd/computers/${computer.name}/vm/disk.qcow2`,

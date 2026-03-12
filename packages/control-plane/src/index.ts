@@ -3,6 +3,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   createComputerCapabilities,
+  type ContainerImageDetail,
+  type ImageDetail,
+  type ImageSummary,
   type ComputerAutomationSession,
   type ComputerAudioSession,
   type ComputerConsoleSession,
@@ -10,17 +13,21 @@ import {
   type ComputerDetail,
   type ComputerMonitorSession,
   type ComputerScreenshot,
+  type ComputerSnapshot,
   type ComputerSummary,
   type CreateBrowserComputerInput,
   type CreateComputerInput,
+  type CreateComputerSnapshotInput,
   type CreateContainerComputerInput,
   type CreateHostComputerInput,
   type CreateVmComputerInput,
   type HostUnitDetail,
   type HostUnitSummary,
   type HostRuntime,
+  type RestoreComputerInput,
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
+import { BrokenImageError, createImageProvider, ImageNotFoundError } from "./images";
 import { createDockerRuntime } from "./docker/runtime";
 import {
   createBrowserRuntimeUser,
@@ -93,23 +100,48 @@ export class BrokenComputerError extends Error {
   }
 }
 
+export class ComputerSnapshotConflictError extends Error {
+  constructor(computerName: string, snapshotName: string) {
+    super(`Snapshot "${snapshotName}" already exists for computer "${computerName}".`);
+    this.name = "ComputerSnapshotConflictError";
+  }
+}
+
+export class ComputerSnapshotNotFoundError extends Error {
+  constructor(computerName: string, snapshotName: string) {
+    super(`Snapshot "${snapshotName}" was not found for computer "${computerName}".`);
+    this.name = "ComputerSnapshotNotFoundError";
+  }
+}
+
 export interface ControlPlane {
+  deleteContainerImage: (id: string) => Promise<void>;
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
   createExecSession: (name: string) => Promise<ComputerExecSession>;
   createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
+  createComputerSnapshot: (
+    name: string,
+    input: CreateComputerSnapshotInput,
+  ) => Promise<ComputerSnapshot>;
   createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
+  pullContainerImage: (reference: string) => Promise<ContainerImageDetail>;
   createScreenshot: (name: string) => Promise<ComputerScreenshot>;
   deleteComputer: (name: string) => Promise<void>;
+  deleteComputerSnapshot: (name: string, snapshotName: string) => Promise<void>;
   getComputer: (name: string) => Promise<ComputerDetail>;
+  getImage: (id: string) => Promise<ImageDetail>;
+  listComputerSnapshots: (name: string) => Promise<ComputerSnapshot[]>;
   listComputers: () => Promise<ComputerSummary[]>;
+  listImages: () => Promise<ImageSummary[]>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
   restartComputer: (name: string) => Promise<ComputerDetail>;
+  restoreComputer: (name: string, input: RestoreComputerInput) => Promise<ComputerDetail>;
   openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
   startComputer: (name: string) => Promise<ComputerDetail>;
   stopComputer: (name: string) => Promise<ComputerDetail>;
@@ -121,6 +153,7 @@ export interface ControlPlane {
 }
 
 export interface CreateControlPlaneOptions {
+  imageProvider?: ReturnType<typeof createImageProvider>;
   metadataStore?: ComputerMetadataStore;
   runtime?: ComputerRuntimePort;
 }
@@ -172,9 +205,28 @@ export function createControlPlane(
         },
       }),
     });
+  const imageProvider =
+    options.imageProvider ??
+    createImageProvider({
+      configPath: environment.COMPUTERD_IMAGE_CONFIG ?? "/etc/computerd/images.json",
+      dockerSocketPath: environment.COMPUTERD_DOCKER_SOCKET ?? "/var/run/docker.sock",
+      qemuImgCommand: environment.COMPUTERD_QEMU_IMG ?? "qemu-img",
+    });
   const activeConsoleAttaches = new Set<string>();
 
   return {
+    async listImages() {
+      return await imageProvider.listImages();
+    },
+    async getImage(id) {
+      return await imageProvider.getImage(id);
+    },
+    async pullContainerImage(reference) {
+      return await imageProvider.pullContainerImage(reference);
+    },
+    async deleteContainerImage(id) {
+      await imageProvider.deleteContainerImage(id);
+    },
     async listComputers() {
       const records = await metadataStore.listComputers();
       const summaries = await Promise.all(
@@ -206,7 +258,10 @@ export function createControlPlane(
         throw new ComputerConflictError(input.name);
       }
 
-      const record = await createPersistedComputer(input, runtime);
+      const record = await createPersistedComputer(input, runtime, async (imageId, kind) => {
+        const image = await imageProvider.requireVmImage(imageId, kind);
+        return image.path;
+      });
       if (record.profile === "browser") {
         await runtime.ensureBrowserRuntimeIdentity(record);
       }
@@ -221,6 +276,30 @@ export function createControlPlane(
         vmRuntimePaths,
         environment,
       );
+    },
+    async listComputerSnapshots(name) {
+      const record = await requireComputer(metadataStore, name);
+      const vmRecord = requireVmRecord(record);
+      throwIfBroken(
+        vmRecord,
+        await runtime.getRuntimeState(vmRecord.unitName),
+        "Snapshot listing is not supported for broken computers.",
+      );
+      return await runtime.listVmSnapshots(vmRecord);
+    },
+    async createComputerSnapshot(name, input) {
+      const record = await requireComputer(metadataStore, name);
+      const vmRecord = requireVmRecord(record);
+      await requireVmStopped(vmRecord, runtime, "create snapshots");
+      try {
+        return await runtime.createVmSnapshot(vmRecord, input);
+      } catch (error) {
+        if (isSnapshotConflictError(error)) {
+          throw new ComputerSnapshotConflictError(vmRecord.name, input.name);
+        }
+
+        throw error;
+      }
     },
     async createMonitorSession(name) {
       const record = await requireComputer(metadataStore, name);
@@ -332,6 +411,20 @@ export function createControlPlane(
       }
       await metadataStore.deleteComputer(name);
     },
+    async deleteComputerSnapshot(name, snapshotName) {
+      const record = await requireComputer(metadataStore, name);
+      const vmRecord = requireVmRecord(record);
+      await requireVmStopped(vmRecord, runtime, "delete snapshots");
+      try {
+        await runtime.deleteVmSnapshot(vmRecord, snapshotName);
+      } catch (error) {
+        if (isSnapshotNotFoundError(error)) {
+          throw new ComputerSnapshotNotFoundError(vmRecord.name, snapshotName);
+        }
+
+        throw error;
+      }
+    },
     async startComputer(name) {
       const record = await requireComputer(metadataStore, name);
       throwIfBroken(
@@ -427,6 +520,33 @@ export function createControlPlane(
         environment,
       );
     },
+    async restoreComputer(name, input) {
+      const record = await requireComputer(metadataStore, name);
+      const vmRecord = requireVmRecord(record);
+      await requireVmStopped(vmRecord, runtime, "restore");
+      try {
+        await runtime.restoreVmComputer(vmRecord, input);
+      } catch (error) {
+        if (input.target === "snapshot" && isSnapshotNotFoundError(error)) {
+          throw new ComputerSnapshotNotFoundError(vmRecord.name, input.snapshotName);
+        }
+
+        throw error;
+      }
+
+      const updated = {
+        ...vmRecord,
+        lastActionAt: new Date().toISOString(),
+      } satisfies PersistedComputer;
+      await metadataStore.putComputer(updated);
+      return await toComputerDetail(
+        updated,
+        runtime,
+        browserRuntimePaths,
+        vmRuntimePaths,
+        environment,
+      );
+    },
     async updateBrowserViewport(name, input) {
       const record = await requireComputer(metadataStore, name);
       const browserRecord = requireBrowserRecord(record);
@@ -463,6 +583,7 @@ export function createControlPlane(
 async function createPersistedComputer(
   input: CreateComputerInput,
   runtime: ComputerRuntimePort,
+  resolveVmImagePath: (imageId: string, kind: "qcow2" | "iso") => Promise<string>,
 ): Promise<PersistedComputer> {
   const timestamp = new Date().toISOString();
   const access =
@@ -536,10 +657,14 @@ async function createPersistedComputer(
   }
 
   if (input.profile === "vm") {
+    const imagePath = await resolveVmImagePath(
+      input.runtime.source.imageId,
+      input.runtime.source.kind,
+    );
     return {
       ...common,
       profile: "vm",
-      runtime: await runtime.createVmComputer(input),
+      runtime: await runtime.createVmComputer(input, imagePath),
     };
   }
 
@@ -796,6 +921,16 @@ function requireBrowserRecord(record: PersistedComputer): PersistedBrowserComput
   return record;
 }
 
+function requireVmRecord(record: PersistedComputer): PersistedVmComputer {
+  if (record.profile !== "vm") {
+    throw new UnsupportedComputerFeatureError(
+      `Computer "${record.name}" does not support VM snapshots.`,
+    );
+  }
+
+  return record;
+}
+
 function requireMonitorCapableRecord(
   record: PersistedComputer,
 ): PersistedBrowserComputer | PersistedVmComputer {
@@ -884,6 +1019,24 @@ async function requireContainerRunning(
   }
 }
 
+async function requireVmStopped(
+  record: PersistedVmComputer,
+  runtime: ComputerRuntimePort,
+  capability: string,
+) {
+  const runtimeState = await runtime.getRuntimeState(record.unitName);
+  throwIfBroken(
+    record,
+    runtimeState,
+    `${capitalize(capability)} is not supported for broken computers.`,
+  );
+  if (mapComputerState(runtimeState) !== "stopped") {
+    throw new UnsupportedComputerFeatureError(
+      `Computer "${record.name}" must be stopped before ${capability}.`,
+    );
+  }
+}
+
 function supportsConsoleSessions(record: PersistedComputer) {
   return (
     (record.profile === "host" || record.profile === "container" || record.profile === "vm") &&
@@ -912,6 +1065,14 @@ function throwIfBroken(
   }
 }
 
+function isSnapshotConflictError(error: unknown) {
+  return error instanceof Error && /snapshot ".*" already exists/i.test(error.message);
+}
+
+function isSnapshotNotFoundError(error: unknown) {
+  return error instanceof Error && /snapshot ".*" was not found/i.test(error.message);
+}
+
 function toUnitName(name: string) {
   return `computerd-${slugify(name)}.service`;
 }
@@ -929,6 +1090,10 @@ function slugify(value: string) {
 
 function compareByName(left: ComputerSummary, right: ComputerSummary) {
   return left.name.localeCompare(right.name);
+}
+
+function capitalize(value: string) {
+  return value.length === 0 ? value : `${value[0]!.toUpperCase()}${value.slice(1)}`;
 }
 
 function createConsoleSession(name: string): ComputerConsoleSession {
@@ -1066,6 +1231,7 @@ function resolveRuntimeMode(environment: NodeJS.ProcessEnv): ComputerdRuntimeMod
 }
 
 function createDevelopmentControlPlane(): ControlPlane {
+  const now = new Date().toISOString();
   const hostUnits: HostUnitDetail[] = [
     {
       unitName: "docker.service",
@@ -1090,8 +1256,8 @@ function createDevelopmentControlPlane(): ControlPlane {
     unitName: "computerd-starter-host.service",
     profile: "host",
     description: "Development host computer for local coding and smoke tests.",
-    createdAt: new Date().toISOString(),
-    lastActionAt: new Date().toISOString(),
+    createdAt: now,
+    lastActionAt: now,
     access: {
       console: {
         mode: "pty",
@@ -1117,8 +1283,8 @@ function createDevelopmentControlPlane(): ControlPlane {
     unitName: "computerd-research-browser.service",
     profile: "browser",
     description: "Development browser computer for noVNC and CDP smoke tests.",
-    createdAt: new Date().toISOString(),
-    lastActionAt: new Date().toISOString(),
+    createdAt: now,
+    lastActionAt: now,
     access: {
       display: {
         mode: "virtual-display",
@@ -1145,8 +1311,8 @@ function createDevelopmentControlPlane(): ControlPlane {
     unitName: "computerd-linux-vm.service",
     profile: "vm",
     description: "Development VM computer for QEMU monitor and serial console smoke tests.",
-    createdAt: new Date().toISOString(),
-    lastActionAt: new Date().toISOString(),
+    createdAt: now,
+    lastActionAt: now,
     access: {
       console: {
         mode: "pty",
@@ -1183,7 +1349,8 @@ function createDevelopmentControlPlane(): ControlPlane {
       machine: "q35",
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        path: "/images/ubuntu-cloud.qcow2",
         cloudInit: {
           user: "ubuntu",
         },
@@ -1242,6 +1409,57 @@ function createDevelopmentControlPlane(): ControlPlane {
   });
   const activeConsoleAttaches = new Set<string>();
   const containerStates = new Map<string, UnitRuntimeState>();
+  const vmSnapshots = new Map<string, ComputerSnapshot[]>();
+  const images = new Map<string, ImageDetail>([
+    [
+      "filesystem-vm:dev-qcow2",
+      {
+        id: "filesystem-vm:dev-qcow2",
+        kind: "qcow2",
+        provider: "filesystem-vm",
+        name: "ubuntu-cloud.qcow2",
+        status: "available",
+        createdAt: now,
+        lastSeenAt: now,
+        path: "/images/ubuntu-cloud.qcow2",
+        sizeBytes: 601 * 1024 * 1024,
+        format: "qcow2",
+        sourceType: "explicit-file",
+      },
+    ],
+    [
+      "filesystem-vm:dev-iso",
+      {
+        id: "filesystem-vm:dev-iso",
+        kind: "iso",
+        provider: "filesystem-vm",
+        name: "ubuntu.iso",
+        status: "available",
+        createdAt: now,
+        lastSeenAt: now,
+        path: "/images/ubuntu.iso",
+        sizeBytes: 2 * 1024 * 1024 * 1024,
+        format: "iso",
+        sourceType: "explicit-file",
+      },
+    ],
+    [
+      "docker:sha256:ubuntu-24-04",
+      {
+        id: "docker:sha256:ubuntu-24-04",
+        kind: "container",
+        provider: "docker",
+        name: "ubuntu:24.04",
+        status: "available",
+        createdAt: now,
+        lastSeenAt: now,
+        reference: "ubuntu:24.04",
+        imageId: "sha256:ubuntu-24-04",
+        repoTags: ["ubuntu:24.04"],
+        sizeBytes: 123_456_789,
+      },
+    ],
+  ]);
 
   const runtime: ComputerRuntimePort = {
     async createContainerComputer(input, unitName) {
@@ -1269,14 +1487,16 @@ function createDevelopmentControlPlane(): ControlPlane {
         containerName,
       };
     },
-    async createVmComputer(input) {
-      return withPersistedVmRuntime(input.runtime);
+    async createVmComputer(input, imagePath) {
+      return withPersistedVmRuntime(input.runtime, imagePath);
     },
     async deleteBrowserRuntimeIdentity() {},
     async deleteContainerComputer(computer) {
       containerStates.delete(computer.runtime.containerId);
     },
-    async deleteVmComputer() {},
+    async deleteVmComputer(computer) {
+      vmSnapshots.delete(computer.name);
+    },
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
     async prepareVmRuntime() {},
@@ -1388,6 +1608,48 @@ function createDevelopmentControlPlane(): ControlPlane {
         height: spec.viewport.height,
         dataBase64: Buffer.from(`development-screenshot:${computer.name}`).toString("base64"),
       };
+    },
+    async listVmSnapshots(computer) {
+      return vmSnapshots.get(computer.name) ?? [];
+    },
+    async createVmSnapshot(computer, input) {
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (snapshots.some((snapshot) => snapshot.name === input.name)) {
+        throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
+      }
+
+      const snapshot = {
+        name: input.name,
+        createdAt: new Date().toISOString(),
+        sizeBytes: 0,
+      } satisfies ComputerSnapshot;
+      vmSnapshots.set(computer.name, [snapshot, ...snapshots]);
+      return snapshot;
+    },
+    async deleteVmSnapshot(computer, snapshotName) {
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (!snapshots.some((snapshot) => snapshot.name === snapshotName)) {
+        throw new Error(
+          `Snapshot "${snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
+
+      vmSnapshots.set(
+        computer.name,
+        snapshots.filter((snapshot) => snapshot.name !== snapshotName),
+      );
+    },
+    async restoreVmComputer(computer, input) {
+      if (input.target === "initial") {
+        return;
+      }
+
+      const snapshots = vmSnapshots.get(computer.name) ?? [];
+      if (!snapshots.some((snapshot) => snapshot.name === input.snapshotName)) {
+        throw new Error(
+          `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
+        );
+      }
     },
     async createPersistentUnit(computer) {
       if (computer.profile === "host" && computer.access.console?.mode === "pty") {
@@ -1576,6 +1838,61 @@ function createDevelopmentControlPlane(): ControlPlane {
       records.delete(name);
     },
   };
+  const imageProvider = {
+    async listImages() {
+      return [...images.values()].sort((left, right) => left.name.localeCompare(right.name));
+    },
+    async getImage(id: string) {
+      const image = images.get(id);
+      if (!image) {
+        throw new ImageNotFoundError(id);
+      }
+      return image;
+    },
+    async requireVmImage(id: string, kind: "qcow2" | "iso") {
+      const image = await this.getImage(id);
+      if (image.provider !== "filesystem-vm" || image.kind !== kind) {
+        throw new ImageNotFoundError(id);
+      }
+      if (image.status === "broken") {
+        throw new BrokenImageError(id);
+      }
+      return image;
+    },
+    async pullContainerImage(reference: string) {
+      const existing = [...images.values()].find(
+        (image) =>
+          image.provider === "docker" &&
+          (image.reference === reference || image.repoTags.includes(reference)),
+      );
+      if (existing && existing.provider === "docker") {
+        return existing;
+      }
+      const id = `docker:sha256:${slugify(reference)}`;
+      const image = {
+        id,
+        kind: "container" as const,
+        provider: "docker" as const,
+        name: reference,
+        status: "available" as const,
+        createdAt: new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
+        reference,
+        imageId: id.replace(/^docker:/, ""),
+        repoTags: [reference],
+        sizeBytes: 123_456_789,
+      };
+      images.set(id, image);
+      return image;
+    },
+    async deleteContainerImage(id: string) {
+      const image = images.get(id);
+      if (!image || image.provider !== "docker") {
+        throw new ImageNotFoundError(id);
+      }
+      images.delete(id);
+    },
+  } satisfies ReturnType<typeof createImageProvider>;
 
   const controlPlane = createControlPlane(
     {
@@ -1590,6 +1907,7 @@ function createDevelopmentControlPlane(): ControlPlane {
       COMPUTERD_TERMINAL_RUNTIME_DIR: consoleRuntimePaths.runtimeDirectory,
     },
     {
+      imageProvider,
       metadataStore,
       runtime,
     },
@@ -1794,3 +2112,5 @@ export type {
   HostUnitSummary,
   HostRuntime,
 };
+
+export { BrokenImageError, ImageNotFoundError };

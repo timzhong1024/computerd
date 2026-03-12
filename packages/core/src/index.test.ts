@@ -5,12 +5,15 @@ import {
   parseComputerAudioSession,
   parseComputerConsoleSession,
   parseComputerDetail,
+  parseComputerSnapshots,
   parseComputerSummaries,
   parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
   parseCreateComputerInput,
+  parseCreateComputerSnapshotInput,
   parseHostUnitDetail,
+  parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
 } from "./index";
 
@@ -100,7 +103,7 @@ test("parses qcow2 vm computer creation input", () => {
       ],
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:ubuntu-cloud",
         cloudInit: {
           user: "ubuntu",
         },
@@ -144,7 +147,7 @@ test("parses qcow2 vm creation input with cloud-init explicitly disabled", () =>
       ],
       source: {
         kind: "qcow2",
-        baseImagePath: "/images/ubuntu-cloud.qcow2",
+        imageId: "filesystem-vm:ubuntu-cloud",
         cloudInit: {
           enabled: false,
         },
@@ -226,7 +229,8 @@ test("parses vm computer details", () => {
       ],
       source: {
         kind: "iso",
-        isoPath: "/images/ubuntu.iso",
+        imageId: "filesystem-vm:ubuntu-iso",
+        path: "/images/ubuntu.iso",
         diskSizeGiB: 32,
       },
       diskImagePath: "/var/lib/computerd/computers/linux-vm/vm/disk.qcow2",
@@ -248,6 +252,54 @@ test("parses vm computer details", () => {
   expect(detail.runtime.vncPort).toBe(5914);
   expect(detail.runtime.bridge).toBe("br0");
   expect(detail.runtime.nics[0]?.macAddress).toBe("52:54:00:12:34:56");
+});
+
+test("parses computer snapshots", () => {
+  const snapshots = parseComputerSnapshots([
+    {
+      name: "checkpoint-1",
+      createdAt: "2026-03-10T08:00:00.000Z",
+      sizeBytes: 1024,
+    },
+  ]);
+
+  expect(snapshots).toEqual([
+    {
+      name: "checkpoint-1",
+      createdAt: "2026-03-10T08:00:00.000Z",
+      sizeBytes: 1024,
+    },
+  ]);
+});
+
+test("parses create computer snapshot input", () => {
+  const input = parseCreateComputerSnapshotInput({
+    name: "checkpoint-1",
+  });
+
+  expect(input).toEqual({
+    name: "checkpoint-1",
+  });
+});
+
+test("parses restore computer input", () => {
+  expect(
+    parseRestoreComputerInput({
+      target: "initial",
+    }),
+  ).toEqual({
+    target: "initial",
+  });
+
+  expect(
+    parseRestoreComputerInput({
+      target: "snapshot",
+      snapshotName: "checkpoint-1",
+    }),
+  ).toEqual({
+    target: "snapshot",
+    snapshotName: "checkpoint-1",
+  });
 });
 
 test("parses container computer details", () => {

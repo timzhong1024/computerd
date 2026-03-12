@@ -67,6 +67,7 @@ test("createTerminalProcess uses raw pipes when lease disables pty", async () =>
 test("serves computer and host unit APIs", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
+    deleteContainerImage: controlPlane.deleteContainerImage,
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
@@ -103,6 +104,7 @@ test("serves computer and host unit APIs", async () => {
       release() {},
     }),
     listComputers: controlPlane.listComputers,
+    listComputerSnapshots: controlPlane.listComputerSnapshots,
     createMonitorSession: async (name) =>
       name === "research-browser"
         ? {
@@ -120,12 +122,18 @@ test("serves computer and host unit APIs", async () => {
     openMonitorAttach: controlPlane.openMonitorAttach,
     createScreenshot: controlPlane.createScreenshot,
     getComputer: controlPlane.getComputer,
+    getImage: controlPlane.getImage,
     createComputer: controlPlane.createComputer,
+    createComputerSnapshot: controlPlane.createComputerSnapshot,
     deleteComputer: controlPlane.deleteComputer,
+    deleteComputerSnapshot: controlPlane.deleteComputerSnapshot,
     startComputer: controlPlane.startComputer,
     stopComputer: controlPlane.stopComputer,
     restartComputer: controlPlane.restartComputer,
+    restoreComputer: controlPlane.restoreComputer,
+    listImages: controlPlane.listImages,
     listHostUnits: controlPlane.listHostUnits,
+    pullContainerImage: controlPlane.pullContainerImage,
     getHostUnit: controlPlane.getHostUnit,
     updateBrowserViewport: controlPlane.updateBrowserViewport,
   });
@@ -165,6 +173,48 @@ test("serves computer and host unit APIs", async () => {
   const list = await listResponse.json();
   expect(list).toEqual(expect.arrayContaining([expect.objectContaining({ name: "lab-host" })]));
 
+  const imageListResponse = await fetch(`${baseUrl}/api/images`);
+  expect(imageListResponse.status).toBe(200);
+  await expect(imageListResponse.json()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: "qcow2", provider: "filesystem-vm" }),
+      expect.objectContaining({ kind: "container", provider: "docker" }),
+    ]),
+  );
+
+  const pulledImageResponse = await fetch(`${baseUrl}/api/images/container/pull`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      reference: "node:22",
+    }),
+  });
+  expect(pulledImageResponse.status).toBe(201);
+  const pulledImage = await pulledImageResponse.json();
+  expect(pulledImage).toMatchObject({
+    provider: "docker",
+    reference: "node:22",
+  });
+
+  const imageDetailResponse = await fetch(
+    `${baseUrl}/api/images/${encodeURIComponent("filesystem-vm:dev-qcow2")}`,
+  );
+  expect(imageDetailResponse.status).toBe(200);
+  await expect(imageDetailResponse.json()).resolves.toMatchObject({
+    id: "filesystem-vm:dev-qcow2",
+    provider: "filesystem-vm",
+  });
+
+  const deleteImageResponse = await fetch(
+    `${baseUrl}/api/images/container/${encodeURIComponent(pulledImage.id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  expect(deleteImageResponse.status).toBe(204);
+
   const startResponse = await fetch(`${baseUrl}/api/computers/lab-host/start`, {
     method: "POST",
   });
@@ -196,7 +246,7 @@ test("serves computer and host unit APIs", async () => {
         ],
         source: {
           kind: "qcow2",
-          baseImagePath: "/images/ubuntu-cloud.qcow2",
+          imageId: "filesystem-vm:dev-qcow2",
           cloudInit: {
             user: "ubuntu",
           },
@@ -210,9 +260,78 @@ test("serves computer and host unit APIs", async () => {
     profile: "vm",
   });
 
+  const createSnapshotResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/snapshots`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "checkpoint-1",
+    }),
+  });
+  expect(createSnapshotResponse.status).toBe(201);
+  await expect(createSnapshotResponse.json()).resolves.toMatchObject({
+    name: "checkpoint-1",
+  });
+
+  const listSnapshotsResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/snapshots`);
+  expect(listSnapshotsResponse.status).toBe(200);
+  await expect(listSnapshotsResponse.json()).resolves.toEqual([
+    expect.objectContaining({
+      name: "checkpoint-1",
+    }),
+  ]);
+
+  const restoreSnapshotResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/restore`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      target: "snapshot",
+      snapshotName: "checkpoint-1",
+    }),
+  });
+  expect(restoreSnapshotResponse.status).toBe(200);
+  await expect(restoreSnapshotResponse.json()).resolves.toMatchObject({
+    name: "vm-smoke",
+    profile: "vm",
+  });
+
+  const restoreInitialResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/restore`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      target: "initial",
+    }),
+  });
+  expect(restoreInitialResponse.status).toBe(200);
+
+  const deleteSnapshotResponse = await fetch(
+    `${baseUrl}/api/computers/vm-smoke/snapshots/checkpoint-1`,
+    {
+      method: "DELETE",
+    },
+  );
+  expect(deleteSnapshotResponse.status).toBe(204);
+
   await fetch(`${baseUrl}/api/computers/vm-smoke/start`, {
     method: "POST",
   });
+
+  const runningSnapshotResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/snapshots`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "checkpoint-running",
+    }),
+  });
+  expect(runningSnapshotResponse.status).toBe(409);
+
   const vmMonitorSessionResponse = await fetch(
     `${baseUrl}/api/computers/vm-smoke/monitor-sessions`,
     {
@@ -421,6 +540,30 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
+        path: "/api/computers/vm-smoke/snapshots",
+        statusCode: 201,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "GET",
+        path: "/api/computers/vm-smoke/snapshots",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/vm-smoke/restore",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "DELETE",
+        path: "/api/computers/vm-smoke/snapshots/checkpoint-1",
+        statusCode: 204,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
         path: "/api/computers/workspace-container/exec-sessions",
         statusCode: 200,
       }),
@@ -497,6 +640,11 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request_error",
         method: "POST",
+        path: "/api/computers/vm-smoke/snapshots",
+      }),
+      expect.objectContaining({
+        type: "http_request_error",
+        method: "POST",
         path: "/api/computers/starter-host/monitor-sessions",
       }),
       expect.objectContaining({
@@ -559,6 +707,9 @@ test("returns broken computers and blocks broken actions with conflict responses
     "Broken computers currently support inspect only.",
   );
   const app = createApp({
+    deleteContainerImage: async () => {
+      throw brokenError;
+    },
     createAutomationSession: async () => {
       throw brokenError;
     },
@@ -584,6 +735,9 @@ test("returns broken computers and blocks broken actions with conflict responses
       throw brokenError;
     },
     listComputers: async () => [brokenDetail],
+    listComputerSnapshots: async () => {
+      throw brokenError;
+    },
     createMonitorSession: async () => {
       throw brokenError;
     },
@@ -594,8 +748,17 @@ test("returns broken computers and blocks broken actions with conflict responses
       throw brokenError;
     },
     getComputer: async () => brokenDetail,
+    getImage: async () => {
+      throw brokenError;
+    },
     createComputer: async () => brokenDetail,
+    createComputerSnapshot: async () => {
+      throw brokenError;
+    },
     deleteComputer: async () => {
+      throw brokenError;
+    },
+    deleteComputerSnapshot: async () => {
       throw brokenError;
     },
     startComputer: async () => {
@@ -607,7 +770,14 @@ test("returns broken computers and blocks broken actions with conflict responses
     restartComputer: async () => {
       throw brokenError;
     },
+    restoreComputer: async () => {
+      throw brokenError;
+    },
+    listImages: async () => [],
     listHostUnits: async () => [],
+    pullContainerImage: async () => {
+      throw brokenError;
+    },
     getHostUnit: async () => {
       throw new Error("not used");
     },
@@ -659,6 +829,7 @@ test("returns broken computers and blocks broken actions with conflict responses
 test("serves container session APIs across stopped and running states", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
+    deleteContainerImage: controlPlane.deleteContainerImage,
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
@@ -668,16 +839,23 @@ test("serves container session APIs across stopped and running states", async ()
     openAutomationAttach: controlPlane.openAutomationAttach,
     openAudioStream: controlPlane.openAudioStream,
     listComputers: controlPlane.listComputers,
+    listComputerSnapshots: controlPlane.listComputerSnapshots,
     createMonitorSession: controlPlane.createMonitorSession,
     openMonitorAttach: controlPlane.openMonitorAttach,
     createScreenshot: controlPlane.createScreenshot,
     getComputer: controlPlane.getComputer,
+    getImage: controlPlane.getImage,
     createComputer: controlPlane.createComputer,
+    createComputerSnapshot: controlPlane.createComputerSnapshot,
     deleteComputer: controlPlane.deleteComputer,
+    deleteComputerSnapshot: controlPlane.deleteComputerSnapshot,
     startComputer: controlPlane.startComputer,
     stopComputer: controlPlane.stopComputer,
     restartComputer: controlPlane.restartComputer,
+    restoreComputer: controlPlane.restoreComputer,
+    listImages: controlPlane.listImages,
     listHostUnits: controlPlane.listHostUnits,
+    pullContainerImage: controlPlane.pullContainerImage,
     getHostUnit: controlPlane.getHostUnit,
     updateBrowserViewport: controlPlane.updateBrowserViewport,
   });
