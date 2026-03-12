@@ -201,6 +201,127 @@ test("creates and manages a qcow2 vm computer with monitor and console support",
   });
 });
 
+test("prepares vm runtime before start and restart", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const vmRecord = createVmComputerRecord();
+  await metadataStore.putComputer(vmRecord);
+
+  const calls: string[] = [];
+  const runtime: ComputerRuntimePort = {
+    async createContainerComputer() {
+      throw new Error("not implemented");
+    },
+    async createVmComputer() {
+      throw new Error("not implemented");
+    },
+    async deleteBrowserRuntimeIdentity() {},
+    async deleteContainerComputer() {},
+    async deleteVmComputer() {},
+    async ensureBrowserRuntimeIdentity() {},
+    async prepareBrowserRuntime() {},
+    async prepareVmRuntime(computer) {
+      calls.push(`prepare:${computer.name}`);
+    },
+    async createAutomationSession() {
+      throw new Error("not implemented");
+    },
+    async createAudioSession() {
+      throw new Error("not implemented");
+    },
+    async createMonitorSession() {
+      throw new Error("not implemented");
+    },
+    async createPersistentUnit() {
+      throw new Error("not implemented");
+    },
+    async createScreenshot() {
+      throw new Error("not implemented");
+    },
+    async deletePersistentUnit() {
+      throw new Error("not implemented");
+    },
+    async getContainerRuntimeState() {
+      return null;
+    },
+    async getRuntimeState(unitName) {
+      return {
+        unitName,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "dead",
+      };
+    },
+    async getHostUnit() {
+      return null;
+    },
+    async listHostUnits() {
+      return [];
+    },
+    async openAutomationAttach() {
+      throw new Error("not implemented");
+    },
+    async openAudioStream() {
+      throw new Error("not implemented");
+    },
+    async openMonitorAttach() {
+      throw new Error("not implemented");
+    },
+    async restartUnit(unitName) {
+      calls.push(`restart:${unitName}`);
+      return {
+        unitName,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "active",
+        subState: "running",
+      };
+    },
+    async restartContainerComputer() {
+      throw new Error("not implemented");
+    },
+    async startUnit(unitName) {
+      calls.push(`start:${unitName}`);
+      return {
+        unitName,
+        unitType: "service",
+        loadState: "loaded",
+        activeState: "active",
+        subState: "running",
+      };
+    },
+    async startContainerComputer() {
+      throw new Error("not implemented");
+    },
+    async stopUnit() {
+      throw new Error("not implemented");
+    },
+    async stopContainerComputer() {
+      throw new Error("not implemented");
+    },
+    async updateBrowserViewport() {},
+  };
+
+  const controlPlane = createControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_TERMINAL_RUNTIME_DIR: "/tmp/computerd-test-terminals",
+    },
+    { metadataStore, runtime },
+  );
+
+  await controlPlane.startComputer("linux-vm");
+  await controlPlane.restartComputer("linux-vm");
+
+  expect(calls).toEqual([
+    "prepare:linux-vm",
+    "start:computerd-linux-vm.service",
+    "prepare:linux-vm",
+    "restart:computerd-linux-vm.service",
+  ]);
+});
+
 test("vm detail preserves an explicit nic mac address", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
 
@@ -719,6 +840,7 @@ test("waits for host console runtime readiness during start", async () => {
     async deleteVmComputer() {},
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
+    async prepareVmRuntime() {},
     async createAutomationSession(computer) {
       return {
         computerName: computer.name,
@@ -1112,6 +1234,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     },
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
+    async prepareVmRuntime() {},
     async createAutomationSession(computer) {
       return {
         computerName: computer.name,

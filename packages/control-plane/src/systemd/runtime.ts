@@ -32,6 +32,7 @@ export interface SystemdRuntime {
   deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
+  prepareVmRuntime: (computer: PersistedVmComputer) => Promise<void>;
   createAutomationSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<import("./types").ComputerAutomationSession>;
@@ -107,9 +108,6 @@ export function createSystemdRuntime({
       if (runtime.source.kind === "qcow2") {
         await assertPathExists(runtime.source.baseImagePath, "Base qcow2 image");
         await createQcow2Overlay(runtime.source.baseImagePath, spec.diskImagePath);
-        if (runtime.source.cloudInit.enabled !== false) {
-          await createCloudInitSeed(spec, input.name, runtime.source.cloudInit, runtime.nics[0]!);
-        }
       } else {
         await assertPathExists(runtime.source.isoPath, "Install ISO");
         await createBlankDisk(spec.diskImagePath, runtime.source.diskSizeGiB ?? 32);
@@ -130,6 +128,25 @@ export function createSystemdRuntime({
     },
     async prepareBrowserRuntime(computer) {
       await pipeWireHostManager.prepareRuntime(computer);
+    },
+    async prepareVmRuntime(computer) {
+      if (computer.runtime.source.kind !== "qcow2") {
+        return;
+      }
+
+      if (computer.runtime.source.cloudInit.enabled === false) {
+        return;
+      }
+
+      const spec = vmRuntimePaths.specForComputer(computer);
+      await mkdir(spec.stateDirectory, { recursive: true });
+      await mkdir(spec.runtimeDirectory, { recursive: true });
+      await createCloudInitSeed(
+        spec,
+        computer.name,
+        computer.runtime.source.cloudInit,
+        computer.runtime.nics[0]!,
+      );
     },
     async createMonitorSession(computer) {
       const spec =
@@ -582,7 +599,7 @@ async function createCloudInitSeed(
   ]);
 }
 
-function createCloudInitNetworkConfig(
+export function createCloudInitNetworkConfig(
   nic: {
     ipv4?:
       | { type: "disabled" }
@@ -605,6 +622,17 @@ function createCloudInitNetworkConfig(
     "    set-name: ens3",
   ];
   const addresses: string[] = [];
+  const hasAnyConfiguredProtocol =
+    nic.ipv4?.type === "dhcp" ||
+    nic.ipv4?.type === "static" ||
+    nic.ipv6?.type === "dhcp" ||
+    nic.ipv6?.type === "slaac" ||
+    nic.ipv6?.type === "static";
+
+  if (!hasAnyConfiguredProtocol) {
+    // Prevent systemd-networkd-wait-online from blocking boot on an intentionally disabled NIC.
+    lines.push("    optional: true");
+  }
 
   if (nic.ipv4?.type === "dhcp") {
     lines.push("    dhcp4: true");

@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createSystemdRuntime } from "./runtime";
+import { createCloudInitNetworkConfig, createSystemdRuntime } from "./runtime";
 
 const directories: string[] = [];
 
@@ -106,4 +106,22 @@ test("deleteVmComputer removes persisted vm state and runtime directories", asyn
 
   await expect(stat(stateDirectory)).rejects.toThrow();
   await expect(stat(runtimeDirectory)).rejects.toThrow();
+});
+
+test("disabled nic network-config is marked optional", () => {
+  const networkConfig = createCloudInitNetworkConfig(
+    {
+      ipv4: {
+        type: "disabled",
+      },
+      ipv6: {
+        type: "disabled",
+      },
+    },
+    "52:54:00:aa:bb:cc",
+  );
+
+  expect(networkConfig).toContain("optional: true");
+  expect(networkConfig).toContain("dhcp4: false");
+  expect(networkConfig).toContain("dhcp6: false");
 });

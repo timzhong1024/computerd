@@ -121,6 +121,7 @@ export interface ComputerRuntimePort {
   deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
   ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
   prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
+  prepareVmRuntime: (computer: PersistedVmComputer) => Promise<void>;
   createAutomationSession: (
     computer: PersistedBrowserComputer,
   ) => Promise<ComputerAutomationSession>;

@@ -343,6 +343,9 @@ export function createControlPlane(
         await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
         await runtime.startUnit(record.unitName);
+      } else if (record.profile === "vm") {
+        await runtime.prepareVmRuntime(record);
+        await runtime.startUnit(record.unitName);
       } else if (record.profile === "container") {
         await runtime.startContainerComputer(record);
       } else {
@@ -399,6 +402,9 @@ export function createControlPlane(
       if (record.profile === "browser") {
         await runtime.prepareBrowserRuntime(record);
         await runtime.createPersistentUnit(record);
+        await runtime.restartUnit(record.unitName);
+      } else if (record.profile === "vm") {
+        await runtime.prepareVmRuntime(record);
         await runtime.restartUnit(record.unitName);
       } else if (record.profile === "container") {
         await runtime.restartContainerComputer(record);
@@ -1272,6 +1278,7 @@ function createDevelopmentControlPlane(): ControlPlane {
     async deleteVmComputer() {},
     async ensureBrowserRuntimeIdentity() {},
     async prepareBrowserRuntime() {},
+    async prepareVmRuntime() {},
     async createMonitorSession(computer) {
       const spec =
         computer.profile === "browser"
