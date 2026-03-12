@@ -2,7 +2,11 @@ import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createCloudInitNetworkConfig, createSystemdRuntime } from "./runtime";
+import {
+  createCloudInitNetworkConfig,
+  createCloudInitUserData,
+  createSystemdRuntime,
+} from "./runtime";
 
 const directories: string[] = [];
 
@@ -124,4 +128,22 @@ test("disabled nic network-config is marked optional", () => {
   expect(networkConfig).toContain("optional: true");
   expect(networkConfig).toContain("dhcp4: false");
   expect(networkConfig).toContain("dhcp6: false");
+});
+
+test("cloud-init user-data uses explicit user with plain text password semantics", () => {
+  const userData = createCloudInitUserData("ubuntu", {
+    user: "ubuntu",
+    password: "114514",
+    sshAuthorizedKeys: ["ssh-ed25519 AAAATEST"],
+  });
+
+  expect(userData).toContain("users:");
+  expect(userData).toContain("  - name: ubuntu");
+  expect(userData).toContain("ssh_pwauth: true");
+  expect(userData).toContain("    lock_passwd: false");
+  expect(userData).toContain("    plain_text_passwd: 114514");
+  expect(userData).toContain("    ssh_authorized_keys:");
+  expect(userData).not.toContain("  - default");
+  expect(userData).not.toContain("    passwd:");
+  expect(userData).not.toContain("chpasswd:");
 });

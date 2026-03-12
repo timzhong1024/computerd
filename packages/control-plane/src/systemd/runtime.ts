@@ -532,23 +532,7 @@ async function createCloudInitSeed(
   },
 ) {
   await mkdir(spec.cloudInitDirectory, { recursive: true });
-  const userData = [
-    "#cloud-config",
-    `hostname: ${computerName}`,
-    "users:",
-    "  - default",
-    `  - name: ${cloudInit.user}`,
-    "    sudo: ALL=(ALL) NOPASSWD:ALL",
-    "    shell: /bin/bash",
-    cloudInit.password ? `    passwd: ${cloudInit.password}` : null,
-    cloudInit.sshAuthorizedKeys && cloudInit.sshAuthorizedKeys.length > 0
-      ? "    ssh_authorized_keys:"
-      : null,
-    ...(cloudInit.sshAuthorizedKeys ?? []).map((key) => `      - ${key}`),
-    cloudInit.password ? "chpasswd:\n  expire: false" : null,
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
+  const userData = createCloudInitUserData(computerName, cloudInit);
   const metaData = [`instance-id: ${computerName}`, `local-hostname: ${computerName}`].join("\n");
   await writeFile(spec.cloudInitUserDataPath, userData);
   await writeFile(spec.cloudInitMetaDataPath, metaData);
@@ -597,6 +581,34 @@ async function createCloudInitSeed(
     spec.cloudInitMetaDataPath,
     ...(shouldWriteNetworkConfig(nic) ? [spec.cloudInitNetworkConfigPath] : []),
   ]);
+}
+
+export function createCloudInitUserData(
+  computerName: string,
+  cloudInit: {
+    enabled?: true;
+    user: string;
+    password?: string;
+    sshAuthorizedKeys?: string[];
+  },
+) {
+  return [
+    "#cloud-config",
+    `hostname: ${computerName}`,
+    cloudInit.password ? "ssh_pwauth: true" : null,
+    "users:",
+    `  - name: ${cloudInit.user}`,
+    "    sudo: ALL=(ALL) NOPASSWD:ALL",
+    "    shell: /bin/bash",
+    cloudInit.password ? "    lock_passwd: false" : null,
+    cloudInit.password ? `    plain_text_passwd: ${cloudInit.password}` : null,
+    cloudInit.sshAuthorizedKeys && cloudInit.sshAuthorizedKeys.length > 0
+      ? "    ssh_authorized_keys:"
+      : null,
+    ...(cloudInit.sshAuthorizedKeys ?? []).map((key) => `      - ${key}`),
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
 
 export function createCloudInitNetworkConfig(
