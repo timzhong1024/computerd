@@ -1000,6 +1000,7 @@ function createConsoleAttachLease(
         ].join(";"),
       ],
       computerName: record.name,
+      pty: false,
       release() {
         activeConsoleAttaches.delete(record.name);
       },

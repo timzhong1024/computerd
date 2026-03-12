@@ -2,7 +2,7 @@ import { once } from "node:events";
 import { createControlPlane } from "@computerd/control-plane";
 import { BrokenComputerError } from "@computerd/control-plane";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createApp } from "./create-app";
+import { createApp, createTerminalProcess } from "./create-app";
 
 const servers: Array<ReturnType<typeof createApp>> = [];
 let infoSpy: ReturnType<typeof vi.spyOn>;
@@ -32,6 +32,36 @@ afterEach(async () => {
   servers.length = 0;
   infoSpy.mockRestore();
   errorSpy.mockRestore();
+});
+
+test("createTerminalProcess uses raw pipes when lease disables pty", async () => {
+  const terminal = createTerminalProcess({
+    command: process.execPath,
+    args: [
+      "-e",
+      [
+        "process.stdout.write(String(Boolean(process.stdin.isTTY)))",
+        "setTimeout(() => process.exit(0), 10)",
+      ].join(";"),
+    ],
+    computerName: "vm-serial-smoke",
+    pty: false,
+    release() {},
+  });
+
+  let output = "";
+  terminal.onData((data) => {
+    output += data;
+  });
+
+  const exit = new Promise<void>((resolve) => {
+    terminal.onExit(() => {
+      resolve();
+    });
+  });
+
+  await exit;
+  expect(output).toContain("false");
 });
 
 test("serves computer and host unit APIs", async () => {

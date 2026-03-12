@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection } from "node:net";
 import type { Duplex } from "node:stream";
 import { spawn as spawnPty } from "@lydell/node-pty";
@@ -637,17 +637,27 @@ function bridgeAutomationWebSocket(websocket: WebSocket, lease: BrowserAutomatio
 interface TerminalProcess {
   kill: () => void;
   onData: (listener: (data: string) => void) => void;
-  onExit: (listener: (event: { exitCode?: number; signal?: number }) => void) => void;
+  onExit: (listener: (event: { exitCode?: number; signal?: number | string }) => void) => void;
   resize: (cols: number, rows: number) => void;
   write: (data: string) => void;
 }
 
-function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
+export function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
   const cwd = lease.cwd ?? process.cwd();
   const env = sanitizeSpawnEnvironment({
     ...process.env,
     ...lease.env,
   });
+  if (lease.pty === false) {
+    const child = spawn(lease.command, lease.args, {
+      cwd,
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    return createRawTerminalProcess(child);
+  }
+
   const terminal = spawnPty(lease.command, lease.args, {
     name: "xterm-256color",
     cols: 80,
@@ -671,6 +681,36 @@ function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
     },
     write(data) {
       terminal.write(data);
+    },
+  };
+}
+
+function createRawTerminalProcess(child: ChildProcessWithoutNullStreams): TerminalProcess {
+  return {
+    kill() {
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+    },
+    onData(listener) {
+      child.stdout.on("data", (chunk: Buffer) => {
+        listener(chunk.toString("utf8"));
+      });
+      child.stderr.on("data", (chunk: Buffer) => {
+        listener(chunk.toString("utf8"));
+      });
+    },
+    onExit(listener) {
+      child.on("close", (exitCode, signal) => {
+        listener({
+          exitCode: exitCode ?? undefined,
+          signal: signal ?? undefined,
+        });
+      });
+    },
+    resize() {},
+    write(data) {
+      child.stdin.write(data);
     },
   };
 }

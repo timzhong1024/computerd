@@ -161,6 +161,7 @@ export interface ConsoleAttachLease {
   computerName: string;
   cwd?: string;
   env?: Record<string, string>;
+  pty?: boolean;
   release: () => void;
 }
 

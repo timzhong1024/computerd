@@ -595,6 +595,7 @@ test("vm console attach uses node to bridge the serial socket", async () => {
       expect.stringContaining("/run/computerd/computers/linux-vm/vm/serial.sock"),
     ]),
   );
+  expect(lease.pty).toBe(false);
   lease.release();
 });
 
