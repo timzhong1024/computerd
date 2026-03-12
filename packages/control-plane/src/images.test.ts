@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
-import { createImageProvider, ImageNotFoundError } from "./images";
+import { afterEach, expect, test, vi } from "vitest";
+import { createImageProvider, ImageMutationNotAllowedError, ImageNotFoundError } from "./images";
 
 const directories: string[] = [];
 
@@ -34,6 +34,7 @@ test("lists vm images from configured directories and explicit files", async () 
     dockerSocketPath: "/var/run/docker.sock",
     qemuImgCommand: join(root, "fake-qemu-img"),
     docker: createDockerStub(),
+    vmImageStoreDir: join(root, "store"),
   });
 
   await writeFakeQemuImg(join(root, "fake-qemu-img"));
@@ -47,20 +48,117 @@ test("lists vm images from configured directories and explicit files", async () 
         provider: "filesystem-vm",
         name: "ubuntu.iso",
         status: "available",
+        sourceType: "directory",
       }),
       expect.objectContaining({
         kind: "qcow2",
         provider: "filesystem-vm",
         name: "ubuntu-cloud.img",
         status: "available",
+        sourceType: "directory",
       }),
       expect.objectContaining({
         kind: "qcow2",
         provider: "filesystem-vm",
         name: "missing.qcow2",
         status: "broken",
+        sourceType: "directory",
       }),
     ]),
+  );
+});
+
+test("imports vm images from file paths into the managed store and deletes them", async () => {
+  const root = await mkdtemp(join(tmpdir(), "computerd-images-"));
+  directories.push(root);
+  const sourcePath = join(root, "source.qcow2");
+  const storePath = join(root, "store");
+  await writeFile(sourcePath, "qcow2");
+  await writeFile(join(root, "images.json"), JSON.stringify({}));
+  await writeFakeQemuImg(join(root, "fake-qemu-img"));
+
+  const provider = createImageProvider({
+    configPath: join(root, "images.json"),
+    dockerSocketPath: "/var/run/docker.sock",
+    docker: createDockerStub(),
+    qemuImgCommand: join(root, "fake-qemu-img"),
+    vmImageStoreDir: storePath,
+  });
+
+  const imported = await provider.importVmImage({
+    source: {
+      type: "file",
+      path: sourcePath,
+    },
+  });
+
+  expect(imported).toMatchObject({
+    provider: "filesystem-vm",
+    sourceType: "managed-import",
+  });
+  expect(imported.path.startsWith(storePath)).toBe(true);
+  await expect(stat(imported.path)).resolves.toBeDefined();
+  await expect(readFile(join(root, "images.json"), "utf8")).resolves.toContain(imported.path);
+
+  await provider.deleteVmImage(imported.id);
+  await expect(provider.getImage(imported.id)).rejects.toBeInstanceOf(ImageNotFoundError);
+});
+
+test("imports vm images from URLs into the managed store", async () => {
+  const root = await mkdtemp(join(tmpdir(), "computerd-images-"));
+  directories.push(root);
+  const storePath = join(root, "store");
+  await writeFile(join(root, "images.json"), JSON.stringify({}));
+  await writeFakeQemuImg(join(root, "fake-qemu-img"));
+  const fetchImpl = vi.fn().mockResolvedValue({
+    ok: true,
+    arrayBuffer: async () => new TextEncoder().encode("qcow2").buffer,
+  });
+
+  const provider = createImageProvider({
+    configPath: join(root, "images.json"),
+    dockerSocketPath: "/var/run/docker.sock",
+    docker: createDockerStub(),
+    qemuImgCommand: join(root, "fake-qemu-img"),
+    vmImageStoreDir: storePath,
+    fetchImpl: fetchImpl as never,
+  });
+
+  const imported = await provider.importVmImage({
+    source: {
+      type: "url",
+      url: "https://example.com/ubuntu-cloud.qcow2",
+    },
+  });
+
+  expect(fetchImpl).toHaveBeenCalledWith("https://example.com/ubuntu-cloud.qcow2");
+  expect(imported.name).toBe("ubuntu-cloud.qcow2");
+  expect(imported.sourceType).toBe("managed-import");
+});
+
+test("refuses to delete readonly directory vm images", async () => {
+  const root = await mkdtemp(join(tmpdir(), "computerd-images-"));
+  directories.push(root);
+  const imageDirectory = join(root, "images");
+  await mkdir(imageDirectory, { recursive: true });
+  await writeFile(join(imageDirectory, "ubuntu.iso"), "iso");
+  await writeFile(join(root, "images.json"), JSON.stringify({ directories: [imageDirectory] }));
+  await writeFakeQemuImg(join(root, "fake-qemu-img"));
+
+  const provider = createImageProvider({
+    configPath: join(root, "images.json"),
+    dockerSocketPath: "/var/run/docker.sock",
+    docker: createDockerStub(),
+    qemuImgCommand: join(root, "fake-qemu-img"),
+    vmImageStoreDir: join(root, "store"),
+  });
+
+  const image = (await provider.listImages()).find(
+    (entry) => entry.provider === "filesystem-vm" && entry.kind === "iso",
+  );
+  expect(image?.provider).toBe("filesystem-vm");
+  await expect(provider.deleteVmImage(image!.id)).rejects.toBeInstanceOf(
+    ImageMutationNotAllowedError,
   );
 });
 
@@ -74,6 +172,7 @@ test("lists, pulls, gets and deletes container images through docker inventory",
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     docker,
+    vmImageStoreDir: join(root, "store"),
   });
 
   const initial = await provider.listImages();

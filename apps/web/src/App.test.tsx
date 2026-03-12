@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
@@ -107,6 +107,7 @@ beforeEach(() => {
       provider: "filesystem-vm",
       name: "ubuntu-cloud.qcow2",
       status: "available",
+      sourceType: "directory",
     },
     {
       id: "filesystem-vm:dev-iso",
@@ -114,6 +115,7 @@ beforeEach(() => {
       provider: "filesystem-vm",
       name: "ubuntu.iso",
       status: "available",
+      sourceType: "directory",
     },
     {
       id: "docker:sha256:ubuntu-24-04",
@@ -152,6 +154,81 @@ beforeEach(() => {
 
       if (url === "/api/images" && method === "GET") {
         return jsonResponse(images);
+      }
+
+      if (url === "/api/images/vm/import" && method === "POST") {
+        const body = JSON.parse(String(init?.body));
+        const source = body.source as { type: "file"; path: string } | { type: "url"; url: string };
+        const rawName =
+          source.type === "file"
+            ? (source.path.split("/").at(-1) ?? "imported.qcow2")
+            : (source.url.split("/").at(-1) ?? "imported.qcow2");
+        const imported = {
+          id: `filesystem-vm:imported-${rawName}`,
+          kind: rawName.endsWith(".iso") ? "iso" : "qcow2",
+          provider: "filesystem-vm",
+          name: rawName,
+          status: "available",
+          sourceType: "managed-import",
+          path: `/var/lib/computerd/images/vm/${rawName}`,
+          sizeBytes: 123,
+          format: rawName.endsWith(".iso") ? "iso" : "qcow2",
+        };
+        images = [...images, imported];
+        return jsonResponse(imported, 201);
+      }
+
+      if (url === "/api/images/vm/upload" && method === "POST") {
+        const body = init?.body;
+        if (typeof body !== "object" || body === null || !("get" in body)) {
+          return jsonResponse({ error: "missing form data" }, 400);
+        }
+        const file = body.get("file");
+        const fileName = file instanceof File ? file.name : "uploaded.qcow2";
+        const uploaded = {
+          id: `filesystem-vm:uploaded-${fileName}`,
+          kind: fileName.endsWith(".iso") ? "iso" : "qcow2",
+          provider: "filesystem-vm",
+          name: fileName,
+          status: "available",
+          sourceType: "managed-import",
+          path: `/var/lib/computerd/images/vm/${fileName}`,
+          sizeBytes: 123,
+          format: fileName.endsWith(".iso") ? "iso" : "qcow2",
+        };
+        images = [...images, uploaded];
+        return jsonResponse(uploaded, 201);
+      }
+
+      const deleteVmImageMatch = /^\/api\/images\/vm\/(?<id>.+)$/.exec(url);
+      if (deleteVmImageMatch?.groups?.id && method === "DELETE") {
+        const id = decodeURIComponent(deleteVmImageMatch.groups.id);
+        images = images.filter((image) => image.id !== id);
+        return jsonResponse(null, 204);
+      }
+
+      if (url === "/api/images/container/pull" && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as { reference: string };
+        const pulled = {
+          id: `docker:sha256:${body.reference.replace(/[^a-z0-9]+/gi, "-")}`,
+          kind: "container",
+          provider: "docker",
+          name: body.reference,
+          status: "available",
+          reference: body.reference,
+          imageId: `sha256:${body.reference.replace(/[^a-z0-9]+/gi, "-")}`,
+          repoTags: [body.reference],
+          sizeBytes: 123,
+        };
+        images = [...images, pulled];
+        return jsonResponse(pulled, 201);
+      }
+
+      const deleteContainerImageMatch = /^\/api\/images\/container\/(?<id>.+)$/.exec(url);
+      if (deleteContainerImageMatch?.groups?.id && method === "DELETE") {
+        const id = decodeURIComponent(deleteContainerImageMatch.groups.id);
+        images = images.filter((image) => image.id !== id);
+        return jsonResponse(null, 204);
       }
 
       if (url === "/api/host-units" && method === "GET") {
@@ -446,6 +523,9 @@ test("creates a container computer and shows exec shell affordance", async () =>
   fireEvent.change(screen.getByLabelText("Profile"), {
     target: { value: "container" },
   });
+  fireEvent.change(screen.getByLabelText("Image"), {
+    target: { value: "ubuntu:24.04" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Create computer" }));
 
   expect(await screen.findByRole("button", { name: /lab-container/i })).toBeInTheDocument();
@@ -453,6 +533,19 @@ test("creates a container computer and shows exec shell affordance", async () =>
   expect(screen.getByText(/docker · ubuntu:24.04/i)).toBeInTheDocument();
   expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
   expect(screen.getByTestId("open-exec-link")).toBeInTheDocument();
+
+  const createRequest = vi
+    .mocked(fetch)
+    .mock.calls.find(
+      ([url, init]) => url === "/api/computers" && (init?.method ?? "GET") === "POST",
+    );
+  expect(createRequest).toBeDefined();
+  expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
+    profile: "container",
+    runtime: {
+      image: "ubuntu:24.04",
+    },
+  });
 });
 
 test("creates a vm computer and shows monitor plus console affordances", async () => {
@@ -482,6 +575,56 @@ test("creates a vm computer and shows monitor plus console affordances", async (
   expect(screen.getByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
   expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
   expect(screen.getByTestId("vm-snapshot-list")).toHaveTextContent("No snapshots yet.");
+});
+
+test("imports and removes vm images plus pulls and deletes container images", async () => {
+  renderApp("/");
+
+  fireEvent.change(await screen.findByLabelText("Import source"), {
+    target: { value: "file" },
+  });
+  fireEvent.change(screen.getByLabelText("File path"), {
+    target: { value: "/images/imported.qcow2" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Import VM image" }));
+
+  expect(await screen.findByText(/imported.qcow2/i)).toBeInTheDocument();
+  const uploadInput = screen.getByLabelText("Upload image") as HTMLInputElement;
+  fireEvent.change(uploadInput, {
+    target: {
+      files: [new File(["qcow2"], "uploaded.qcow2", { type: "application/octet-stream" })],
+    },
+  });
+  await waitFor(() => {
+    expect(uploadInput.files?.[0]?.name).toBe("uploaded.qcow2");
+  });
+  const uploadForm = uploadInput.closest("form");
+  if (uploadForm === null) {
+    throw new TypeError("Expected upload form");
+  }
+  fireEvent.submit(uploadForm);
+  expect(await screen.findByText(/uploaded.qcow2/i)).toBeInTheDocument();
+  const importedImageRow = screen.getByText(/imported.qcow2/i).closest("li");
+  if (importedImageRow === null) {
+    throw new TypeError("Expected imported image row");
+  }
+  fireEvent.click(within(importedImageRow).getByRole("button", { name: "Remove" }));
+  await waitFor(() => {
+    expect(screen.queryByText(/imported.qcow2/i)).not.toBeInTheDocument();
+  });
+
+  fireEvent.change(screen.getByLabelText("Image reference"), {
+    target: { value: "node:22" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Pull container image" }));
+  const nodeImageRow = (await screen.findByText("node:22")).closest("li");
+  if (nodeImageRow === null) {
+    throw new TypeError("Expected node:22 image row");
+  }
+  fireEvent.click(within(nodeImageRow).getByRole("button", { name: "Delete" }));
+  await waitFor(() => {
+    expect(screen.queryByText("node:22")).not.toBeInTheDocument();
+  });
 });
 
 test("manages vm snapshots from the detail page", async () => {

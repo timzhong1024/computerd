@@ -6,6 +6,7 @@ import {
   type ContainerImageDetail,
   type ImageDetail,
   type ImageSummary,
+  type ImportVmImageInput,
   type ComputerAutomationSession,
   type ComputerAudioSession,
   type ComputerConsoleSession,
@@ -27,7 +28,12 @@ import {
   type RestoreComputerInput,
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
-import { BrokenImageError, createImageProvider, ImageNotFoundError } from "./images";
+import {
+  BrokenImageError,
+  createImageProvider,
+  ImageMutationNotAllowedError,
+  ImageNotFoundError,
+} from "./images";
 import { createDockerRuntime } from "./docker/runtime";
 import {
   createBrowserRuntimeUser,
@@ -116,6 +122,7 @@ export class ComputerSnapshotNotFoundError extends Error {
 
 export interface ControlPlane {
   deleteContainerImage: (id: string) => Promise<void>;
+  deleteVmImage: (id: string) => Promise<void>;
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
@@ -137,6 +144,7 @@ export interface ControlPlane {
   listImages: () => Promise<ImageSummary[]>;
   listHostUnits: () => Promise<HostUnitSummary[]>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
+  importVmImage: (input: ImportVmImageInput) => Promise<ImageDetail>;
   openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
   openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
   openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
@@ -211,6 +219,7 @@ export function createControlPlane(
       configPath: environment.COMPUTERD_IMAGE_CONFIG ?? "/etc/computerd/images.json",
       dockerSocketPath: environment.COMPUTERD_DOCKER_SOCKET ?? "/var/run/docker.sock",
       qemuImgCommand: environment.COMPUTERD_QEMU_IMG ?? "qemu-img",
+      vmImageStoreDir: environment.COMPUTERD_VM_IMAGE_STORE ?? "/var/lib/computerd/images/vm",
     });
   const activeConsoleAttaches = new Set<string>();
 
@@ -224,8 +233,14 @@ export function createControlPlane(
     async pullContainerImage(reference) {
       return await imageProvider.pullContainerImage(reference);
     },
+    async importVmImage(input) {
+      return await imageProvider.importVmImage(input);
+    },
     async deleteContainerImage(id) {
       await imageProvider.deleteContainerImage(id);
+    },
+    async deleteVmImage(id) {
+      await imageProvider.deleteVmImage(id);
     },
     async listComputers() {
       const records = await metadataStore.listComputers();
@@ -1424,7 +1439,7 @@ function createDevelopmentControlPlane(): ControlPlane {
         path: "/images/ubuntu-cloud.qcow2",
         sizeBytes: 601 * 1024 * 1024,
         format: "qcow2",
-        sourceType: "explicit-file",
+        sourceType: "managed-import",
       },
     ],
     [
@@ -1440,7 +1455,7 @@ function createDevelopmentControlPlane(): ControlPlane {
         path: "/images/ubuntu.iso",
         sizeBytes: 2 * 1024 * 1024 * 1024,
         format: "iso",
-        sourceType: "explicit-file",
+        sourceType: "managed-import",
       },
     ],
     [
@@ -1859,6 +1874,29 @@ function createDevelopmentControlPlane(): ControlPlane {
       }
       return image;
     },
+    async importVmImage(input: ImportVmImageInput) {
+      const now = new Date().toISOString();
+      const reference =
+        input.source.type === "file" ? input.source.path : new URL(input.source.url).pathname;
+      const name = reference.split("/").at(-1) || "imported-image";
+      const kind = (name.toLowerCase().endsWith(".iso") ? "iso" : "qcow2") as "iso" | "qcow2";
+      const id = `filesystem-vm:${slugify(reference)}`;
+      const image = {
+        id,
+        kind,
+        provider: "filesystem-vm" as const,
+        name,
+        status: "available" as const,
+        createdAt: now,
+        lastSeenAt: now,
+        path: `/images/${name}`,
+        sizeBytes: 123_456_789,
+        format: kind,
+        sourceType: "managed-import" as const,
+      };
+      images.set(id, image);
+      return image;
+    },
     async pullContainerImage(reference: string) {
       const existing = [...images.values()].find(
         (image) =>
@@ -1888,6 +1926,13 @@ function createDevelopmentControlPlane(): ControlPlane {
     async deleteContainerImage(id: string) {
       const image = images.get(id);
       if (!image || image.provider !== "docker") {
+        throw new ImageNotFoundError(id);
+      }
+      images.delete(id);
+    },
+    async deleteVmImage(id: string) {
+      const image = images.get(id);
+      if (!image || image.provider !== "filesystem-vm") {
         throw new ImageNotFoundError(id);
       }
       images.delete(id);
@@ -2113,4 +2158,4 @@ export type {
   HostRuntime,
 };
 
-export { BrokenImageError, ImageNotFoundError };
+export { BrokenImageError, ImageMutationNotAllowedError, ImageNotFoundError };

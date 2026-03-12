@@ -6,6 +6,7 @@ import {
   computerProfileSchema,
   computerResourcesSchema,
   computerStorageSchema,
+  parseImportVmImageInput,
   parsePullContainerImageInput,
   parseCreateComputerInput,
 } from "@computerd/core";
@@ -15,6 +16,7 @@ import type { ControlPlane } from "@computerd/control-plane";
 
 export interface ComputerdMcpContext {
   deleteContainerImage: ControlPlane["deleteContainerImage"];
+  deleteVmImage: ControlPlane["deleteVmImage"];
   createAutomationSession: ControlPlane["createAutomationSession"];
   createComputer: ControlPlane["createComputer"];
   createMonitorSession: ControlPlane["createMonitorSession"];
@@ -26,6 +28,7 @@ export interface ComputerdMcpContext {
   listImages: ControlPlane["listImages"];
   listHostUnits: ControlPlane["listHostUnits"];
   getHostUnit: ControlPlane["getHostUnit"];
+  importVmImage: ControlPlane["importVmImage"];
   pullContainerImage: ControlPlane["pullContainerImage"];
   restartComputer: ControlPlane["restartComputer"];
   startComputer: ControlPlane["startComputer"];
@@ -56,6 +59,38 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
       },
     },
     async ({ id }) => createJsonToolResult(await context.getImage(id)),
+  );
+
+  server.registerTool(
+    "import_vm_image",
+    {
+      description: "Import a VM image from a local file path or http/https URL into computerd.",
+      inputSchema: {
+        source: z.discriminatedUnion("type", [
+          z.object({
+            type: z.literal("file"),
+            path: z.string().min(1),
+          }),
+          z.object({
+            type: z.literal("url"),
+            url: z.string().min(1),
+          }),
+        ]),
+      },
+    },
+    async (input) =>
+      createJsonToolResult(await context.importVmImage(parseImportVmImageInput(input))),
+  );
+
+  server.registerTool(
+    "delete_vm_image",
+    {
+      description: "Delete a computerd-managed VM image by image inventory id.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => createJsonToolResult(await context.deleteVmImage(id)),
   );
 
   server.registerTool(

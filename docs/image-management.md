@@ -48,7 +48,10 @@
 
 ## VM Image Inventory
 
-VM image inventory 来自一个轻量配置文件。
+VM image inventory 同时来自两类来源：
+
+- computerd 受管 import
+- 配置文件里的目录扫描
 
 默认路径：
 
@@ -72,15 +75,22 @@ VM image inventory 来自一个轻量配置文件。
 - `directories[]`
   - 单层扫描目录下的 `qcow2` / `iso` 文件
 - `files[]`
-  - 显式纳入任意路径文件作为 image candidate
+  - 存储 computerd 已导入的受管 VM image 路径
 
-当前 VM image inventory 是只读的：
+当前 VM image 支持：
 
-- 支持 `list`
-- 支持 `get`
-- 不支持 import / upload / copy / delete
+- `list`
+- `get`
+- `import`
+- 删除受管 imported image
 
-如果配置里某个显式文件路径不存在或不可读：
+当前不支持：
+
+- upload
+- copy
+- 删除目录扫描出来的只读 image
+
+如果配置里的某个受管文件路径不存在或不可读：
 
 - 不会拖垮整个 inventory
 - 该 image 会以 `status = "broken"` 出现，便于排查
@@ -104,12 +114,14 @@ computerd 当前不维护额外的 container image metadata store。
 
 - `GET /api/images`
 - `GET /api/images/:id`
+- `POST /api/images/vm/import`
+- `DELETE /api/images/vm/:id`
 - `POST /api/images/container/pull`
 - `DELETE /api/images/container/:id`
 
 其中：
 
-- VM image 当前只有只读 API
+- VM image 支持 import 和删除受管 imported image
 - container image 支持 pull/delete
 
 ## VM Create Flow

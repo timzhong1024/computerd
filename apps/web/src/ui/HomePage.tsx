@@ -8,6 +8,7 @@ import {
   parseComputerSummaries,
   parseHostUnitDetail,
   parseHostUnitSummaries,
+  parseImageDetail,
   parseImageSummaries,
   type ComputerAutomationSession,
   type ComputerDetail,
@@ -44,6 +45,14 @@ export function HomePage() {
   const [screenshot, setScreenshot] = useState<ComputerScreenshot | null>(null);
   const [snapshots, setSnapshots] = useState<ComputerSnapshot[]>([]);
   const [snapshotName, setSnapshotName] = useState("");
+  const [vmImageImport, setVmImageImport] = useState({
+    sourceType: "file",
+    path: "",
+    url: "",
+  });
+  const [vmImageUpload, setVmImageUpload] = useState<File | null>(null);
+  const [vmImageUploadKey, setVmImageUploadKey] = useState(0);
+  const [containerImageReference, setContainerImageReference] = useState("ubuntu:24.04");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [form, setForm] = useState({
@@ -88,6 +97,15 @@ export function HomePage() {
       setImages(nextImages);
       setForm((current) => ({
         ...current,
+        image: nextImages.some(
+          (image) =>
+            image.provider === "docker" &&
+            image.kind === "container" &&
+            image.name === current.image,
+        )
+          ? current.image
+          : (nextImages.find((image) => image.provider === "docker" && image.kind === "container")
+              ?.name ?? current.image),
         vmImageId: nextImages.some((image) => image.id === current.vmImageId)
           ? current.vmImageId
           : (nextImages.find(
@@ -389,6 +407,127 @@ export function HomePage() {
     }
   }
 
+  async function handleImportVmImage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await postJson(
+        "/api/images/vm/import",
+        vmImageImport.sourceType === "file"
+          ? {
+              source: {
+                type: "file",
+                path: vmImageImport.path.trim(),
+              },
+            }
+          : {
+              source: {
+                type: "url",
+                url: vmImageImport.url.trim(),
+              },
+            },
+        parseImageDetail,
+      );
+      setVmImageImport({
+        sourceType: vmImageImport.sourceType,
+        path: "",
+        url: "",
+      });
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleUploadVmImage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const uploadFile =
+      vmImageUpload ??
+      (event.currentTarget.elements.namedItem("vmImageUpload") as HTMLInputElement | null)
+        ?.files?.[0] ??
+      null;
+    if (uploadFile === null) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", uploadFile);
+      const response = await fetch("/api/images/vm/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        const errorBody = await response
+          .json()
+          .catch(async () => ({ error: await response.text() }));
+        throw new Error(typeof errorBody.error === "string" ? errorBody.error : "Request failed");
+      }
+      parseImageDetail(await response.json());
+      setVmImageUpload(null);
+      setVmImageUploadKey((current) => current + 1);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteVmImage(id: string) {
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await deleteRequest(`/api/images/vm/${encodeURIComponent(id)}`);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handlePullContainerImage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await postJson(
+        "/api/images/container/pull",
+        { reference: containerImageReference.trim() },
+        parseImageDetail,
+      );
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteContainerImage(id: string) {
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await deleteRequest(`/api/images/container/${encodeURIComponent(id)}`);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleCreateAutomationSession() {
     if (selectedComputer === null || selectedComputer.profile !== "browser") {
       return;
@@ -656,21 +795,24 @@ export function HomePage() {
               <>
                 <label>
                   Image
-                  <input
+                  <select
                     name="image"
                     value={form.image}
-                    list="container-image-options"
                     onChange={(event) =>
                       setForm((current) => ({ ...current, image: event.target.value }))
                     }
                     required
-                  />
+                  >
+                    {containerImages.length === 0 ? (
+                      <option value="">No container images available</option>
+                    ) : null}
+                    {containerImages.map((image) => (
+                      <option key={image.id} value={image.name}>
+                        {image.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <datalist id="container-image-options">
-                  {containerImages.map((image) => (
-                    <option key={image.id} value={image.name} />
-                  ))}
-                </datalist>
                 <label>
                   Command
                   <input
@@ -980,24 +1122,126 @@ export function HomePage() {
           <div className="detail-grid">
             <div>
               <strong>VM images</strong>
+              <form className="create-form" onSubmit={handleImportVmImage}>
+                <label>
+                  Import source
+                  <select
+                    name="vmImageImportSourceType"
+                    value={vmImageImport.sourceType}
+                    onChange={(event) =>
+                      setVmImageImport((current) => ({
+                        ...current,
+                        sourceType: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="file">file</option>
+                    <option value="url">url</option>
+                  </select>
+                </label>
+                {vmImageImport.sourceType === "file" ? (
+                  <label>
+                    File path
+                    <input
+                      name="vmImageImportPath"
+                      value={vmImageImport.path}
+                      onChange={(event) =>
+                        setVmImageImport((current) => ({ ...current, path: event.target.value }))
+                      }
+                      placeholder="/images/ubuntu-cloud.qcow2"
+                      required
+                    />
+                  </label>
+                ) : (
+                  <label>
+                    Image URL
+                    <input
+                      name="vmImageImportUrl"
+                      value={vmImageImport.url}
+                      onChange={(event) =>
+                        setVmImageImport((current) => ({ ...current, url: event.target.value }))
+                      }
+                      placeholder="https://example.com/ubuntu-cloud.qcow2"
+                      required
+                    />
+                  </label>
+                )}
+                <button type="submit" disabled={isBusy}>
+                  Import VM image
+                </button>
+              </form>
+              <form className="create-form" onSubmit={handleUploadVmImage}>
+                <label>
+                  Upload image
+                  <input
+                    key={vmImageUploadKey}
+                    name="vmImageUpload"
+                    type="file"
+                    accept=".qcow2,.img,.iso"
+                    onChange={(event) => setVmImageUpload(event.target.files?.[0] ?? null)}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={isBusy}>
+                  Upload VM image
+                </button>
+              </form>
               <ul className="item-list">
                 {images
                   .filter((image) => image.provider === "filesystem-vm")
                   .map((image) => (
                     <li key={image.id}>
-                      <span>
-                        {image.name} <span className="meta">{image.kind}</span>
-                      </span>
+                      <div className="panel-header">
+                        <span>
+                          {image.name}{" "}
+                          <span className="meta">
+                            {image.kind} · {image.sourceType}
+                          </span>
+                        </span>
+                        {image.sourceType === "managed-import" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteVmImage(image.id)}
+                            disabled={isBusy}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
               </ul>
             </div>
             <div>
               <strong>Container images</strong>
+              <form className="create-form" onSubmit={handlePullContainerImage}>
+                <label>
+                  Image reference
+                  <input
+                    name="containerImageReference"
+                    value={containerImageReference}
+                    onChange={(event) => setContainerImageReference(event.target.value)}
+                    placeholder="ubuntu:24.04"
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={isBusy}>
+                  Pull container image
+                </button>
+              </form>
               <ul className="item-list">
                 {containerImages.map((image) => (
                   <li key={image.id}>
-                    <span>{image.name}</span>
+                    <div className="panel-header">
+                      <span>{image.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteContainerImage(image.id)}
+                        disabled={isBusy}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

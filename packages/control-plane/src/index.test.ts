@@ -1290,6 +1290,7 @@ function createMemoryMetadataStore(): ComputerMetadataStore {
 function createMemoryImageProvider() {
   return {
     async deleteContainerImage() {},
+    async deleteVmImage() {},
     async getImage(id: string) {
       if (id.startsWith("filesystem-vm:")) {
         return {
@@ -1300,7 +1301,7 @@ function createMemoryImageProvider() {
           status: "available" as const,
           path: id.endsWith("iso") ? "/images/dev.iso" : "/images/dev.qcow2",
           sizeBytes: 1024,
-          sourceType: "explicit-file" as const,
+          sourceType: "managed-import" as const,
         };
       }
 
@@ -1318,6 +1319,22 @@ function createMemoryImageProvider() {
     },
     async listImages() {
       return [];
+    },
+    async importVmImage(input: {
+      source: { type: "file"; path: string } | { type: "url"; url: string };
+    }) {
+      const reference = input.source.type === "file" ? input.source.path : input.source.url;
+      const kind = reference.endsWith(".iso") ? ("iso" as const) : ("qcow2" as const);
+      return {
+        id: `filesystem-vm:${reference}`,
+        provider: "filesystem-vm" as const,
+        kind,
+        name: reference.split("/").at(-1) ?? "imported",
+        status: "available" as const,
+        path: `/images/${reference.split("/").at(-1) ?? "imported"}`,
+        sizeBytes: 1024,
+        sourceType: "managed-import" as const,
+      };
     },
     async pullContainerImage(reference: string) {
       return {
@@ -1341,7 +1358,7 @@ function createMemoryImageProvider() {
         status: "available" as const,
         path: kind === "iso" ? "/images/dev.iso" : "/images/dev.qcow2",
         sizeBytes: 1024,
-        sourceType: "explicit-file" as const,
+        sourceType: "managed-import" as const,
       };
     },
   };

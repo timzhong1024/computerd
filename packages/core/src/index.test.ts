@@ -13,6 +13,7 @@ import {
   parseCreateComputerInput,
   parseCreateComputerSnapshotInput,
   parseHostUnitDetail,
+  parseImportVmImageInput,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
 } from "./index";
@@ -270,6 +271,38 @@ test("parses computer snapshots", () => {
       sizeBytes: 1024,
     },
   ]);
+});
+
+test("parses vm image import input from file path", () => {
+  expect(
+    parseImportVmImageInput({
+      source: {
+        type: "file",
+        path: "/images/ubuntu-cloud.qcow2",
+      },
+    }),
+  ).toMatchObject({
+    source: {
+      type: "file",
+      path: "/images/ubuntu-cloud.qcow2",
+    },
+  });
+});
+
+test("parses vm image import input from http url", () => {
+  expect(
+    parseImportVmImageInput({
+      source: {
+        type: "url",
+        url: "https://example.com/ubuntu-cloud.qcow2",
+      },
+    }),
+  ).toMatchObject({
+    source: {
+      type: "url",
+      url: "https://example.com/ubuntu-cloud.qcow2",
+    },
+  });
 });
 
 test("parses create computer snapshot input", () => {

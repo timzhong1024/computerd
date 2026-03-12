@@ -2,7 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection } from "node:net";
-import type { Duplex } from "node:stream";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
+import { type Duplex, Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import { spawn as spawnPty } from "@lydell/node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { ZodError } from "zod";
@@ -23,6 +27,7 @@ import {
   parseHostUnitSummaries,
   parseImageDetail,
   parseImageSummaries,
+  parseImportVmImageInput,
   parsePullContainerImageInput,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
@@ -56,6 +61,7 @@ import {
   ComputerSnapshotNotFoundError,
   type ConsoleAttachLease,
   HostUnitNotFoundError,
+  ImageMutationNotAllowedError,
   ImageNotFoundError,
   UnsupportedComputerFeatureError,
 } from "@computerd/control-plane";
@@ -69,6 +75,7 @@ class InvalidJsonBodyError extends Error {
 
 interface CreateAppOptions {
   deleteContainerImage: (id: string) => Promise<void>;
+  deleteVmImage: (id: string) => Promise<void>;
   createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
   createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
@@ -100,6 +107,9 @@ interface CreateAppOptions {
   listHostUnits: () => Promise<HostUnitSummary[]>;
   pullContainerImage: (reference: string) => Promise<ImageDetail>;
   getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
+  importVmImage: (input: {
+    source: { type: "file"; path: string } | { type: "url"; url: string };
+  }) => Promise<ImageDetail>;
   updateBrowserViewport: (
     name: string,
     input: { width: number; height: number },
@@ -108,6 +118,7 @@ interface CreateAppOptions {
 
 export function createApp({
   deleteContainerImage,
+  deleteVmImage,
   createAutomationSession,
   createAudioSession,
   handleMcpRequest,
@@ -136,6 +147,7 @@ export function createApp({
   listHostUnits,
   pullContainerImage,
   getHostUnit,
+  importVmImage,
   updateBrowserViewport,
 }: CreateAppOptions) {
   const websocketServer = new WebSocketServer({ noServer: true });
@@ -164,6 +176,55 @@ export function createApp({
         const body = await readJsonBody(request);
         const input = parsePullContainerImageInput(body);
         sendJson(response, 201, parseImageDetail(await pullContainerImage(input.reference)));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/images/vm/import") {
+        const body = await readJsonBody(request);
+        sendJson(
+          response,
+          201,
+          parseImageDetail(await importVmImage(parseImportVmImageInput(body))),
+        );
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/images/vm/upload") {
+        const form = await readFormDataBody(request);
+        const file = form.get("file");
+        if (!(file instanceof File)) {
+          sendJson(response, 400, { error: 'Expected a "file" upload field.' });
+          return;
+        }
+
+        const tempPath = join(
+          tmpdir(),
+          `computerd-vm-upload-${randomUUID()}${extname(file.name) || ".bin"}`,
+        );
+        try {
+          await writeFile(tempPath, new Uint8Array(await file.arrayBuffer()));
+          sendJson(
+            response,
+            201,
+            parseImageDetail(
+              await importVmImage({
+                source: {
+                  type: "file",
+                  path: tempPath,
+                },
+              }),
+            ),
+          );
+          return;
+        } finally {
+          await rm(tempPath, { force: true }).catch(() => undefined);
+        }
+      }
+
+      const vmImageDeleteMatch = /^\/api\/images\/vm\/(?<id>.+)$/.exec(url.pathname);
+      if (request.method === "DELETE" && vmImageDeleteMatch?.groups?.id) {
+        await deleteVmImage(decodeURIComponent(vmImageDeleteMatch.groups.id));
+        sendJson(response, 204, null);
         return;
       }
 
@@ -427,6 +488,11 @@ export function createApp({
         return;
       }
 
+      if (error instanceof ImageMutationNotAllowedError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
       if (error instanceof UnsupportedComputerFeatureError) {
         sendJson(response, 409, { error: error.message });
         return;
@@ -539,6 +605,20 @@ async function readJsonBody(request: IncomingMessage) {
   } catch {
     throw new InvalidJsonBodyError("Request body must be valid JSON");
   }
+}
+
+async function readFormDataBody(request: IncomingMessage) {
+  const requestInit = {
+    method: request.method,
+    headers: request.headers as HeadersInit,
+    body:
+      request.method === "GET" || request.method === "HEAD"
+        ? undefined
+        : (Readable.toWeb(request) as BodyInit),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" };
+  const webRequest = new Request("http://localhost/upload", requestInit);
+  return await webRequest.formData();
 }
 
 async function handleUpgradeRequest({

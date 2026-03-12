@@ -84,6 +84,7 @@ afterEach(async () => {
 test("registers computer and host inspect tools", async () => {
   const server = createComputerdMcpServer({
     deleteContainerImage: vi.fn().mockResolvedValue(undefined),
+    deleteVmImage: vi.fn().mockResolvedValue(undefined),
     createAutomationSession: vi.fn().mockResolvedValue({
       computerName: "research-browser",
       protocol: "cdp",
@@ -121,11 +122,21 @@ test("registers computer and host inspect tools", async () => {
       status: "available",
       path: "/images/ubuntu-cloud.qcow2",
       sizeBytes: 123,
-      sourceType: "explicit-file",
+      sourceType: "managed-import",
     }),
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     deleteComputer: vi.fn().mockResolvedValue(undefined),
     listImages: vi.fn().mockResolvedValue([]),
+    importVmImage: vi.fn().mockResolvedValue({
+      id: "filesystem-vm:imported",
+      kind: "qcow2",
+      provider: "filesystem-vm",
+      name: "imported.qcow2",
+      status: "available",
+      path: "/var/lib/computerd/images/vm/imported.qcow2",
+      sizeBytes: 123,
+      sourceType: "managed-import",
+    }),
     pullContainerImage: vi.fn().mockResolvedValue({
       id: "docker:sha256:ubuntu",
       kind: "container",
@@ -164,9 +175,11 @@ test("registers computer and host inspect tools", async () => {
     "create_computer",
     "delete_computer",
     "delete_container_image",
+    "delete_vm_image",
     "get_computer",
     "get_host_unit",
     "get_image",
+    "import_vm_image",
     "list_computers",
     "list_host_units",
     "list_images",
@@ -182,6 +195,7 @@ test("invokes handlers and returns JSON payloads", async () => {
   const getComputer = vi.fn().mockResolvedValue(createComputerDetail());
   const server = createComputerdMcpServer({
     deleteContainerImage: vi.fn().mockResolvedValue(undefined),
+    deleteVmImage: vi.fn().mockResolvedValue(undefined),
     createAutomationSession: vi.fn(),
     listComputers: vi.fn().mockResolvedValue([] as ComputerSummary[]),
     createMonitorSession: vi.fn(),
@@ -195,11 +209,21 @@ test("invokes handlers and returns JSON payloads", async () => {
       status: "available",
       path: "/images/ubuntu-cloud.qcow2",
       sizeBytes: 123,
-      sourceType: "explicit-file",
+      sourceType: "managed-import",
     }),
     createComputer: vi.fn().mockResolvedValue(createComputerDetail()),
     deleteComputer: vi.fn().mockResolvedValue(undefined),
     listImages: vi.fn().mockResolvedValue([]),
+    importVmImage: vi.fn().mockResolvedValue({
+      id: "filesystem-vm:imported",
+      kind: "qcow2",
+      provider: "filesystem-vm",
+      name: "imported.qcow2",
+      status: "available",
+      path: "/var/lib/computerd/images/vm/imported.qcow2",
+      sizeBytes: 123,
+      sourceType: "managed-import",
+    }),
     pullContainerImage: vi.fn().mockResolvedValue({
       id: "docker:sha256:ubuntu",
       kind: "container",

@@ -9,6 +9,7 @@ ensureVmBridge();
 const controlPlane = createControlPlane();
 const app = createApp({
   deleteContainerImage: controlPlane.deleteContainerImage,
+  deleteVmImage: controlPlane.deleteVmImage,
   createAutomationSession: controlPlane.createAutomationSession,
   createAudioSession: controlPlane.createAudioSession,
   handleMcpRequest: createMcpHandler(controlPlane),
@@ -37,6 +38,7 @@ const app = createApp({
   listHostUnits: controlPlane.listHostUnits,
   pullContainerImage: controlPlane.pullContainerImage,
   getHostUnit: controlPlane.getHostUnit,
+  importVmImage: controlPlane.importVmImage,
   updateBrowserViewport: controlPlane.updateBrowserViewport,
 });
 

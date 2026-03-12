@@ -99,6 +99,7 @@ VM create 当前不再直接接受 path，而是引用 image inventory。
 
 - `qcow2` VM 通过 `imageId` 选择基础镜像
 - `iso` VM 通过 `imageId` 选择安装介质
+- VM image 可通过 image inventory import 到 computerd 自己的 image store
 
 image inventory 见：
 

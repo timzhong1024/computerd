@@ -324,6 +324,7 @@ const imageSummaryBaseSchema = z.object({
 export const vmImageSummarySchema = imageSummaryBaseSchema.extend({
   kind: z.enum(["qcow2", "iso"]),
   provider: z.literal("filesystem-vm"),
+  sourceType: z.enum(["directory", "managed-import"]),
 });
 
 export const containerImageSummarySchema = imageSummaryBaseSchema.extend({
@@ -340,7 +341,6 @@ export const vmImageDetailSchema = vmImageSummarySchema.extend({
   path: z.string().min(1),
   sizeBytes: z.number().int().nonnegative(),
   format: z.enum(["qcow2", "iso"]).optional(),
-  sourceType: z.enum(["directory", "explicit-file"]),
 });
 
 export const containerImageDetailSchema = containerImageSummarySchema.extend({
@@ -530,6 +530,21 @@ export const pullContainerImageInputSchema = z.object({
   reference: z.string().min(1),
 });
 
+export const importVmImageInputSchema = z.object({
+  source: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("file"),
+      path: z.string().min(1),
+    }),
+    z.object({
+      type: z.literal("url"),
+      url: z.url().refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
+        message: "Expected an http or https URL.",
+      }),
+    }),
+  ]),
+});
+
 export type BrowserComputerDetail = z.infer<typeof browserComputerDetailSchema>;
 export type BrowserRuntime = z.infer<typeof browserRuntimeSchema>;
 export type BrowserViewport = z.infer<typeof browserViewportSchema>;
@@ -555,6 +570,7 @@ export type ComputerState = z.infer<typeof computerStateSchema>;
 export type ComputerStorage = z.infer<typeof computerStorageSchema>;
 export type ComputerSummary = z.infer<typeof computerSummarySchema>;
 export type ContainerImagePullInput = z.infer<typeof pullContainerImageInputSchema>;
+export type ImportVmImageInput = z.infer<typeof importVmImageInputSchema>;
 export type CreateBrowserRuntime = z.infer<typeof createBrowserRuntimeSchema>;
 export type CreateBrowserComputerInput = z.infer<typeof createBrowserComputerInputSchema>;
 export type CreateComputerInput = z.infer<typeof createComputerInputSchema>;
@@ -658,6 +674,10 @@ export function parseHostUnitDetail(value: unknown) {
 
 export function parsePullContainerImageInput(value: unknown) {
   return pullContainerImageInputSchema.parse(value);
+}
+
+export function parseImportVmImageInput(value: unknown) {
+  return importVmImageInputSchema.parse(value);
 }
 
 export function createComputerCapabilities(

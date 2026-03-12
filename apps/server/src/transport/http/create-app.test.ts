@@ -68,6 +68,7 @@ test("serves computer and host unit APIs", async () => {
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
     deleteContainerImage: controlPlane.deleteContainerImage,
+    deleteVmImage: controlPlane.deleteVmImage,
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
@@ -133,6 +134,7 @@ test("serves computer and host unit APIs", async () => {
     restoreComputer: controlPlane.restoreComputer,
     listImages: controlPlane.listImages,
     listHostUnits: controlPlane.listHostUnits,
+    importVmImage: controlPlane.importVmImage,
     pullContainerImage: controlPlane.pullContainerImage,
     getHostUnit: controlPlane.getHostUnit,
     updateBrowserViewport: controlPlane.updateBrowserViewport,
@@ -198,6 +200,42 @@ test("serves computer and host unit APIs", async () => {
     reference: "node:22",
   });
 
+  const importedVmImageResponse = await fetch(`${baseUrl}/api/images/vm/import`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      source: {
+        type: "file",
+        path: "/images/imported.qcow2",
+      },
+    }),
+  });
+  expect(importedVmImageResponse.status).toBe(201);
+  const importedVmImage = await importedVmImageResponse.json();
+  expect(importedVmImage).toMatchObject({
+    provider: "filesystem-vm",
+    sourceType: "managed-import",
+  });
+
+  const uploadFormData = new FormData();
+  uploadFormData.set(
+    "file",
+    new File(["qcow2"], "uploaded.qcow2", {
+      type: "application/octet-stream",
+    }),
+  );
+  const uploadedVmImageResponse = await fetch(`${baseUrl}/api/images/vm/upload`, {
+    method: "POST",
+    body: uploadFormData,
+  });
+  expect(uploadedVmImageResponse.status).toBe(201);
+  await expect(uploadedVmImageResponse.json()).resolves.toMatchObject({
+    provider: "filesystem-vm",
+    sourceType: "managed-import",
+  });
+
   const imageDetailResponse = await fetch(
     `${baseUrl}/api/images/${encodeURIComponent("filesystem-vm:dev-qcow2")}`,
   );
@@ -214,6 +252,14 @@ test("serves computer and host unit APIs", async () => {
     },
   );
   expect(deleteImageResponse.status).toBe(204);
+
+  const deleteVmImageResponse = await fetch(
+    `${baseUrl}/api/images/vm/${encodeURIComponent(importedVmImage.id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  expect(deleteVmImageResponse.status).toBe(204);
 
   const startResponse = await fetch(`${baseUrl}/api/computers/lab-host/start`, {
     method: "POST",
@@ -710,6 +756,9 @@ test("returns broken computers and blocks broken actions with conflict responses
     deleteContainerImage: async () => {
       throw brokenError;
     },
+    deleteVmImage: async () => {
+      throw brokenError;
+    },
     createAutomationSession: async () => {
       throw brokenError;
     },
@@ -775,6 +824,9 @@ test("returns broken computers and blocks broken actions with conflict responses
     },
     listImages: async () => [],
     listHostUnits: async () => [],
+    importVmImage: async () => {
+      throw brokenError;
+    },
     pullContainerImage: async () => {
       throw brokenError;
     },
@@ -830,6 +882,7 @@ test("serves container session APIs across stopped and running states", async ()
   const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
   const app = createApp({
     deleteContainerImage: controlPlane.deleteContainerImage,
+    deleteVmImage: controlPlane.deleteVmImage,
     createAutomationSession: controlPlane.createAutomationSession,
     createAudioSession: controlPlane.createAudioSession,
     createConsoleSession: controlPlane.createConsoleSession,
@@ -855,6 +908,7 @@ test("serves container session APIs across stopped and running states", async ()
     restoreComputer: controlPlane.restoreComputer,
     listImages: controlPlane.listImages,
     listHostUnits: controlPlane.listHostUnits,
+    importVmImage: controlPlane.importVmImage,
     pullContainerImage: controlPlane.pullContainerImage,
     getHostUnit: controlPlane.getHostUnit,
     updateBrowserViewport: controlPlane.updateBrowserViewport,
