@@ -257,7 +257,11 @@ beforeEach(() => {
       if (url.startsWith("/api/computers/") && method === "GET") {
         const name = decodeURIComponent(url.slice("/api/computers/".length));
         const computer = computers.find((entry) => entry.name === name);
-        return jsonResponse(createComputerDetail(computer ?? computers[0]!));
+        if (computer === undefined) {
+          return jsonResponse({ error: `Computer "${name}" was not found.` }, 404);
+        }
+
+        return jsonResponse(createComputerDetail(computer));
       }
 
       if (url.startsWith("/api/computers/") && method === "DELETE") {
@@ -414,6 +418,8 @@ test("deletes a selected computer and refreshes the inventory", async () => {
     expect(screen.queryByRole("button", { name: /starter-host/i })).not.toBeInTheDocument();
   });
   expect(screen.getByRole("button", { name: /research-browser/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "research-browser" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("renders monitor session shell and unavailable websocket state", async () => {

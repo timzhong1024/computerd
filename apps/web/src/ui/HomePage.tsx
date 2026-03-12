@@ -77,12 +77,18 @@ export function HomePage() {
       setComputers(nextComputers);
       setHostUnits(nextHostUnits);
 
-      if (selectedItem?.kind === "computer") {
+      if (
+        selectedItem?.kind === "computer" &&
+        nextComputers.some((computer) => computer.name === selectedItem.name)
+      ) {
         await loadComputer(selectedItem.name);
         return;
       }
 
-      if (selectedItem?.kind === "host-unit") {
+      if (
+        selectedItem?.kind === "host-unit" &&
+        nextHostUnits.some((hostUnit) => hostUnit.unitName === selectedItem.unitName)
+      ) {
         await loadHostUnit(selectedItem.unitName);
         return;
       }
@@ -94,7 +100,14 @@ export function HomePage() {
 
       if (nextHostUnits[0] !== undefined) {
         await loadHostUnit(nextHostUnits[0].unitName);
+        return;
       }
+
+      setSelectedItem(null);
+      setSelectedComputer(null);
+      setSelectedHostUnit(null);
+      setAutomationSession(null);
+      setScreenshot(null);
     } catch (caughtError) {
       setError(formatError(caughtError));
     }
