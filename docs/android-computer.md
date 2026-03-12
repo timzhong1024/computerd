@@ -306,6 +306,65 @@ android computer 的 console 语义不是 QEMU serial console，而是：
 
 这条 console 面应该沿用现有 websocket terminal surface，但背后连接的是 `adb shell`，不是 guest serial socket。
 
+### Core Interfaces
+
+android computer 的 agent-facing 接口建议拆成三层：
+
+- display interface
+- console interface
+- specialized Android interface
+
+其中：
+
+- display interface 负责“看见屏幕并对屏幕执行通用输入”
+- console interface 负责“进入设备命令面”
+- specialized Android interface 负责“用 Android 特化协议高效完成设备级动作”
+
+display interface 的推荐组成是：
+
+- monitor
+- screenshot
+- input injection
+- optional visual grounding sidecar
+
+在这一层，OmniParser、UGround 这类模块的角色不是替代设备控制协议，而是增强 agent 对屏幕的理解能力。
+
+更准确地说：
+
+- OmniParser / UGround 更适合作为 `display perception` 接口
+- 它们负责 screen parsing / visual grounding
+- 它们不负责 app lifecycle、session management、device shell、稳定动作执行
+
+console interface 的第一版稳定语义是：
+
+- `adb shell`
+
+specialized Android interface 的第一版推荐语义是：
+
+- Appium session
+- `adb` device operations
+
+因此，对 android computer 来说：
+
+- OmniParser / UGround 比 Appium 更适合作为“agent 如何操作显示器”的接口
+- 但它们不比 Appium 更适合作为“agent 如何操作 Android 设备”的接口
+
+这层分工与 browser computer 的思路一致：
+
+- 通用 display 面解决“看见屏幕”
+- 特化协议面解决“高效完成某一类对象操作”
+
+对 browser 来说，特化协议是 `CDP`。
+
+对 Android 来说，特化协议是：
+
+- Appium
+- `adb`
+
+显示器相关的独立设计见：
+
+- [docs/display-interface-model.md](/Users/timzhong/computerd/docs/display-interface-model.md)
+
 ### Automation
 
 android 没有像浏览器 `CDP` 那样天然统一且占优的单一 attach protocol。
@@ -424,6 +483,22 @@ Espresso 是 Android 官方提供的 app-oriented UI test framework。
 - screen recording
 - file push/pull
 - richer artifact surfaces
+
+## Visual Grounding Notes
+
+OmniParser 与 UGround 对 android computer 的启发，不是替代 Appium，而是补上一层 `display perception`。
+
+更合理的组合是：
+
+- Appium / `adb` 负责设备控制与执行
+- OmniParser / UGround 负责 screen parsing / visual grounding
+
+当 Android UI tree 不可靠时：
+
+- agent 先通过 screenshot + visual grounding 找到目标区域
+- 再通过 Appium / `adb` 执行动作
+
+这比把视觉模块直接当作设备控制协议更清晰，也更符合 computerd 的分层。
 
 ## Tooling Model
 

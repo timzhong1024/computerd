@@ -291,6 +291,59 @@ Android 用户真正关心的是：
 - computerd 应该负责 lifecycle、session、monitor、统一对象模型
 - 低层自动化能力应尽量复用成熟轮子
 
+## Display Interface Discussion
+
+后面又进一步收敛出一个更清楚的接口分层：
+
+- display interface
+- console interface
+- specialized surface
+
+这组分层的重要意义在于：
+
+- 不再把所有自动化问题都挤进一个“大一统 Android API”
+- 可以分别讨论“如何看屏幕”和“如何高效操作 Android”
+
+### Display vs Android Control
+
+这里一个关键问题是：
+
+- OmniParser / UGround 是否比 Appium 更适合作为 agent 接口
+
+最后收敛出的结论是：
+
+- 对“操作显示器”来说，是的，它们更合适
+- 对“操作 Android 设备”来说，不是，Appium / `adb` 更合适
+
+原因很直接：
+
+- OmniParser / UGround 解决的是 screen parsing / visual grounding
+- Appium / `adb` 解决的是 device control / app lifecycle / shell / action execution
+
+它们不是简单替代关系，而是前后串联关系。
+
+### Final Layering
+
+最后比较稳定的接口分层是：
+
+- display interface
+  - monitor
+  - screenshot
+  - input injection
+  - visual grounding sidecar
+- console interface
+  - `adb shell`
+- specialized Android interface
+  - Appium
+  - `adb` device operations
+
+这也让 Android 的定位和 browser 形成了对应关系：
+
+- browser 的 specialized surface 是 `CDP`
+- Android 的 specialized surface 是 Appium / `adb`
+
+而通用 display interface 则可以在不同 computer 之间复用。
+
 ## Relationship To Browser Computer
 
 整个 Android 方向真正成型，是因为后来找到了一条和 `browser computer` 很像的类比路径。
