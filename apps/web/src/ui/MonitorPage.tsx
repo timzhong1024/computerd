@@ -13,7 +13,7 @@ interface MonitorPageProps {
 }
 
 export function MonitorPage({ computerName }: MonitorPageProps) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUnlockedRef = useRef(false);
   const lastViewportRef = useRef<string | null>(null);
@@ -259,7 +259,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
         ) : null}
       </div>
 
-      <div ref={shellRef} className="browser-stage-canvas-shell" data-testid="novnc-shell" />
+      <section ref={shellRef} className="browser-stage-canvas-shell" data-testid="novnc-shell" />
       <span className="browser-stage-status" data-testid="monitor-state">
         {formatMonitorStateLabel(videoState, audioState, session, audioSession)}
       </span>

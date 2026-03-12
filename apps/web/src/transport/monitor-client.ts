@@ -8,7 +8,7 @@ export interface MonitorClientHandle {
 
 interface ConnectMonitorClientOptions {
   session: ComputerMonitorSession;
-  target: HTMLDivElement;
+  target: HTMLElement;
   onStateChange: (state: MonitorConnectionState) => void;
 }
 
@@ -100,9 +100,9 @@ type NoVncRfbLike = {
   disconnect: () => void;
 };
 
-async function loadNoVnc(): Promise<new (target: HTMLDivElement, url: string) => NoVncRfbLike> {
+async function loadNoVnc(): Promise<new (target: HTMLElement, url: string) => NoVncRfbLike> {
   const module = (await import("./novnc-rfb")) as {
-    default: new (target: HTMLDivElement, url: string) => NoVncRfbLike;
+    default: new (target: HTMLElement, url: string) => NoVncRfbLike;
   };
   return module.default;
 }
@@ -155,7 +155,7 @@ function createMonitorUnavailable(websocketUrl: string) {
   return placeholder;
 }
 
-function logMonitorTree(target: HTMLDivElement) {
+function logMonitorTree(target: HTMLElement) {
   logMonitorDimensions("target", target);
   const screen = target.firstElementChild;
   if (screen instanceof HTMLDivElement) {
