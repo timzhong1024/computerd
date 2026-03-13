@@ -23,10 +23,7 @@ import {
   withBrowserViewport,
 } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
-import {
-  createVmRuntimePaths,
-  toVmRuntimeDetail,
-} from "./systemd/vm-runtime";
+import { createVmRuntimePaths, toVmRuntimeDetail } from "./systemd/vm-runtime";
 import { ImageProvider } from "./images";
 import {
   ComputerRuntimePort,
