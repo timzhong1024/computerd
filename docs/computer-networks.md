@@ -21,7 +21,8 @@ network object 当前表达的是：
 - `name`
 - `kind`
 - `cidr`
-- bridge / router / DHCP / NAT 的只读健康状态
+- bridge 的只读状态
+- 统一 `gateway` 视图
 - 当前连接的 computer 数量
 - 是否允许删除
 
@@ -53,6 +54,43 @@ network object 当前表达的是：
 - 可创建多个
 - 只要还有 computer 连接就不能删除
 - 由 computerd 托管 bridge / DHCP / NAT / router 运行时
+
+## Gateway Model
+
+network 对外现在统一暴露 `gateway`，而不是零散的 `routerState/dhcpState/natState`。
+
+当前第一版的 `gateway` 结构包含：
+
+- `dhcp`
+- `dns`
+- `programmableGateway`
+- `health`
+
+其中：
+
+- `dhcp`
+  - 当前固定实现为 `dnsmasq`
+  - 不允许切换 provider
+- `dns`
+  - 默认 provider 仍然是 `dnsmasq`
+  - 未来允许替换为 `smartdns`
+- `programmableGateway`
+  - 作为高阶 L3/L4 software gateway 的统一占位
+  - 当前仅预留 provider，不实现数据面
+  - provider 枚举预留：
+    - `tailscale`
+    - `openvpn`
+
+`programmableGateway` 没有独立 `enabled` 标记位：
+
+- `provider = null` 表示未启用
+- 只要 `provider` 有值，就表示该 network 选择了某种高阶 programmable gateway
+
+当前未实现 provider 的行为是：
+
+- 配置可保存、可见
+- network health 会明确显示为 `unsupported/degraded`
+- 不会静默回退成“已经正常运行”
 
 当前实现中：
 

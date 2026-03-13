@@ -138,9 +138,12 @@ beforeEach(() => {
       status: {
         state: "healthy",
         bridgeName: "br0",
-        routerState: "unsupported",
-        dhcpState: "unsupported",
-        natState: "unsupported",
+      },
+      gateway: {
+        dhcp: { provider: "dnsmasq", state: "unsupported" },
+        dns: { provider: "dnsmasq", state: "unsupported" },
+        programmableGateway: { provider: null, state: "unsupported" },
+        health: { state: "healthy", natState: "unsupported" },
       },
     }),
   ];
@@ -187,9 +190,12 @@ beforeEach(() => {
           status: {
             state: "healthy",
             bridgeName: "ctd12345678",
-            routerState: "healthy",
-            dhcpState: "healthy",
-            natState: "healthy",
+          },
+          gateway: {
+            dhcp: { provider: "dnsmasq", state: "healthy" },
+            dns: { provider: "dnsmasq", state: "healthy" },
+            programmableGateway: { provider: null, state: "unsupported" },
+            health: { state: "healthy", natState: "healthy" },
           },
         });
         networks = [...networks, created];
@@ -604,9 +610,12 @@ test("blocks isolated networks for browser and host computers in the create form
       status: {
         state: "healthy",
         bridgeName: "ctd12345678",
-        routerState: "healthy",
-        dhcpState: "healthy",
-        natState: "healthy",
+      },
+      gateway: {
+        dhcp: { provider: "dnsmasq", state: "healthy" },
+        dns: { provider: "dnsmasq", state: "healthy" },
+        programmableGateway: { provider: null, state: "unsupported" },
+        health: { state: "healthy", natState: "healthy" },
       },
     }),
   ];
@@ -1082,9 +1091,12 @@ function createComputerSummary(computer: FakeComputer) {
       status: {
         state: "healthy",
         bridgeName: "ctd12345678",
-        routerState: "healthy",
-        dhcpState: "healthy",
-        natState: "healthy",
+      },
+      gateway: {
+        dhcp: { provider: "dnsmasq", state: "healthy" },
+        dns: { provider: "dnsmasq", state: "healthy" },
+        programmableGateway: { provider: null, state: "unsupported" },
+        health: { natState: "healthy", state: "healthy" },
       },
     });
   return {
@@ -1282,9 +1294,24 @@ function createNetworkSummary(input: {
   status: {
     state: "healthy" | "degraded" | "broken";
     bridgeName: string;
-    routerState: "healthy" | "degraded" | "broken" | "unsupported";
-    dhcpState: "healthy" | "degraded" | "broken" | "unsupported";
-    natState: "healthy" | "degraded" | "broken" | "unsupported";
+  };
+  gateway: {
+    dhcp: {
+      provider: "dnsmasq";
+      state: "healthy" | "degraded" | "broken" | "unsupported";
+    };
+    dns: {
+      provider: "dnsmasq" | "smartdns";
+      state: "healthy" | "degraded" | "broken" | "unsupported";
+    };
+    programmableGateway: {
+      provider: null | "tailscale" | "openvpn";
+      state: "healthy" | "degraded" | "broken" | "unsupported";
+    };
+    health: {
+      state: "healthy" | "degraded" | "broken";
+      natState: "healthy" | "degraded" | "broken" | "unsupported";
+    };
   };
 }) {
   return input;

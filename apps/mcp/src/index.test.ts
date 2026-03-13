@@ -50,9 +50,12 @@ function createComputerDetail(name = "lab-host"): ComputerDetail {
       status: {
         state: "healthy",
         bridgeName: "br0",
-        routerState: "unsupported",
-        dhcpState: "unsupported",
-        natState: "unsupported",
+      },
+      gateway: {
+        dhcp: { provider: "dnsmasq", state: "unsupported" },
+        dns: { provider: "dnsmasq", state: "unsupported" },
+        programmableGateway: { provider: null, state: "unsupported" },
+        health: { state: "healthy", natState: "unsupported" },
       },
       attachedComputerCount: 1,
       deletable: false,
@@ -136,9 +139,12 @@ test("registers computer and host inspect tools", async () => {
         status: {
           state: "healthy",
           bridgeName: "br0",
-          routerState: "unsupported",
-          dhcpState: "unsupported",
-          natState: "unsupported",
+        },
+        gateway: {
+          dhcp: { provider: "dnsmasq", state: "unsupported" },
+          dns: { provider: "dnsmasq", state: "unsupported" },
+          programmableGateway: { provider: null, state: "unsupported" },
+          health: { state: "healthy", natState: "unsupported" },
         },
         attachedComputerCount: 1,
         deletable: false,
@@ -162,9 +168,12 @@ test("registers computer and host inspect tools", async () => {
         status: {
           state: "healthy",
           bridgeName: "ctddeadbeef",
-          routerState: "healthy",
-          dhcpState: "healthy",
-          natState: "healthy",
+        },
+        gateway: {
+          dhcp: { provider: "dnsmasq", state: "healthy" },
+          dns: { provider: "dnsmasq", state: "healthy" },
+          programmableGateway: { provider: null, state: "unsupported" },
+          health: { state: "healthy", natState: "healthy" },
         },
         attachedComputerCount: 0,
         deletable: true,

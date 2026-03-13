@@ -44,6 +44,19 @@ interface PersistedIsolatedNetworkRecord {
   bridgeName: string;
   dockerNetworkName: string;
   createdAt: string;
+  gateway: PersistedNetworkGatewayConfig;
+}
+
+interface PersistedNetworkGatewayConfig {
+  dhcp: {
+    provider: "dnsmasq";
+  };
+  dns: {
+    provider: "dnsmasq" | "smartdns";
+  };
+  programmableGateway: {
+    provider: "tailscale" | "openvpn" | null;
+  };
 }
 
 export type PersistedNetworkRecord =
@@ -53,6 +66,7 @@ export type PersistedNetworkRecord =
       kind: "host";
       cidr: string;
       bridgeName: string;
+      gateway: PersistedNetworkGatewayConfig;
     }
   | PersistedIsolatedNetworkRecord;
 
@@ -133,6 +147,7 @@ export class SystemNetworkProvider extends NetworkProvider {
       bridgeName,
       dockerNetworkName: `computerd-${id}`,
       createdAt: new Date().toISOString(),
+      gateway: createPersistedGatewayConfig(input),
     };
     config.networks.push(record);
     await writeNetworkConfig(this.options.configPath, config);
@@ -177,7 +192,7 @@ export class SystemNetworkProvider extends NetworkProvider {
   }
 
   async toNetworkSummary(network: PersistedNetworkRecord, attachedComputerCount: number) {
-    const status = await inspectNetworkStatus(
+    const inspected = await inspectNetworkStatus(
       this.dockerClient,
       network,
       this.options.runtimeDirectory,
@@ -187,7 +202,11 @@ export class SystemNetworkProvider extends NetworkProvider {
       name: network.name,
       kind: network.kind,
       cidr: network.cidr,
-      status,
+      status: {
+        state: inspected.state,
+        bridgeName: inspected.bridgeName,
+      },
+      gateway: inspected.gateway,
       attachedComputerCount,
       deletable: network.kind !== "host" && attachedComputerCount === 0,
     };
@@ -212,6 +231,7 @@ export class DevelopmentNetworkProvider extends NetworkProvider {
       kind: "host" as const,
       cidr: DEFAULT_HOST_NETWORK_CIDR,
       bridgeName: DEFAULT_HOST_BRIDGE,
+      gateway: defaultGatewayConfig(),
     };
     return [host, ...[...this.records.values()].filter((record) => record.id !== host.id)];
   }
@@ -234,6 +254,7 @@ export class DevelopmentNetworkProvider extends NetworkProvider {
       bridgeName: `ctd${stableHash(id).slice(0, 8)}`,
       dockerNetworkName: `computerd-${id}`,
       createdAt: new Date().toISOString(),
+      gateway: createPersistedGatewayConfig(input),
     };
     this.records.set(id, record);
     return record;
@@ -257,10 +278,15 @@ export class DevelopmentNetworkProvider extends NetworkProvider {
       status: {
         state: "healthy",
         bridgeName: network.bridgeName,
-        routerState: network.kind === "host" ? "unsupported" : "healthy",
-        dhcpState: network.kind === "host" ? "unsupported" : "healthy",
-        natState: network.kind === "host" ? "unsupported" : "healthy",
       },
+      gateway: createGatewayDetail(network, {
+        overallState: "healthy",
+        dhcpState: network.kind === "host" ? "unsupported" : "healthy",
+        dnsState:
+          network.kind === "host" ? "unsupported" : dnsStateForProvider(network, true, true),
+        natState: network.kind === "host" ? "unsupported" : "healthy",
+        programmableGatewayState: programmableGatewayStateForProvider(network, true),
+      }),
       attachedComputerCount,
       deletable: network.kind !== "host" && attachedComputerCount === 0,
     } satisfies NetworkSummary;
@@ -281,31 +307,39 @@ async function inspectNetworkStatus(
     return {
       state: bridgeExists ? "healthy" : "broken",
       bridgeName: network.bridgeName,
-      routerState: "unsupported",
-      dhcpState: "unsupported",
-      natState: "unsupported",
+      gateway: createGatewayDetail(network, {
+        overallState: bridgeExists ? "healthy" : "broken",
+        dhcpState: "unsupported",
+        dnsState: "unsupported",
+        natState: "unsupported",
+        programmableGatewayState: programmableGatewayStateForProvider(network, bridgeExists),
+      }),
     } as const;
   }
 
   const bridgeExists = hasLink(network.bridgeName);
   const dockerExists = await hasDockerNetwork(docker, network.dockerNetworkName);
   const dnsmasqHealthy = await hasHealthyDnsmasq(network, runtimeDirectory);
+  const dhcpState = dnsmasqHealthy ? "healthy" : bridgeExists ? "degraded" : "broken";
+  const dnsState = dnsStateForProvider(network, dnsmasqHealthy, bridgeExists);
+  const natState = dockerExists ? "healthy" : bridgeExists ? "degraded" : "broken";
+  const programmableGatewayState = programmableGatewayStateForProvider(network, bridgeExists);
+  const overallState = reduceGatewayOverallState([
+    dhcpState,
+    dnsState,
+    natState,
+    programmableGatewayState,
+  ]);
   return {
-    state:
-      bridgeExists && dockerExists && dnsmasqHealthy
-        ? "healthy"
-        : bridgeExists || dockerExists || dnsmasqHealthy
-          ? "degraded"
-          : "broken",
+    state: overallState,
     bridgeName: network.bridgeName,
-    routerState:
-      bridgeExists && dockerExists
-        ? "healthy"
-        : bridgeExists || dockerExists
-          ? "degraded"
-          : "broken",
-    dhcpState: dnsmasqHealthy ? "healthy" : bridgeExists ? "degraded" : "broken",
-    natState: dockerExists ? "healthy" : bridgeExists ? "degraded" : "broken",
+    gateway: createGatewayDetail(network, {
+      overallState,
+      dhcpState,
+      dnsState,
+      natState,
+      programmableGatewayState,
+    }),
   } as const;
 }
 
@@ -316,6 +350,7 @@ function hostNetworkRecord(environment: NodeJS.ProcessEnv): PersistedNetworkReco
     kind: "host",
     cidr: hostNetworkCidr(environment),
     bridgeName: environment.COMPUTERD_VM_BRIDGE ?? DEFAULT_HOST_BRIDGE,
+    gateway: defaultGatewayConfig(),
   };
 }
 
@@ -326,14 +361,18 @@ async function readNetworkConfig(configPath: string) {
     return {
       networks: Array.isArray(parsed.networks)
         ? parsed.networks.filter((entry): entry is PersistedIsolatedNetworkRecord => {
-            return (
+            if (
               typeof entry?.id === "string" &&
               typeof entry?.name === "string" &&
               entry?.kind === "isolated" &&
               typeof entry?.cidr === "string" &&
               typeof entry?.bridgeName === "string" &&
               typeof entry?.dockerNetworkName === "string"
-            );
+            ) {
+              entry.gateway = normalizeGatewayConfig(entry.gateway);
+              return true;
+            }
+            return false;
           })
         : [],
     };
@@ -619,6 +658,134 @@ function legacyIsolatedNetworkRecords(environment: NodeJS.ProcessEnv): Persisted
       bridgeName,
       dockerNetworkName: "computerd-legacy-isolated",
       createdAt: new Date(0).toISOString(),
+      gateway: defaultGatewayConfig(),
     },
   ];
+}
+
+function defaultGatewayConfig(): PersistedNetworkGatewayConfig {
+  return {
+    dhcp: {
+      provider: "dnsmasq",
+    },
+    dns: {
+      provider: "dnsmasq",
+    },
+    programmableGateway: {
+      provider: null,
+    },
+  };
+}
+
+function createPersistedGatewayConfig(input: CreateNetworkInput): PersistedNetworkGatewayConfig {
+  return {
+    dhcp: {
+      provider: "dnsmasq",
+    },
+    dns: {
+      provider: input.gateway?.dns?.provider ?? "dnsmasq",
+    },
+    programmableGateway: {
+      provider: input.gateway?.programmableGateway?.provider ?? null,
+    },
+  };
+}
+
+function normalizeGatewayConfig(value: unknown): PersistedNetworkGatewayConfig {
+  const defaults = defaultGatewayConfig();
+  if (!value || typeof value !== "object") {
+    return defaults;
+  }
+
+  const candidate = value as {
+    dhcp?: { provider?: unknown };
+    dns?: { provider?: unknown };
+    programmableGateway?: { provider?: unknown };
+  };
+
+  return {
+    dhcp: {
+      provider: candidate.dhcp?.provider === "dnsmasq" ? "dnsmasq" : "dnsmasq",
+    },
+    dns: {
+      provider: candidate.dns?.provider === "smartdns" ? "smartdns" : "dnsmasq",
+    },
+    programmableGateway: {
+      provider:
+        candidate.programmableGateway?.provider === "tailscale" ||
+        candidate.programmableGateway?.provider === "openvpn"
+          ? candidate.programmableGateway.provider
+          : null,
+    },
+  };
+}
+
+function dnsStateForProvider(
+  network: PersistedNetworkRecord,
+  dnsmasqHealthy: boolean,
+  bridgeExists: boolean,
+): "healthy" | "degraded" | "broken" | "unsupported" {
+  if (network.kind === "host") {
+    return "unsupported";
+  }
+  if (network.gateway.dns.provider === "dnsmasq") {
+    return dnsmasqHealthy ? "healthy" : bridgeExists ? "degraded" : "broken";
+  }
+  return bridgeExists ? "unsupported" : "broken";
+}
+
+function programmableGatewayStateForProvider(
+  network: PersistedNetworkRecord,
+  bridgeExists: boolean,
+): "healthy" | "degraded" | "broken" | "unsupported" {
+  if (network.gateway.programmableGateway.provider === null) {
+    return "unsupported";
+  }
+  return bridgeExists ? "unsupported" : "broken";
+}
+
+function reduceGatewayOverallState(
+  states: Array<"healthy" | "degraded" | "broken" | "unsupported">,
+): "healthy" | "degraded" | "broken" {
+  const supportedStates = states.filter((state) => state !== "unsupported");
+  if (supportedStates.length === 0) {
+    return "healthy";
+  }
+  if (supportedStates.every((state) => state === "healthy")) {
+    return "healthy";
+  }
+  if (supportedStates.every((state) => state === "broken")) {
+    return "broken";
+  }
+  return "degraded";
+}
+
+function createGatewayDetail(
+  network: PersistedNetworkRecord,
+  states: {
+    overallState: "healthy" | "degraded" | "broken";
+    dhcpState: "healthy" | "degraded" | "broken" | "unsupported";
+    dnsState: "healthy" | "degraded" | "broken" | "unsupported";
+    natState: "healthy" | "degraded" | "broken" | "unsupported";
+    programmableGatewayState: "healthy" | "degraded" | "broken" | "unsupported";
+  },
+) {
+  return {
+    dhcp: {
+      provider: network.gateway.dhcp.provider,
+      state: states.dhcpState,
+    },
+    dns: {
+      provider: network.gateway.dns.provider,
+      state: states.dnsState,
+    },
+    programmableGateway: {
+      provider: network.gateway.programmableGateway.provider,
+      state: states.programmableGatewayState,
+    },
+    health: {
+      state: states.overallState,
+      natState: states.natState,
+    },
+  };
 }

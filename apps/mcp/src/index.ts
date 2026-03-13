@@ -46,6 +46,7 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
       inputSchema: {
         name: createNetworkInputSchema.shape.name,
         cidr: createNetworkInputSchema.shape.cidr,
+        gateway: createNetworkInputSchema.shape.gateway,
       },
     },
     async (input) => createJsonToolResult(await controlPlane.createNetwork(input)),

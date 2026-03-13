@@ -28,9 +28,24 @@ function createHostNetworkSummary(attachedComputerCount = 1) {
     status: {
       state: "healthy" as const,
       bridgeName: "br0",
-      routerState: "unsupported" as const,
-      dhcpState: "unsupported" as const,
-      natState: "unsupported" as const,
+    },
+    gateway: {
+      dhcp: {
+        provider: "dnsmasq" as const,
+        state: "unsupported" as const,
+      },
+      dns: {
+        provider: "dnsmasq" as const,
+        state: "unsupported" as const,
+      },
+      programmableGateway: {
+        provider: null,
+        state: "unsupported" as const,
+      },
+      health: {
+        state: "healthy" as const,
+        natState: "unsupported" as const,
+      },
     },
     attachedComputerCount,
     deletable: false,
@@ -76,6 +91,34 @@ test("parses browser computer creation input with viewport", () => {
       viewport: {
         width: 1280,
         height: 800,
+      },
+    },
+  });
+});
+
+test("parses network creation input with dns and programmable gateway providers", () => {
+  const input = parseCreateNetworkInput({
+    name: "isolated-secure",
+    cidr: "192.168.252.0/24",
+    gateway: {
+      dns: {
+        provider: "smartdns",
+      },
+      programmableGateway: {
+        provider: "tailscale",
+      },
+    },
+  });
+
+  expect(input).toMatchObject({
+    name: "isolated-secure",
+    cidr: "192.168.252.0/24",
+    gateway: {
+      dns: {
+        provider: "smartdns",
+      },
+      programmableGateway: {
+        provider: "tailscale",
       },
     },
   });

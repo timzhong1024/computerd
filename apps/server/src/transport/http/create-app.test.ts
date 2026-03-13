@@ -776,9 +776,12 @@ test("returns broken computers and blocks broken actions with conflict responses
       status: {
         state: "healthy" as const,
         bridgeName: "br0",
-        routerState: "unsupported" as const,
-        dhcpState: "unsupported" as const,
-        natState: "unsupported" as const,
+      },
+      gateway: {
+        dhcp: { provider: "dnsmasq" as const, state: "unsupported" as const },
+        dns: { provider: "dnsmasq" as const, state: "unsupported" as const },
+        programmableGateway: { provider: null, state: "unsupported" as const },
+        health: { state: "healthy" as const, natState: "unsupported" as const },
       },
       attachedComputerCount: 1,
       deletable: false,

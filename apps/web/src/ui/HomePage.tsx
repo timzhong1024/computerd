@@ -60,6 +60,8 @@ export function HomePage() {
   const [networkForm, setNetworkForm] = useState({
     name: "",
     cidr: "192.168.252.0/24",
+    dnsProvider: "dnsmasq",
+    programmableGatewayProvider: "",
   });
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -554,7 +556,22 @@ export function HomePage() {
     setError(null);
 
     try {
-      await postJson("/api/networks", networkForm, parseNetworkDetail);
+      const payload = {
+        name: networkForm.name,
+        cidr: networkForm.cidr,
+        gateway: {
+          dns: {
+            provider: networkForm.dnsProvider,
+          },
+          programmableGateway: {
+            provider:
+              networkForm.programmableGatewayProvider.length > 0
+                ? networkForm.programmableGatewayProvider
+                : null,
+          },
+        },
+      };
+      await postJson("/api/networks", payload, parseNetworkDetail);
       setNetworkForm((current) => ({ ...current, name: "" }));
       await refreshInventory();
     } catch (caughtError) {
@@ -1357,6 +1374,39 @@ export function HomePage() {
                 required
               />
             </label>
+            <label>
+              DNS provider
+              <select
+                name="networkDnsProvider"
+                value={networkForm.dnsProvider}
+                onChange={(event) =>
+                  setNetworkForm((current) => ({
+                    ...current,
+                    dnsProvider: event.target.value as "dnsmasq" | "smartdns",
+                  }))
+                }
+              >
+                <option value="dnsmasq">dnsmasq</option>
+                <option value="smartdns">smartdns</option>
+              </select>
+            </label>
+            <label>
+              Programmable gateway
+              <select
+                name="networkProgrammableGatewayProvider"
+                value={networkForm.programmableGatewayProvider}
+                onChange={(event) =>
+                  setNetworkForm((current) => ({
+                    ...current,
+                    programmableGatewayProvider: event.target.value,
+                  }))
+                }
+              >
+                <option value="">None</option>
+                <option value="tailscale">tailscale (planned)</option>
+                <option value="openvpn">openvpn (planned)</option>
+              </select>
+            </label>
             <button type="submit" disabled={isBusy}>
               Create network
             </button>
@@ -1381,6 +1431,13 @@ export function HomePage() {
                       Delete
                     </button>
                   ) : null}
+                </div>
+                <div className="meta">
+                  gateway dhcp:{network.gateway.dhcp.provider}/{network.gateway.dhcp.state} · dns:
+                  {network.gateway.dns.provider}/{network.gateway.dns.state} · nat:
+                  {network.gateway.health.natState} · programmable:
+                  {network.gateway.programmableGateway.provider ?? "none"}/
+                  {network.gateway.programmableGateway.state}
                 </div>
               </li>
             ))}

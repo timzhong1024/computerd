@@ -70,6 +70,11 @@ test("pulls missing images before retrying container creation", async () => {
       kind: "host",
       cidr: "192.168.250.0/24",
       bridgeName: "br0",
+      gateway: {
+        dhcp: { provider: "dnsmasq" },
+        dns: { provider: "dnsmasq" },
+        programmableGateway: { provider: null },
+      },
     },
   );
 

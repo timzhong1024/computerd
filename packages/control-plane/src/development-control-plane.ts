@@ -255,6 +255,11 @@ export class DevelopmentControlPlane extends BaseControlPlane {
           kind: "host" as const,
           cidr: "192.168.250.0/24",
           bridgeName: "br0",
+          gateway: {
+            dhcp: { provider: "dnsmasq" },
+            dns: { provider: "dnsmasq" },
+            programmableGateway: { provider: null },
+          },
         },
       ],
       [
@@ -267,6 +272,11 @@ export class DevelopmentControlPlane extends BaseControlPlane {
           bridgeName: "br1",
           dockerNetworkName: "computerd-network-dev-isolated",
           createdAt: now,
+          gateway: {
+            dhcp: { provider: "dnsmasq" },
+            dns: { provider: "dnsmasq" },
+            programmableGateway: { provider: null },
+          },
         },
       ],
     ]);

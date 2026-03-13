@@ -124,12 +124,46 @@ export const computerStorageSchema = z.object({
 export const networkKindSchema = z.enum(["host", "isolated"]);
 export const networkComponentStateSchema = z.enum(["healthy", "degraded", "broken", "unsupported"]);
 
+export const networkDnsProviderSchema = z.enum(["dnsmasq", "smartdns"]);
+export const networkProgrammableGatewayProviderSchema = z.enum(["tailscale", "openvpn"]);
+
+export const networkDhcpConfigSchema = z.object({
+  provider: z.literal("dnsmasq"),
+});
+
+export const networkDnsConfigSchema = z.object({
+  provider: networkDnsProviderSchema.optional(),
+});
+
+export const networkProgrammableGatewayConfigSchema = z.object({
+  provider: networkProgrammableGatewayProviderSchema.nullish(),
+});
+
+export const createNetworkGatewaySchema = z.object({
+  dns: networkDnsConfigSchema.optional(),
+  programmableGateway: networkProgrammableGatewayConfigSchema.optional(),
+});
+
+export const networkGatewayComponentSchema = z.object({
+  provider: z.string().min(1).nullable(),
+  state: networkComponentStateSchema,
+});
+
+export const networkGatewayHealthSchema = z.object({
+  state: z.enum(["healthy", "degraded", "broken"]),
+  natState: networkComponentStateSchema,
+});
+
+export const networkGatewaySchema = z.object({
+  dhcp: networkGatewayComponentSchema,
+  dns: networkGatewayComponentSchema,
+  programmableGateway: networkGatewayComponentSchema,
+  health: networkGatewayHealthSchema,
+});
+
 export const networkStatusSchema = z.object({
   state: z.enum(["healthy", "degraded", "broken"]),
   bridgeName: z.string().min(1),
-  routerState: networkComponentStateSchema,
-  dhcpState: networkComponentStateSchema,
-  natState: networkComponentStateSchema,
 });
 
 export const networkSummarySchema = z.object({
@@ -138,6 +172,7 @@ export const networkSummarySchema = z.object({
   kind: networkKindSchema,
   cidr: z.string().min(1),
   status: networkStatusSchema,
+  gateway: networkGatewaySchema,
   attachedComputerCount: z.number().int().nonnegative(),
   deletable: z.boolean(),
 });
@@ -163,6 +198,7 @@ export const createNetworkInputSchema = z.object({
   cidr: z.string().refine(isValidIpv4Cidr, {
     message: "Expected an IPv4 CIDR with prefix length between /16 and /29.",
   }),
+  gateway: createNetworkGatewaySchema.optional(),
 });
 
 export const computerLifecycleSchema = z.object({
