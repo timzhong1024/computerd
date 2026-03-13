@@ -1,9 +1,11 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { ComputerRuntimePort } from "./index";
+import { ImageProvider } from "./images";
+import { DevelopmentComputerMetadataStore } from "./systemd/metadata-store";
 import type {
   ComputerMetadataStore,
-  ComputerRuntimePort,
   PersistedComputer,
   PersistedHostComputer,
   PersistedVmComputer,
@@ -14,14 +16,15 @@ import {
   ComputerConsoleUnavailableError,
   ComputerConflictError,
   ComputerNotFoundError,
+  DevelopmentControlPlane,
+  SystemdControlPlane,
   UnsupportedComputerFeatureError,
-  createControlPlane,
 } from "./index";
 
 test("creates and manages a host computer with persisted metadata", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -81,7 +84,7 @@ test("creates and manages a host computer with persisted metadata", async () => 
 });
 
 test("rejects vm create input with more than one nic", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   await expect(
     controlPlane.createComputer({
@@ -106,7 +109,7 @@ test("rejects vm create input with more than one nic", async () => {
 });
 
 test("creates and manages a browser computer with persisted metadata", async () => {
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -145,7 +148,7 @@ test("creates and manages a browser computer with persisted metadata", async () 
 });
 
 test("creates and manages a qcow2 vm computer with monitor and console support", async () => {
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -208,7 +211,7 @@ test("prepares vm runtime before start and restart", async () => {
   await metadataStore.putComputer(vmRecord);
 
   const calls: string[] = [];
-  const runtime: ComputerRuntimePort = {
+  const runtime = createDelegatingRuntime({
     async createContainerComputer() {
       throw new Error("not implemented");
     },
@@ -312,10 +315,10 @@ test("prepares vm runtime before start and restart", async () => {
     async stopContainerComputer() {
       throw new Error("not implemented");
     },
-    async updateBrowserViewport() {},
-  };
+    async updateBrowserViewport() {}
+  });
 
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -336,7 +339,7 @@ test("prepares vm runtime before start and restart", async () => {
 });
 
 test("vm detail preserves an explicit nic mac address", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   const created = await controlPlane.createComputer({
     name: "vm-explicit-mac",
@@ -376,7 +379,7 @@ test("vm detail preserves an explicit nic mac address", async () => {
 test("creates, lists, restores, and deletes vm snapshots", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -438,7 +441,7 @@ test("creates, lists, restores, and deletes vm snapshots", async () => {
 test("restores vm initial state for qcow2 and iso sources", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -488,7 +491,7 @@ test("restores vm initial state for qcow2 and iso sources", async () => {
 test("rejects vm snapshot mutations while running", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -529,7 +532,7 @@ test("rejects vm snapshot mutations while running", async () => {
 test("rejects duplicate and missing vm snapshots", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -578,7 +581,7 @@ test("rejects duplicate and missing vm snapshots", async () => {
 test("updates browser viewport and persists it across detail reads", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -627,7 +630,7 @@ test("updates browser viewport and persists it across detail reads", async () =>
 test("deletes a running computer by stopping runtime and removing metadata", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -651,7 +654,7 @@ test("deletes a running computer by stopping runtime and removing metadata", asy
 });
 
 test("returns lightweight host inspect objects", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   const hostUnits = await controlPlane.listHostUnits();
   const docker = await controlPlane.getHostUnit("docker.service");
@@ -663,7 +666,7 @@ test("returns lightweight host inspect objects", async () => {
 });
 
 test("development console sessions attach to a local bash shell without requiring running state", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   await expect(controlPlane.createConsoleSession("starter-host")).resolves.toMatchObject({
     computerName: "starter-host",
@@ -680,7 +683,7 @@ test("development console sessions attach to a local bash shell without requirin
 });
 
 test("development container console and exec sessions require a running container", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   await controlPlane.createComputer({
     name: "workspace-container",
@@ -740,7 +743,7 @@ test("development container console and exec sessions require a running containe
 });
 
 test("development containers without console access still allow exec sessions", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   await controlPlane.createComputer({
     name: "exec-only-container",
@@ -791,7 +794,7 @@ test("development containers without console access still allow exec sessions", 
 });
 
 test("vm console attach uses node to bridge the serial socket", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
+  const controlPlane = new DevelopmentControlPlane();
 
   await expect(controlPlane.createConsoleSession("linux-vm")).resolves.toMatchObject({
     computerName: "linux-vm",
@@ -821,7 +824,7 @@ test("rejects exec sessions for non-container computers", async () => {
   await metadataStore.putComputer(createBrowserComputerRecord());
   await runtime.createPersistentUnit(createHostComputerRecord());
   await runtime.createPersistentUnit(createBrowserComputerRecord());
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -844,7 +847,7 @@ test("rejects exec sessions for non-container computers", async () => {
 });
 
 test("rejects duplicate names and unknown computers", async () => {
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -881,7 +884,7 @@ test("reports broken state for host, browser, and container computers whose runt
   await metadataStore.putComputer(createBrowserComputerRecord());
   await metadataStore.putComputer(createContainerComputerRecord());
   await metadataStore.putComputer(createVmComputerRecord());
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -922,7 +925,7 @@ test("rejects lifecycle, delete, and session actions for broken computers", asyn
   await metadataStore.putComputer(createHostComputerRecord());
   await metadataStore.putComputer(createBrowserComputerRecord());
   await metadataStore.putComputer(createContainerComputerRecord());
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -979,7 +982,7 @@ test("creates browser automation, monitor, screenshot, and console sessions from
   await runtime.createPersistentUnit(createBrowserComputerRecord());
   await runtime.createPersistentUnit(terminalRecord);
 
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -1044,7 +1047,7 @@ test("waits for host console runtime readiness during start", async () => {
   const runtimeDirectory = "/tmp/computerd-delayed-terminals";
   await cleanupSocket(runtimeDirectory, terminalRecord.name);
 
-  const runtime: ComputerRuntimePort = {
+  const runtime = createDelegatingRuntime({
     async createContainerComputer() {
       throw new Error("not implemented");
     },
@@ -1190,8 +1193,8 @@ test("waits for host console runtime readiness during start", async () => {
     async stopContainerComputer() {
       return runtimeState;
     },
-    async updateBrowserViewport() {},
-  };
+    async updateBrowserViewport() {}
+  });
   const runtimeState: UnitRuntimeState = {
     unitName: terminalRecord.unitName,
     description: terminalRecord.description,
@@ -1202,7 +1205,7 @@ test("waits for host console runtime readiness during start", async () => {
     execStart: terminalRecord.runtime.command,
   };
 
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -1225,7 +1228,7 @@ test("rejects sessions for unsupported capabilities", async () => {
   await metadataStore.putComputer(hostRecord);
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
   await runtime.createPersistentUnit(hostRecord);
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -1246,7 +1249,7 @@ test("acquires and releases a single active console attach", async () => {
   const terminalRecord = createHostComputerRecord();
   await metadataStore.putComputer(terminalRecord);
   await runtime.createPersistentUnit(terminalRecord);
-  const controlPlane = createControlPlane(
+  const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
       COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
@@ -1270,27 +1273,19 @@ test("acquires and releases a single active console attach", async () => {
 
 function createMemoryMetadataStore(): ComputerMetadataStore {
   const records = new Map<string, PersistedComputer>();
-
-  return {
-    async deleteComputer(name) {
-      records.delete(name);
-    },
-    async getComputer(name) {
-      return records.get(name) ?? null;
-    },
-    async listComputers() {
-      return [...records.values()];
-    },
-    async putComputer(computer) {
-      records.set(computer.name, structuredClone(computer));
-    },
-  };
+  return new (class extends DevelopmentComputerMetadataStore {
+    override async putComputer(computer: PersistedComputer) {
+      await super.putComputer(structuredClone(computer));
+    }
+  })(records);
 }
 
-function createMemoryImageProvider() {
-  return {
-    async deleteContainerImage() {},
-    async deleteVmImage() {},
+function createMemoryImageProvider(): ImageProvider {
+  return new (class extends ImageProvider {
+    async deleteContainerImage() {}
+
+    async deleteVmImage() {}
+
     async getImage(id: string) {
       if (id.startsWith("filesystem-vm:")) {
         return {
@@ -1316,10 +1311,12 @@ function createMemoryImageProvider() {
         sizeBytes: 1024,
         status: "available" as const,
       };
-    },
+    }
+
     async listImages() {
       return [];
-    },
+    }
+
     async importVmImage(input: {
       source: { type: "file"; path: string } | { type: "url"; url: string };
     }) {
@@ -1335,7 +1332,8 @@ function createMemoryImageProvider() {
         sizeBytes: 1024,
         sourceType: "managed-import" as const,
       };
-    },
+    }
+
     async pullContainerImage(reference: string) {
       return {
         id: `docker:${reference}`,
@@ -1348,7 +1346,8 @@ function createMemoryImageProvider() {
         sizeBytes: 1024,
         status: "available" as const,
       };
-    },
+    }
+
     async requireVmImage(id: string, kind: "qcow2" | "iso") {
       return {
         id,
@@ -1360,8 +1359,8 @@ function createMemoryImageProvider() {
         sizeBytes: 1024,
         sourceType: "managed-import" as const,
       };
-    },
-  };
+    }
+  })();
 }
 
 function createBrowserComputerRecord(): PersistedComputer {
@@ -1510,6 +1509,158 @@ function createVmComputerRecord(): PersistedVmComputer {
   };
 }
 
+type RuntimeMethodTable = {
+  [K in keyof ComputerRuntimePort]: ComputerRuntimePort[K];
+};
+
+class DelegatingComputerRuntime extends ComputerRuntimePort {
+  constructor(private readonly methods: RuntimeMethodTable) {
+    super();
+  }
+
+  createContainerComputer(...args: Parameters<ComputerRuntimePort["createContainerComputer"]>) {
+    return this.methods.createContainerComputer(...args);
+  }
+
+  createVmComputer(...args: Parameters<ComputerRuntimePort["createVmComputer"]>) {
+    return this.methods.createVmComputer(...args);
+  }
+
+  deleteBrowserRuntimeIdentity(
+    ...args: Parameters<ComputerRuntimePort["deleteBrowserRuntimeIdentity"]>
+  ) {
+    return this.methods.deleteBrowserRuntimeIdentity(...args);
+  }
+
+  deleteContainerComputer(...args: Parameters<ComputerRuntimePort["deleteContainerComputer"]>) {
+    return this.methods.deleteContainerComputer(...args);
+  }
+
+  deleteVmComputer(...args: Parameters<ComputerRuntimePort["deleteVmComputer"]>) {
+    return this.methods.deleteVmComputer(...args);
+  }
+
+  ensureBrowserRuntimeIdentity(
+    ...args: Parameters<ComputerRuntimePort["ensureBrowserRuntimeIdentity"]>
+  ) {
+    return this.methods.ensureBrowserRuntimeIdentity(...args);
+  }
+
+  prepareBrowserRuntime(...args: Parameters<ComputerRuntimePort["prepareBrowserRuntime"]>) {
+    return this.methods.prepareBrowserRuntime(...args);
+  }
+
+  prepareVmRuntime(...args: Parameters<ComputerRuntimePort["prepareVmRuntime"]>) {
+    return this.methods.prepareVmRuntime(...args);
+  }
+
+  createAutomationSession(
+    ...args: Parameters<ComputerRuntimePort["createAutomationSession"]>
+  ) {
+    return this.methods.createAutomationSession(...args);
+  }
+
+  createAudioSession(...args: Parameters<ComputerRuntimePort["createAudioSession"]>) {
+    return this.methods.createAudioSession(...args);
+  }
+
+  createMonitorSession(...args: Parameters<ComputerRuntimePort["createMonitorSession"]>) {
+    return this.methods.createMonitorSession(...args);
+  }
+
+  createPersistentUnit(...args: Parameters<ComputerRuntimePort["createPersistentUnit"]>) {
+    return this.methods.createPersistentUnit(...args);
+  }
+
+  createScreenshot(...args: Parameters<ComputerRuntimePort["createScreenshot"]>) {
+    return this.methods.createScreenshot(...args);
+  }
+
+  createVmSnapshot(...args: Parameters<ComputerRuntimePort["createVmSnapshot"]>) {
+    return this.methods.createVmSnapshot(...args);
+  }
+
+  deletePersistentUnit(...args: Parameters<ComputerRuntimePort["deletePersistentUnit"]>) {
+    return this.methods.deletePersistentUnit(...args);
+  }
+
+  deleteVmSnapshot(...args: Parameters<ComputerRuntimePort["deleteVmSnapshot"]>) {
+    return this.methods.deleteVmSnapshot(...args);
+  }
+
+  getContainerRuntimeState(
+    ...args: Parameters<ComputerRuntimePort["getContainerRuntimeState"]>
+  ) {
+    return this.methods.getContainerRuntimeState(...args);
+  }
+
+  getRuntimeState(...args: Parameters<ComputerRuntimePort["getRuntimeState"]>) {
+    return this.methods.getRuntimeState(...args);
+  }
+
+  listHostUnits(...args: Parameters<ComputerRuntimePort["listHostUnits"]>) {
+    return this.methods.listHostUnits(...args);
+  }
+
+  listVmSnapshots(...args: Parameters<ComputerRuntimePort["listVmSnapshots"]>) {
+    return this.methods.listVmSnapshots(...args);
+  }
+
+  getHostUnit(...args: Parameters<ComputerRuntimePort["getHostUnit"]>) {
+    return this.methods.getHostUnit(...args);
+  }
+
+  openAutomationAttach(...args: Parameters<ComputerRuntimePort["openAutomationAttach"]>) {
+    return this.methods.openAutomationAttach(...args);
+  }
+
+  openAudioStream(...args: Parameters<ComputerRuntimePort["openAudioStream"]>) {
+    return this.methods.openAudioStream(...args);
+  }
+
+  openMonitorAttach(...args: Parameters<ComputerRuntimePort["openMonitorAttach"]>) {
+    return this.methods.openMonitorAttach(...args);
+  }
+
+  restartUnit(...args: Parameters<ComputerRuntimePort["restartUnit"]>) {
+    return this.methods.restartUnit(...args);
+  }
+
+  restartContainerComputer(
+    ...args: Parameters<ComputerRuntimePort["restartContainerComputer"]>
+  ) {
+    return this.methods.restartContainerComputer(...args);
+  }
+
+  startUnit(...args: Parameters<ComputerRuntimePort["startUnit"]>) {
+    return this.methods.startUnit(...args);
+  }
+
+  startContainerComputer(...args: Parameters<ComputerRuntimePort["startContainerComputer"]>) {
+    return this.methods.startContainerComputer(...args);
+  }
+
+  stopUnit(...args: Parameters<ComputerRuntimePort["stopUnit"]>) {
+    return this.methods.stopUnit(...args);
+  }
+
+  stopContainerComputer(...args: Parameters<ComputerRuntimePort["stopContainerComputer"]>) {
+    return this.methods.stopContainerComputer(...args);
+  }
+
+  restoreVmComputer(...args: Parameters<ComputerRuntimePort["restoreVmComputer"]>) {
+    return this.methods.restoreVmComputer(...args);
+  }
+
+  updateBrowserViewport(...args: Parameters<ComputerRuntimePort["updateBrowserViewport"]>) {
+    return this.methods.updateBrowserViewport(...args);
+  }
+}
+
+function createDelegatingRuntime(methods: RuntimeMethodTable) {
+  return new DelegatingComputerRuntime(methods);
+}
+
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
   const browserViewports = new Map<string, { width: number; height: number }>();
@@ -1518,7 +1669,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     Array<{ name: string; createdAt: string; sizeBytes: number }>
   >();
 
-  return {
+  return createDelegatingRuntime({
     async createContainerComputer(input, unitName) {
       return {
         ...input.runtime,
@@ -1770,7 +1921,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async updateBrowserViewport(computer, viewport) {
       browserViewports.set(computer.unitName, viewport);
     },
-  };
+  });
 }
 
 function requireState(states: Map<string, UnitRuntimeState>, unitName: string) {

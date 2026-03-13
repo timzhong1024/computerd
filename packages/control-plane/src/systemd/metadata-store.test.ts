@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createFileComputerMetadataStore } from "./metadata-store";
+import { FileComputerMetadataStore } from "./metadata-store";
 
 const directories: string[] = [];
 
@@ -15,9 +15,7 @@ afterEach(async () => {
 test("hydrates legacy browser metadata without runtime user", async () => {
   const root = await mkdtemp(join(tmpdir(), "computerd-metadata-store-"));
   directories.push(root);
-  const store = createFileComputerMetadataStore({
-    directory: root,
-  });
+  const store = new FileComputerMetadataStore(root);
 
   await writeFile(
     join(root, "computerd-chrome1.service.json"),

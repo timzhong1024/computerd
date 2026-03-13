@@ -1,10 +1,10 @@
 import type { MessageBus } from "dbus-next";
 import { expect, test } from "vitest";
-import { createSystemdDbusClient } from "./dbus-client";
+import { DefaultSystemdDbusClient } from "./dbus-client";
 
 test("treats LoadState=not-found as a missing unit", async () => {
-  const client = createSystemdDbusClient({
-    bus: createFakeBus({
+  const client = new DefaultSystemdDbusClient(
+    createFakeBus({
       unitProperties: {
         ActiveState: variant("s", "inactive"),
         Description: variant("s", "Missing unit"),
@@ -13,14 +13,14 @@ test("treats LoadState=not-found as a missing unit", async () => {
       },
       serviceProperties: {},
     }),
-  });
+  );
 
   await expect(client.getRuntimeState("computerd-missing.service")).resolves.toBeNull();
 });
 
 test("treats oversized CPUWeight sentinel values as unset", async () => {
-  const client = createSystemdDbusClient({
-    bus: createFakeBus({
+  const client = new DefaultSystemdDbusClient(
+    createFakeBus({
       unitProperties: {
         ActiveState: variant("s", "active"),
         Description: variant("s", "Terminal"),
@@ -31,7 +31,7 @@ test("treats oversized CPUWeight sentinel values as unset", async () => {
         CPUWeight: variant("t", BigInt("18446744073709551615")),
       },
     }),
-  });
+  );
 
   await expect(client.getRuntimeState("computerd-terminal.service")).resolves.toMatchObject({
     cpuWeight: undefined,
@@ -39,8 +39,8 @@ test("treats oversized CPUWeight sentinel values as unset", async () => {
 });
 
 test("throws the unit name when CPUWeight is out of range", async () => {
-  const client = createSystemdDbusClient({
-    bus: createFakeBus({
+  const client = new DefaultSystemdDbusClient(
+    createFakeBus({
       unitProperties: {
         ActiveState: variant("s", "active"),
         Description: variant("s", "Terminal"),
@@ -51,7 +51,7 @@ test("throws the unit name when CPUWeight is out of range", async () => {
         CPUWeight: variant("t", BigInt(20_000)),
       },
     }),
-  });
+  );
 
   await expect(client.getRuntimeState("computerd-terminal.service")).rejects.toThrow(
     "Unit computerd-terminal.service returned unsupported CPUWeight=",
@@ -59,8 +59,8 @@ test("throws the unit name when CPUWeight is out of range", async () => {
 });
 
 test("throws when CPUWeight is a non-sentinel uint64 overflow value", async () => {
-  const client = createSystemdDbusClient({
-    bus: createFakeBus({
+  const client = new DefaultSystemdDbusClient(
+    createFakeBus({
       unitProperties: {
         ActiveState: variant("s", "active"),
         Description: variant("s", "Terminal"),
@@ -71,7 +71,7 @@ test("throws when CPUWeight is a non-sentinel uint64 overflow value", async () =
         CPUWeight: variant("t", BigInt("18446744073709551614")),
       },
     }),
-  });
+  );
 
   await expect(client.getRuntimeState("computerd-terminal.service")).rejects.toThrow(
     "Expected 1..10000 or uint64 max sentinel",
@@ -79,8 +79,8 @@ test("throws when CPUWeight is a non-sentinel uint64 overflow value", async () =
 });
 
 test("startUnit waits until the unit is no longer activating", async () => {
-  const client = createSystemdDbusClient({
-    bus: createFakeBus({
+  const client = new DefaultSystemdDbusClient(
+    createFakeBus({
       unitProperties: {
         ActiveState: variant("s", "activating"),
         Description: variant("s", "Browser"),
@@ -105,7 +105,7 @@ test("startUnit waits until the unit is no longer activating", async () => {
         Result: variant("s", "exit-code"),
       },
     }),
-  });
+  );
 
   await expect(client.startUnit("computerd-browser.service")).resolves.toMatchObject({
     activeState: "failed",

@@ -4,13 +4,17 @@ import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/pr
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 import type {
+  ComputerAudioSession,
+  ComputerAutomationSession,
+  ComputerMonitorSession,
+  ComputerScreenshot,
   ComputerSnapshot,
   CreateComputerSnapshotInput,
   RestoreComputerInput,
 } from "@computerd/core";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
-import { createPipeWireRuntimeEnvironment, createPipeWireHostManager } from "./pipewire-host";
+import { createPipeWireRuntimeEnvironment, DefaultPipeWireHostManager } from "./pipewire-host";
 import {
   createVmRuntimePaths,
   createVmSnapshotImagePath,
@@ -26,68 +30,64 @@ import type {
   PersistedComputer,
   PersistedVmComputer,
   UnitRuntimeState,
+  BrowserAutomationLease,
+  BrowserMonitorLease,
+  BrowserAudioStreamLease,
 } from "./types";
+import { FileUnitStore, type FileUnitStoreOptions, type UnitFileStore } from "./unit-file-store";
 import {
-  createFileUnitStore,
-  type FileUnitStoreOptions,
-  type UnitFileStore,
-} from "./unit-file-store";
-import {
-  createSystemdDbusClient,
+  DefaultSystemdDbusClient,
   type SystemdDbusClient,
   type SystemdDbusClientOptions,
 } from "./dbus-client";
 
-export interface SystemdRuntime {
-  createVmComputer: (
+export abstract class SystemdRuntime {
+  abstract createVmComputer(
     input: CreateVmComputerInput,
     imagePath: string,
-  ) => Promise<PersistedVmComputer["runtime"]>;
-  deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
-  ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
-  prepareVmRuntime: (computer: PersistedVmComputer) => Promise<void>;
-  createAutomationSession: (
+  ): Promise<PersistedVmComputer["runtime"]>;
+  abstract deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract deleteVmComputer(computer: PersistedVmComputer): Promise<void>;
+  abstract ensureBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract prepareBrowserRuntime(computer: PersistedBrowserComputer): Promise<void>;
+  abstract prepareVmRuntime(computer: PersistedVmComputer): Promise<void>;
+  abstract createAutomationSession(
     computer: PersistedBrowserComputer,
-  ) => Promise<import("./types").ComputerAutomationSession>;
-  createAudioSession: (
-    computer: PersistedBrowserComputer,
-  ) => Promise<import("./types").ComputerAudioSession>;
-  createMonitorSession: (
+  ): Promise<ComputerAutomationSession>;
+  abstract createAudioSession(computer: PersistedBrowserComputer): Promise<ComputerAudioSession>;
+  abstract createMonitorSession(
     computer: PersistedBrowserComputer | PersistedVmComputer,
-  ) => Promise<import("./types").ComputerMonitorSession>;
-  createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
-  createVmSnapshot: (
+  ): Promise<ComputerMonitorSession>;
+  abstract createPersistentUnit(computer: PersistedComputer): Promise<UnitRuntimeState>;
+  abstract createVmSnapshot(
     computer: PersistedVmComputer,
     input: CreateComputerSnapshotInput,
-  ) => Promise<ComputerSnapshot>;
-  createScreenshot: (
+  ): Promise<ComputerSnapshot>;
+  abstract createScreenshot(computer: PersistedBrowserComputer): Promise<ComputerScreenshot>;
+  abstract deletePersistentUnit(unitName: string): Promise<void>;
+  abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
+  abstract getHostUnit(unitName: string): Promise<HostUnitDetail | null>;
+  abstract getRuntimeState(unitName: string): Promise<UnitRuntimeState | null>;
+  abstract listHostUnits(): Promise<HostUnitSummary[]>;
+  abstract listVmSnapshots(computer: PersistedVmComputer): Promise<ComputerSnapshot[]>;
+  abstract openAutomationAttach(
     computer: PersistedBrowserComputer,
-  ) => Promise<import("./types").ComputerScreenshot>;
-  deletePersistentUnit: (unitName: string) => Promise<void>;
-  deleteVmSnapshot: (computer: PersistedVmComputer, snapshotName: string) => Promise<void>;
-  getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
-  getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
-  listHostUnits: () => Promise<HostUnitSummary[]>;
-  listVmSnapshots: (computer: PersistedVmComputer) => Promise<ComputerSnapshot[]>;
-  openAutomationAttach: (
-    computer: PersistedBrowserComputer,
-  ) => Promise<import("./types").BrowserAutomationLease>;
-  openAudioStream: (
-    computer: PersistedBrowserComputer,
-  ) => Promise<import("./types").BrowserAudioStreamLease>;
-  openMonitorAttach: (
+  ): Promise<BrowserAutomationLease>;
+  abstract openAudioStream(computer: PersistedBrowserComputer): Promise<BrowserAudioStreamLease>;
+  abstract openMonitorAttach(
     computer: PersistedBrowserComputer | PersistedVmComputer,
-  ) => Promise<import("./types").BrowserMonitorLease>;
-  restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  restoreVmComputer: (computer: PersistedVmComputer, input: RestoreComputerInput) => Promise<void>;
-  startUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  updateBrowserViewport: (
+  ): Promise<BrowserMonitorLease>;
+  abstract restartUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract restoreVmComputer(
+    computer: PersistedVmComputer,
+    input: RestoreComputerInput,
+  ): Promise<void>;
+  abstract startUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract stopUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract updateBrowserViewport(
     computer: PersistedBrowserComputer,
     viewport: BrowserViewport,
-  ) => Promise<void>;
+  ): Promise<void>;
 }
 
 export interface CreateSystemdRuntimeOptions {
@@ -100,346 +100,397 @@ export interface CreateSystemdRuntimeOptions {
 
 const execFileAsync = promisify(execFile);
 
-export function createSystemdRuntime({
-  dbusClientOptions,
-  qemuImgCommand = "qemu-img",
-  unitFileStoreOptions,
-  dbusClient,
-  unitFileStore,
-}: CreateSystemdRuntimeOptions): SystemdRuntime {
-  const resolvedDbusClient = dbusClient ?? createSystemdDbusClient(dbusClientOptions);
-  const resolvedUnitFileStore = unitFileStore ?? createFileUnitStore(unitFileStoreOptions);
-  const browserRuntimePaths = createBrowserRuntimePaths({
-    runtimeRootDirectory: unitFileStoreOptions.browserRuntimeDirectory,
-    stateRootDirectory: unitFileStoreOptions.browserStateDirectory,
-  });
-  const vmRuntimePaths = createVmRuntimePaths({
-    runtimeRootDirectory: unitFileStoreOptions.vmRuntimeDirectory,
-    stateRootDirectory: unitFileStoreOptions.vmStateDirectory,
-  });
-  const pipeWireHostManager = createPipeWireHostManager({
-    browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
-    browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
-  });
+export class DefaultSystemdRuntime extends SystemdRuntime {
+  private readonly resolvedDbusClient: SystemdDbusClient;
+  private readonly resolvedUnitFileStore: UnitFileStore;
+  private readonly browserRuntimePaths;
+  private readonly vmRuntimePaths;
+  private readonly pipeWireHostManager: DefaultPipeWireHostManager;
+  private readonly qemuImgCommand: string;
+  private readonly unitFileStoreOptions: FileUnitStoreOptions;
 
-  return {
-    async createVmComputer(input: CreateVmComputerInput, imagePath: string) {
-      assertVmHostSupport(resolveVmBridgeName(input.network?.mode ?? "host", unitFileStoreOptions));
-      const runtime = withPersistedVmRuntime(input.runtime, imagePath);
-      const spec = vmRuntimePaths.specForName(input.name);
-      await mkdir(spec.stateDirectory, { recursive: true });
-      await mkdir(spec.runtimeDirectory, { recursive: true });
-      if (runtime.source.kind === "qcow2") {
-        await assertPathExists(runtime.source.path, "Base qcow2 image");
-        await createQcow2Overlay(qemuImgCommand, runtime.source.path, spec.diskImagePath);
-      } else {
-        await assertPathExists(runtime.source.path, "Install ISO");
-        await createBlankDisk(qemuImgCommand, spec.diskImagePath, runtime.source.diskSizeGiB ?? 32);
-      }
+  constructor({
+    dbusClientOptions,
+    qemuImgCommand = "qemu-img",
+    unitFileStoreOptions,
+    dbusClient,
+    unitFileStore,
+  }: CreateSystemdRuntimeOptions) {
+    super();
+    this.resolvedDbusClient = dbusClient ?? new DefaultSystemdDbusClient(dbusClientOptions?.bus);
+    this.resolvedUnitFileStore = unitFileStore ?? new FileUnitStore(unitFileStoreOptions);
+    this.browserRuntimePaths = createBrowserRuntimePaths({
+      runtimeRootDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+      stateRootDirectory: unitFileStoreOptions.browserStateDirectory,
+    });
+    this.vmRuntimePaths = createVmRuntimePaths({
+      runtimeRootDirectory: unitFileStoreOptions.vmRuntimeDirectory,
+      stateRootDirectory: unitFileStoreOptions.vmStateDirectory,
+    });
+    this.pipeWireHostManager = new DefaultPipeWireHostManager({
+      browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
+      browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
+    });
+    this.qemuImgCommand = qemuImgCommand;
+    this.unitFileStoreOptions = unitFileStoreOptions;
+  }
 
-      return runtime;
-    },
-    async deleteBrowserRuntimeIdentity(computer) {
-      await pipeWireHostManager.deleteRuntimeIdentity(computer);
-    },
-    async deleteVmComputer(computer) {
-      const spec = vmRuntimePaths.specForComputer(computer);
-      await rm(spec.runtimeDirectory, { recursive: true, force: true });
-      await rm(spec.stateDirectory, { recursive: true, force: true });
-    },
-    async ensureBrowserRuntimeIdentity(computer) {
-      await pipeWireHostManager.ensureRuntimeIdentity(computer);
-    },
-    async prepareBrowserRuntime(computer) {
-      await pipeWireHostManager.prepareRuntime(computer);
-    },
-    async prepareVmRuntime(computer) {
-      if (computer.runtime.source.kind !== "qcow2") {
-        return;
-      }
-
-      if (computer.runtime.source.cloudInit.enabled === false) {
-        return;
-      }
-
-      const spec = vmRuntimePaths.specForComputer(computer);
-      await mkdir(spec.stateDirectory, { recursive: true });
-      await mkdir(spec.runtimeDirectory, { recursive: true });
-      await createCloudInitSeed(
-        spec,
-        computer.name,
-        computer.runtime.source.cloudInit,
-        computer.runtime.nics[0]!,
+  async createVmComputer(input: CreateVmComputerInput, imagePath: string) {
+    assertVmHostSupport(
+      resolveVmBridgeName(input.network?.mode ?? "host", this.unitFileStoreOptions),
+    );
+    const runtime = withPersistedVmRuntime(input.runtime, imagePath);
+    const spec = this.vmRuntimePaths.specForName(input.name);
+    await mkdir(spec.stateDirectory, { recursive: true });
+    await mkdir(spec.runtimeDirectory, { recursive: true });
+    if (runtime.source.kind === "qcow2") {
+      await assertPathExists(runtime.source.path, "Base qcow2 image");
+      await createQcow2Overlay(this.qemuImgCommand, runtime.source.path, spec.diskImagePath);
+    } else {
+      await assertPathExists(runtime.source.path, "Install ISO");
+      await createBlankDisk(
+        this.qemuImgCommand,
+        spec.diskImagePath,
+        runtime.source.diskSizeGiB ?? 32,
       );
-    },
-    async createMonitorSession(computer) {
-      const spec =
-        computer.profile === "browser"
-          ? browserRuntimePaths.specForComputer(computer)
-          : vmRuntimePaths.specForComputer(computer);
-      return {
-        computerName: computer.name,
-        protocol: "vnc",
-        connect: {
-          mode: "relative-websocket-path",
-          url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
-        },
-        authorization: {
-          mode: "none",
-        },
-        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-        viewport: spec.viewport,
-      };
-    },
-    async createAudioSession(computer) {
-      return {
-        computerName: computer.name,
-        protocol: "http-audio-stream",
-        connect: {
-          mode: "relative-websocket-path",
-          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
-        },
-        authorization: {
-          mode: "none",
-        },
-        mimeType: "audio/ogg",
-        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-      };
-    },
-    async openMonitorAttach(computer) {
-      const spec =
-        computer.profile === "browser"
-          ? browserRuntimePaths.specForComputer(computer)
-          : vmRuntimePaths.specForComputer(computer);
-      return {
-        computerName: computer.name,
-        host: "127.0.0.1",
-        port: spec.vncPort,
-        release() {},
-      };
-    },
-    async openAudioStream(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      const captureEnvironment = createPipeWireRuntimeEnvironment(computer, {
-        browserRuntimeDirectory: unitFileStoreOptions.browserRuntimeDirectory,
-        browserStateDirectory: unitFileStoreOptions.browserStateDirectory,
-      });
-      return {
-        computerName: computer.name,
-        command: "/usr/bin/bash",
-        args: [
-          "-lc",
-          `ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -f pulse -i ${quoteShell(spec.audioMonitorSourceName)} -c:a libopus -b:a 128k -frame_duration 20 -application lowdelay -f ogg pipe:1`,
-        ],
-        env: {
-          ...captureEnvironment,
-          PULSE_SERVER: `unix:${spec.pulseServerPath}`,
-        },
-        targetSelector: `pulse-source=${spec.audioMonitorSourceName}`,
-        release() {},
-      };
-    },
-    async createAutomationSession(computer) {
-      return {
-        computerName: computer.name,
-        protocol: "cdp",
-        connect: {
-          mode: "relative-websocket-path",
-          url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
-        },
-        authorization: {
-          mode: "none",
-        },
-        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-      };
-    },
-    async openAutomationAttach(computer) {
-      const websocketUrl = await resolveAutomationWebSocketUrl(
-        browserRuntimePaths.specForComputer(computer).devtoolsPort,
-      );
-      return {
-        computerName: computer.name,
-        url: websocketUrl,
-        release() {},
-      };
-    },
-    async createScreenshot(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      const { stdout } = await execFileAsync("/usr/bin/bash", [
+    }
+
+    return runtime;
+  }
+
+  async deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer) {
+    await this.pipeWireHostManager.deleteRuntimeIdentity(computer);
+  }
+
+  async deleteVmComputer(computer: PersistedVmComputer) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    await rm(spec.runtimeDirectory, { recursive: true, force: true });
+    await rm(spec.stateDirectory, { recursive: true, force: true });
+  }
+
+  async ensureBrowserRuntimeIdentity(computer: PersistedBrowserComputer) {
+    await this.pipeWireHostManager.ensureRuntimeIdentity(computer);
+  }
+
+  async prepareBrowserRuntime(computer: PersistedBrowserComputer) {
+    await this.pipeWireHostManager.prepareRuntime(computer);
+  }
+
+  async prepareVmRuntime(computer: PersistedVmComputer) {
+    if (computer.runtime.source.kind !== "qcow2") {
+      return;
+    }
+    if (computer.runtime.source.cloudInit.enabled === false) {
+      return;
+    }
+
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    await mkdir(spec.stateDirectory, { recursive: true });
+    await mkdir(spec.runtimeDirectory, { recursive: true });
+    await createCloudInitSeed(
+      spec,
+      computer.name,
+      computer.runtime.source.cloudInit,
+      computer.runtime.nics[0]!,
+    );
+  }
+
+  async createMonitorSession(computer: PersistedBrowserComputer | PersistedVmComputer) {
+    const spec =
+      computer.profile === "browser"
+        ? this.browserRuntimePaths.specForComputer(computer)
+        : this.vmRuntimePaths.specForComputer(computer);
+    return {
+      computerName: computer.name,
+      protocol: "vnc",
+      connect: {
+        mode: "relative-websocket-path",
+        url: `/api/computers/${encodeURIComponent(computer.name)}/monitor/ws`,
+      },
+      authorization: {
+        mode: "none",
+      },
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      viewport: spec.viewport,
+    } satisfies Awaited<ReturnType<SystemdRuntime["createMonitorSession"]>>;
+  }
+
+  async createAudioSession(computer: PersistedBrowserComputer) {
+    return {
+      computerName: computer.name,
+      protocol: "http-audio-stream",
+      connect: {
+        mode: "relative-websocket-path",
+        url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
+      },
+      authorization: {
+        mode: "none",
+      },
+      mimeType: "audio/ogg",
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    } satisfies Awaited<ReturnType<SystemdRuntime["createAudioSession"]>>;
+  }
+
+  async openMonitorAttach(computer: PersistedBrowserComputer | PersistedVmComputer) {
+    const spec =
+      computer.profile === "browser"
+        ? this.browserRuntimePaths.specForComputer(computer)
+        : this.vmRuntimePaths.specForComputer(computer);
+    return {
+      computerName: computer.name,
+      host: "127.0.0.1",
+      port: spec.vncPort,
+      release() {},
+    } satisfies Awaited<ReturnType<SystemdRuntime["openMonitorAttach"]>>;
+  }
+
+  async openAudioStream(computer: PersistedBrowserComputer) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    const captureEnvironment = createPipeWireRuntimeEnvironment(computer, {
+      browserRuntimeDirectory: this.unitFileStoreOptions.browserRuntimeDirectory,
+      browserStateDirectory: this.unitFileStoreOptions.browserStateDirectory,
+    });
+    return {
+      computerName: computer.name,
+      command: "/usr/bin/bash",
+      args: [
         "-lc",
-        `DISPLAY=${quoteShell(spec.xvfbDisplay)} import -window root png:- | base64`,
-      ]);
-      return {
-        computerName: computer.name,
-        format: "png",
-        mimeType: "image/png",
-        capturedAt: new Date().toISOString(),
-        width: spec.viewport.width,
-        height: spec.viewport.height,
-        dataBase64: stdout.trim(),
-      };
-    },
-    async listVmSnapshots(computer) {
-      const spec = vmRuntimePaths.specForComputer(computer);
-      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
-      return manifest
-        .map((snapshot) => ({
-          name: snapshot.name,
-          createdAt: snapshot.createdAt,
-          sizeBytes: snapshot.sizeBytes,
-        }))
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    },
-    async createVmSnapshot(computer, input) {
-      const spec = vmRuntimePaths.specForComputer(computer);
-      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
-      if (manifest.some((snapshot) => snapshot.name === input.name)) {
-        throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
-      }
+        `ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -f pulse -i ${quoteShell(spec.audioMonitorSourceName)} -c:a libopus -b:a 128k -frame_duration 20 -application lowdelay -f ogg pipe:1`,
+      ],
+      env: {
+        ...captureEnvironment,
+        PULSE_SERVER: `unix:${spec.pulseServerPath}`,
+      },
+      targetSelector: `pulse-source=${spec.audioMonitorSourceName}`,
+      release() {},
+    } satisfies Awaited<ReturnType<SystemdRuntime["openAudioStream"]>>;
+  }
 
-      await mkdir(spec.snapshotsDirectory, { recursive: true });
-      const snapshotId = randomUUID();
-      const snapshotPath = createVmSnapshotImagePath(spec, snapshotId);
-      const tempSnapshotPath = `${snapshotPath}.tmp-${randomUUID()}`;
-      await cloneQcow2Image(qemuImgCommand, spec.diskImagePath, tempSnapshotPath);
-      await rename(tempSnapshotPath, snapshotPath);
-      const snapshotStat = await stat(snapshotPath);
-      const snapshot = {
-        id: snapshotId,
-        name: input.name,
-        createdAt: new Date().toISOString(),
-        sizeBytes: snapshotStat.size,
-        filePath: snapshotPath,
-      } satisfies PersistedVmSnapshot;
-      await writeVmSnapshotManifest(spec.snapshotManifestPath, [...manifest, snapshot]);
-      return {
+  async createAutomationSession(computer: PersistedBrowserComputer) {
+    return {
+      computerName: computer.name,
+      protocol: "cdp",
+      connect: {
+        mode: "relative-websocket-path",
+        url: `/api/computers/${encodeURIComponent(computer.name)}/automation/ws`,
+      },
+      authorization: {
+        mode: "none",
+      },
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    } satisfies Awaited<ReturnType<SystemdRuntime["createAutomationSession"]>>;
+  }
+
+  async openAutomationAttach(computer: PersistedBrowserComputer) {
+    const websocketUrl = await resolveAutomationWebSocketUrl(
+      this.browserRuntimePaths.specForComputer(computer).devtoolsPort,
+    );
+    return {
+      computerName: computer.name,
+      url: websocketUrl,
+      release() {},
+    } satisfies Awaited<ReturnType<SystemdRuntime["openAutomationAttach"]>>;
+  }
+
+  async createScreenshot(computer: PersistedBrowserComputer) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    const { stdout } = await execFileAsync("/usr/bin/bash", [
+      "-lc",
+      `DISPLAY=${quoteShell(spec.xvfbDisplay)} import -window root png:- | base64`,
+    ]);
+    return {
+      computerName: computer.name,
+      format: "png",
+      mimeType: "image/png",
+      capturedAt: new Date().toISOString(),
+      width: spec.viewport.width,
+      height: spec.viewport.height,
+      dataBase64: stdout.trim(),
+    } satisfies Awaited<ReturnType<SystemdRuntime["createScreenshot"]>>;
+  }
+
+  async listVmSnapshots(computer: PersistedVmComputer) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+    return manifest
+      .map((snapshot) => ({
         name: snapshot.name,
         createdAt: snapshot.createdAt,
         sizeBytes: snapshot.sizeBytes,
-      };
-    },
-    async deleteVmSnapshot(computer, snapshotName) {
-      const spec = vmRuntimePaths.specForComputer(computer);
-      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
-      const snapshot = manifest.find((entry) => entry.name === snapshotName);
-      if (snapshot === undefined) {
-        throw new Error(
-          `Snapshot "${snapshotName}" was not found for computer "${computer.name}".`,
-        );
-      }
+      }))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
 
-      await rm(snapshot.filePath, { force: true });
-      await writeVmSnapshotManifest(
-        spec.snapshotManifestPath,
-        manifest.filter((entry) => entry.name !== snapshotName),
-      );
-    },
-    async restoreVmComputer(computer, input) {
-      const spec = vmRuntimePaths.specForComputer(computer);
-      if (input.target === "initial") {
-        await rm(spec.diskImagePath, { force: true });
-        if (computer.runtime.source.kind === "qcow2") {
-          await assertPathExists(computer.runtime.source.path, "Base qcow2 image");
-          await createQcow2Overlay(
-            qemuImgCommand,
-            computer.runtime.source.path,
-            spec.diskImagePath,
-          );
-          return;
-        }
+  async createVmSnapshot(computer: PersistedVmComputer, input: CreateComputerSnapshotInput) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+    if (manifest.some((snapshot) => snapshot.name === input.name)) {
+      throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
+    }
 
-        await assertPathExists(computer.runtime.source.path, "Install ISO");
-        await createBlankDisk(
-          qemuImgCommand,
+    await mkdir(spec.snapshotsDirectory, { recursive: true });
+    const snapshotId = randomUUID();
+    const snapshotPath = createVmSnapshotImagePath(spec, snapshotId);
+    const tempSnapshotPath = `${snapshotPath}.tmp-${randomUUID()}`;
+    await cloneQcow2Image(this.qemuImgCommand, spec.diskImagePath, tempSnapshotPath);
+    await rename(tempSnapshotPath, snapshotPath);
+    const snapshotStat = await stat(snapshotPath);
+    const snapshot = {
+      id: snapshotId,
+      name: input.name,
+      createdAt: new Date().toISOString(),
+      sizeBytes: snapshotStat.size,
+      filePath: snapshotPath,
+    } satisfies PersistedVmSnapshot;
+    await writeVmSnapshotManifest(spec.snapshotManifestPath, [...manifest, snapshot]);
+    return {
+      name: snapshot.name,
+      createdAt: snapshot.createdAt,
+      sizeBytes: snapshot.sizeBytes,
+    };
+  }
+
+  async deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+    const snapshot = manifest.find((entry) => entry.name === snapshotName);
+    if (snapshot === undefined) {
+      throw new Error(`Snapshot "${snapshotName}" was not found for computer "${computer.name}".`);
+    }
+
+    await rm(snapshot.filePath, { force: true });
+    await writeVmSnapshotManifest(
+      spec.snapshotManifestPath,
+      manifest.filter((entry) => entry.name !== snapshotName),
+    );
+  }
+
+  async restoreVmComputer(computer: PersistedVmComputer, input: RestoreComputerInput) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    if (input.target === "initial") {
+      await rm(spec.diskImagePath, { force: true });
+      if (computer.runtime.source.kind === "qcow2") {
+        await assertPathExists(computer.runtime.source.path, "Base qcow2 image");
+        await createQcow2Overlay(
+          this.qemuImgCommand,
+          computer.runtime.source.path,
           spec.diskImagePath,
-          computer.runtime.source.diskSizeGiB ?? 32,
         );
         return;
       }
 
-      const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
-      const snapshot = manifest.find((entry) => entry.name === input.snapshotName);
-      if (snapshot === undefined) {
-        throw new Error(
-          `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
-        );
-      }
+      await assertPathExists(computer.runtime.source.path, "Install ISO");
+      await createBlankDisk(
+        this.qemuImgCommand,
+        spec.diskImagePath,
+        computer.runtime.source.diskSizeGiB ?? 32,
+      );
+      return;
+    }
 
-      const tempDiskImagePath = `${spec.diskImagePath}.tmp-${randomUUID()}`;
-      await cloneQcow2Image(qemuImgCommand, snapshot.filePath, tempDiskImagePath);
-      await rename(tempDiskImagePath, spec.diskImagePath);
-    },
-    async updateBrowserViewport(computer, viewport) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      const runtimeState = await resolvedDbusClient.getRuntimeState(computer.unitName);
-      if (runtimeState?.activeState !== "active") {
-        return;
-      }
+    const manifest = await readVmSnapshotManifest(spec.snapshotManifestPath);
+    const snapshot = manifest.find((entry) => entry.name === input.snapshotName);
+    if (snapshot === undefined) {
+      throw new Error(
+        `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
+      );
+    }
 
+    const tempDiskImagePath = `${spec.diskImagePath}.tmp-${randomUUID()}`;
+    await cloneQcow2Image(this.qemuImgCommand, snapshot.filePath, tempDiskImagePath);
+    await rename(tempDiskImagePath, spec.diskImagePath);
+  }
+
+  async updateBrowserViewport(computer: PersistedBrowserComputer, viewport: BrowserViewport) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    const runtimeState = await this.resolvedDbusClient.getRuntimeState(computer.unitName);
+    if (runtimeState?.activeState !== "active") {
+      return;
+    }
+
+    await execFileAsync("/usr/bin/bash", [
+      "-lc",
+      [
+        `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
+        `xrandr -display ${quoteShell(spec.xvfbDisplay)} -s ${viewport.width}x${viewport.height}`,
+      ].join(" "),
+    ]).catch(async () => {
       await execFileAsync("/usr/bin/bash", [
         "-lc",
         [
           `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
-          `xrandr -display ${quoteShell(spec.xvfbDisplay)} -s ${viewport.width}x${viewport.height}`,
+          `xrandr -display ${quoteShell(spec.xvfbDisplay)} --fb ${viewport.width}x${viewport.height}`,
         ].join(" "),
-      ]).catch(async () => {
-        await execFileAsync("/usr/bin/bash", [
-          "-lc",
-          [
-            `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
-            `xrandr -display ${quoteShell(spec.xvfbDisplay)} --fb ${viewport.width}x${viewport.height}`,
-          ].join(" "),
-        ]);
-      });
+      ]);
+    });
 
-      const websocketUrl = await resolveAutomationWebSocketUrl(spec.devtoolsPort);
-      await resizeChromiumWindow(websocketUrl, viewport);
-    },
-    async createPersistentUnit(computer) {
-      await resolvedUnitFileStore.writeUnitFile(computer);
-      await resolvedDbusClient.reloadDaemon();
-      await resolvedDbusClient.setUnitEnabled(
-        computer.unitName,
-        computer.lifecycle.autostart === true,
-      );
-      const runtimeState = await resolvedDbusClient.getRuntimeState(computer.unitName);
-      if (runtimeState !== null) {
-        return runtimeState;
-      }
+    const websocketUrl = await resolveAutomationWebSocketUrl(spec.devtoolsPort);
+    await resizeChromiumWindow(websocketUrl, viewport);
+  }
 
-      return {
-        unitName: computer.unitName,
-        description: computer.description,
-        unitType: "service",
-        loadState: "loaded",
-        activeState: "inactive",
-        subState: "dead",
-        execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
-        workingDirectory:
-          computer.profile === "host"
-            ? computer.runtime.workingDirectory
-            : computer.profile === "browser"
-              ? browserRuntimePaths.specForComputer(computer).stateDirectory
-              : computer.profile === "vm"
-                ? vmRuntimePaths.specForComputer(computer).stateDirectory
-                : undefined,
-        environment: computer.profile === "host" ? computer.runtime.environment : undefined,
-        cpuWeight: computer.resources.cpuWeight,
-        memoryMaxMiB: computer.resources.memoryMaxMiB,
-      };
-    },
-    async deletePersistentUnit(unitName) {
-      await resolvedDbusClient.deletePersistentUnit(unitName);
-      await resolvedUnitFileStore.deleteUnitFile(unitName);
-      await resolvedDbusClient.reloadDaemon();
-    },
-    getRuntimeState: resolvedDbusClient.getRuntimeState,
-    startUnit: resolvedDbusClient.startUnit,
-    stopUnit: resolvedDbusClient.stopUnit,
-    restartUnit: resolvedDbusClient.restartUnit,
-    listHostUnits: resolvedDbusClient.listHostUnits,
-    getHostUnit: resolvedDbusClient.getHostUnit,
-  };
+  async createPersistentUnit(computer: PersistedComputer) {
+    await this.resolvedUnitFileStore.writeUnitFile(computer);
+    await this.resolvedDbusClient.reloadDaemon();
+    await this.resolvedDbusClient.setUnitEnabled(
+      computer.unitName,
+      computer.lifecycle.autostart === true,
+    );
+    const runtimeState = await this.resolvedDbusClient.getRuntimeState(computer.unitName);
+    if (runtimeState !== null) {
+      return runtimeState;
+    }
+
+    return {
+      unitName: computer.unitName,
+      description: computer.description,
+      unitType: "service",
+      loadState: "loaded",
+      activeState: "inactive",
+      subState: "dead",
+      execStart: computer.profile === "host" ? computer.runtime.command : "/usr/bin/bash -lc",
+      workingDirectory:
+        computer.profile === "host"
+          ? computer.runtime.workingDirectory
+          : computer.profile === "browser"
+            ? this.browserRuntimePaths.specForComputer(computer).stateDirectory
+            : computer.profile === "vm"
+              ? this.vmRuntimePaths.specForComputer(computer).stateDirectory
+              : undefined,
+      environment: computer.profile === "host" ? computer.runtime.environment : undefined,
+      cpuWeight: computer.resources.cpuWeight,
+      memoryMaxMiB: computer.resources.memoryMaxMiB,
+    };
+  }
+
+  async deletePersistentUnit(unitName: string) {
+    await this.resolvedDbusClient.deletePersistentUnit(unitName);
+    await this.resolvedUnitFileStore.deleteUnitFile(unitName);
+    await this.resolvedDbusClient.reloadDaemon();
+  }
+
+  async getRuntimeState(unitName: string) {
+    return await this.resolvedDbusClient.getRuntimeState(unitName);
+  }
+
+  async startUnit(unitName: string) {
+    return await this.resolvedDbusClient.startUnit(unitName);
+  }
+
+  async stopUnit(unitName: string) {
+    return await this.resolvedDbusClient.stopUnit(unitName);
+  }
+
+  async restartUnit(unitName: string) {
+    return await this.resolvedDbusClient.restartUnit(unitName);
+  }
+
+  async listHostUnits() {
+    return await this.resolvedDbusClient.listHostUnits();
+  }
+
+  async getHostUnit(unitName: string) {
+    return await this.resolvedDbusClient.getHostUnit(unitName);
+  }
 }
 
 async function resizeChromiumWindow(websocketUrl: string, viewport: BrowserViewport) {

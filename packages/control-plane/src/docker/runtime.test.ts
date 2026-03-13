@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import { afterEach, expect, test, vi } from "vitest";
-import { createDockerRuntime } from "./runtime";
+import { DefaultDockerRuntime } from "./runtime";
 
 vi.mock("dockerode", () => {
   const DockerConstructor = vi.fn(
@@ -24,9 +24,7 @@ afterEach(() => {
 });
 
 test("uses the configured docker socket path when creating a client", () => {
-  createDockerRuntime({
-    socketPath: "/tmp/computerd-docker.sock",
-  });
+  new DefaultDockerRuntime(new Docker({ socketPath: "/tmp/computerd-docker.sock" }));
 
   expect(Docker).toHaveBeenCalledWith({
     socketPath: "/tmp/computerd-docker.sock",
@@ -34,7 +32,7 @@ test("uses the configured docker socket path when creating a client", () => {
 });
 
 test("pulls missing images before retrying container creation", async () => {
-  const runtime = createDockerRuntime();
+  const runtime = new DefaultDockerRuntime(new Docker({ socketPath: "/var/run/docker.sock" }));
   const dockerClient = vi.mocked(Docker).mock.instances[0] as unknown as {
     createContainer: ReturnType<typeof vi.fn>;
     pull: ReturnType<typeof vi.fn>;

@@ -2,11 +2,13 @@ import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
+import { SystemdDbusClient } from "./dbus-client";
 import {
   createCloudInitNetworkConfig,
   createCloudInitUserData,
-  createSystemdRuntime,
+  DefaultSystemdRuntime,
 } from "./runtime";
+import { UnitFileStore } from "./unit-file-store";
 
 const directories: string[] = [];
 
@@ -21,29 +23,9 @@ test("deleteVmComputer removes persisted vm state and runtime directories", asyn
   const root = await mkdtemp(join(tmpdir(), "computerd-systemd-runtime-"));
   directories.push(root);
 
-  const runtime = createSystemdRuntime({
-    dbusClient: {
-      deletePersistentUnit: async () => {},
-      getHostUnit: async () => null,
-      getRuntimeState: async () => null,
-      listHostUnits: async () => [],
-      reloadDaemon: async () => {},
-      restartUnit: async () => {
-        throw new Error("not used");
-      },
-      setUnitEnabled: async () => {},
-      startUnit: async () => {
-        throw new Error("not used");
-      },
-      stopUnit: async () => {
-        throw new Error("not used");
-      },
-    },
-    unitFileStore: {
-      deleteUnitFile: async () => {},
-      getUnitFileContents: async () => null,
-      writeUnitFile: async () => "",
-    },
+  const runtime = new DefaultSystemdRuntime({
+    dbusClient: new TestSystemdDbusClient(),
+    unitFileStore: new TestUnitFileStore(),
     unitFileStoreOptions: {
       directory: join(root, "units"),
       browserRuntimeDirectory: join(root, "browser-run"),
@@ -122,30 +104,10 @@ test("vm snapshot operations use qemu-img and managed snapshot paths", async () 
   const logPath = join(root, "qemu-img.log");
   process.env.QEMU_IMG_LOG_PATH = logPath;
 
-  const runtime = createSystemdRuntime({
-    dbusClient: {
-      deletePersistentUnit: async () => {},
-      getHostUnit: async () => null,
-      getRuntimeState: async () => null,
-      listHostUnits: async () => [],
-      reloadDaemon: async () => {},
-      restartUnit: async () => {
-        throw new Error("not used");
-      },
-      setUnitEnabled: async () => {},
-      startUnit: async () => {
-        throw new Error("not used");
-      },
-      stopUnit: async () => {
-        throw new Error("not used");
-      },
-    },
+  const runtime = new DefaultSystemdRuntime({
+    dbusClient: new TestSystemdDbusClient(),
     qemuImgCommand,
-    unitFileStore: {
-      deleteUnitFile: async () => {},
-      getUnitFileContents: async () => null,
-      writeUnitFile: async () => "",
-    },
+    unitFileStore: new TestUnitFileStore(),
     unitFileStoreOptions: {
       directory: join(root, "units"),
       browserRuntimeDirectory: join(root, "browser-run"),
@@ -312,4 +274,48 @@ async function createFakeQemuImg(root: string) {
   );
   await chmod(scriptPath, 0o755);
   return scriptPath;
+}
+
+class TestSystemdDbusClient extends SystemdDbusClient {
+  async deletePersistentUnit() {}
+
+  async getHostUnit() {
+    return null;
+  }
+
+  async getRuntimeState() {
+    return null;
+  }
+
+  async listHostUnits() {
+    return [];
+  }
+
+  async reloadDaemon() {}
+
+  async restartUnit(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async setUnitEnabled() {}
+
+  async startUnit(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async stopUnit(): Promise<never> {
+    throw new Error("not used");
+  }
+}
+
+class TestUnitFileStore extends UnitFileStore {
+  async deleteUnitFile() {}
+
+  async getUnitFileContents() {
+    return null;
+  }
+
+  async writeUnitFile() {
+    return "";
+  }
 }

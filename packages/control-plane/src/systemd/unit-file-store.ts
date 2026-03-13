@@ -10,12 +10,6 @@ import type {
   PersistedVmComputer,
 } from "./types";
 
-export interface UnitFileStore {
-  deleteUnitFile: (unitName: string) => Promise<void>;
-  getUnitFileContents: (unitName: string) => Promise<string | null>;
-  writeUnitFile: (computer: PersistedComputer) => Promise<string>;
-}
-
 export interface FileUnitStoreOptions {
   directory: string;
   browserRuntimeDirectory: string;
@@ -27,79 +21,83 @@ export interface FileUnitStoreOptions {
   vmIsolatedBridge?: string;
 }
 
-export function createFileUnitStore({
-  directory,
-  browserRuntimeDirectory,
-  browserStateDirectory,
-  terminalRuntimeDirectory,
-  vmRuntimeDirectory,
-  vmStateDirectory,
-  vmHostBridge,
-  vmIsolatedBridge,
-}: FileUnitStoreOptions): UnitFileStore {
-  const consoleRuntimePaths = createConsoleRuntimePaths({
-    runtimeDirectory: terminalRuntimeDirectory,
-  });
-  const browserRuntimePaths = createBrowserRuntimePaths({
-    runtimeRootDirectory: browserRuntimeDirectory,
-    stateRootDirectory: browserStateDirectory,
-  });
-  const vmRuntimePaths = createVmRuntimePaths({
-    runtimeRootDirectory: vmRuntimeDirectory,
-    stateRootDirectory: vmStateDirectory,
-  });
+export abstract class UnitFileStore {
+  abstract deleteUnitFile(unitName: string): Promise<void>;
+  abstract getUnitFileContents(unitName: string): Promise<string | null>;
+  abstract writeUnitFile(computer: PersistedComputer): Promise<string>;
+}
 
-  return {
-    async writeUnitFile(computer) {
-      if (computer.profile === "container") {
-        throw new TypeError("Container computers do not render systemd unit files.");
-      }
-      const contents =
-        computer.profile === "host"
-          ? renderHostUnitFile(computer, {
-              runtimeDirectory: terminalRuntimeDirectory,
+export class FileUnitStore extends UnitFileStore {
+  private readonly consoleRuntimePaths;
+  private readonly browserRuntimePaths;
+  private readonly vmRuntimePaths;
+
+  constructor(private readonly options: FileUnitStoreOptions) {
+    super();
+    this.consoleRuntimePaths = createConsoleRuntimePaths({
+      runtimeDirectory: options.terminalRuntimeDirectory,
+    });
+    this.browserRuntimePaths = createBrowserRuntimePaths({
+      runtimeRootDirectory: options.browserRuntimeDirectory,
+      stateRootDirectory: options.browserStateDirectory,
+    });
+    this.vmRuntimePaths = createVmRuntimePaths({
+      runtimeRootDirectory: options.vmRuntimeDirectory,
+      stateRootDirectory: options.vmStateDirectory,
+    });
+  }
+
+  async writeUnitFile(computer: PersistedComputer) {
+    if (computer.profile === "container") {
+      throw new TypeError("Container computers do not render systemd unit files.");
+    }
+    const contents =
+      computer.profile === "host"
+        ? renderHostUnitFile(computer, {
+            runtimeDirectory: this.options.terminalRuntimeDirectory,
+          })
+        : computer.profile === "browser"
+          ? renderBrowserUnitFile(computer, {
+              runtimeRootDirectory: this.options.browserRuntimeDirectory,
+              stateRootDirectory: this.options.browserStateDirectory,
             })
-          : computer.profile === "browser"
-            ? renderBrowserUnitFile(computer, {
-                runtimeRootDirectory: browserRuntimeDirectory,
-                stateRootDirectory: browserStateDirectory,
-              })
-            : renderVmUnitFile(computer, {
-                runtimeRootDirectory: vmRuntimeDirectory,
-                stateRootDirectory: vmStateDirectory,
-                vmHostBridge,
-                vmIsolatedBridge,
-              });
-      if (computer.profile === "host" && computer.access.console?.mode === "pty") {
-        await consoleRuntimePaths.ensureComputerDirectory(computer);
-      } else if (computer.profile === "browser") {
-        const spec = browserRuntimePaths.specForComputer(computer);
-        await mkdir(spec.profileDirectory, { recursive: true });
-        await mkdir(spec.runtimeDirectory, { recursive: true });
-      } else if (computer.profile === "vm") {
-        const spec = vmRuntimePaths.specForComputer(computer);
-        await mkdir(spec.stateDirectory, { recursive: true });
-        await mkdir(spec.runtimeDirectory, { recursive: true });
-      }
-      await mkdir(directory, { recursive: true });
-      await writeFile(join(directory, computer.unitName), contents);
-      return contents;
-    },
-    async deleteUnitFile(unitName) {
-      await rm(join(directory, unitName), { force: true });
-    },
-    async getUnitFileContents(unitName) {
-      try {
-        return await readFile(join(directory, unitName), "utf8");
-      } catch (error: unknown) {
-        if (isMissingFileError(error)) {
-          return null;
-        }
+          : renderVmUnitFile(computer, {
+              runtimeRootDirectory: this.options.vmRuntimeDirectory,
+              stateRootDirectory: this.options.vmStateDirectory,
+              vmHostBridge: this.options.vmHostBridge,
+              vmIsolatedBridge: this.options.vmIsolatedBridge,
+            });
+    if (computer.profile === "host" && computer.access.console?.mode === "pty") {
+      await this.consoleRuntimePaths.ensureComputerDirectory(computer);
+    } else if (computer.profile === "browser") {
+      const spec = this.browserRuntimePaths.specForComputer(computer);
+      await mkdir(spec.profileDirectory, { recursive: true });
+      await mkdir(spec.runtimeDirectory, { recursive: true });
+    } else if (computer.profile === "vm") {
+      const spec = this.vmRuntimePaths.specForComputer(computer);
+      await mkdir(spec.stateDirectory, { recursive: true });
+      await mkdir(spec.runtimeDirectory, { recursive: true });
+    }
+    await mkdir(this.options.directory, { recursive: true });
+    await writeFile(join(this.options.directory, computer.unitName), contents);
+    return contents;
+  }
 
-        throw error;
+  async deleteUnitFile(unitName: string) {
+    await rm(join(this.options.directory, unitName), { force: true });
+  }
+
+  async getUnitFileContents(unitName: string) {
+    try {
+      return await readFile(join(this.options.directory, unitName), "utf8");
+    } catch (error: unknown) {
+      if (isMissingFileError(error)) {
+        return null;
       }
-    },
-  };
+
+      throw error;
+    }
+  }
 }
 
 function renderHostUnitFile(

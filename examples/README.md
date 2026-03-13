@@ -4,7 +4,7 @@
 
 最简单的 systemd 封装用法示例：
 
-- 通过 `createControlPlane()` 创建一个 control plane
+- 通过 `new SystemdControlPlane()` 创建一个 control plane
 - 创建一个 `host` 类型的 persistent `computer`
 - 将 `runtime.command` 设为 `/usr/bin/bash -i -l`
 - 执行 `start -> get detail -> stop -> delete`

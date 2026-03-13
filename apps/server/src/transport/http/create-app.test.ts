@@ -1,6 +1,9 @@
 import { once } from "node:events";
-import { createControlPlane } from "@computerd/control-plane";
-import { BrokenComputerError } from "@computerd/control-plane";
+import type { BaseControlPlane } from "@computerd/control-plane";
+import {
+  BrokenComputerError,
+  DevelopmentControlPlane as DevelopmentControlPlaneImpl,
+} from "@computerd/control-plane";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp, createTerminalProcess } from "./create-app";
 
@@ -65,79 +68,54 @@ test("createTerminalProcess uses raw pipes when lease disables pty", async () =>
 });
 
 test("serves computer and host unit APIs", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
-  const app = createApp({
-    deleteContainerImage: controlPlane.deleteContainerImage,
-    deleteVmImage: controlPlane.deleteVmImage,
-    createAutomationSession: controlPlane.createAutomationSession,
-    createAudioSession: controlPlane.createAudioSession,
-    createConsoleSession: controlPlane.createConsoleSession,
-    createExecSession: async (name) =>
-      name === "workspace-container"
-        ? {
-            computerName: name,
-            protocol: "ttyd",
-            connect: {
-              mode: "relative-websocket-path",
-              url: `/api/computers/${encodeURIComponent(name)}/exec/ws`,
-            },
-            authorization: {
-              mode: "none",
-            },
-          }
-        : await controlPlane.createExecSession(name),
-    openConsoleAttach: controlPlane.openConsoleAttach,
-    openExecAttach: async (name) =>
-      name === "workspace-container"
-        ? {
-            command: "docker",
-            args: ["exec", "-it", "workspace-container", "/bin/sh"],
-            computerName: name,
-            release() {},
-          }
-        : await controlPlane.openExecAttach(name),
-    openAutomationAttach: controlPlane.openAutomationAttach,
-    openAudioStream: async (name) => ({
-      computerName: name,
-      command: "/bin/bash",
-      args: ["-lc", "printf 'OggS-test-audio'"],
-      targetSelector: `computerd.computer.name=${name}`,
-      release() {},
-    }),
-    listComputers: controlPlane.listComputers,
-    listComputerSnapshots: controlPlane.listComputerSnapshots,
-    createMonitorSession: async (name) =>
-      name === "research-browser"
-        ? {
-            computerName: name,
-            protocol: "vnc",
-            connect: {
-              mode: "relative-websocket-path",
-              url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
-            },
-            authorization: {
-              mode: "none",
-            },
-          }
-        : await controlPlane.createMonitorSession(name),
-    openMonitorAttach: controlPlane.openMonitorAttach,
-    createScreenshot: controlPlane.createScreenshot,
-    getComputer: controlPlane.getComputer,
-    getImage: controlPlane.getImage,
-    createComputer: controlPlane.createComputer,
-    createComputerSnapshot: controlPlane.createComputerSnapshot,
-    deleteComputer: controlPlane.deleteComputer,
-    deleteComputerSnapshot: controlPlane.deleteComputerSnapshot,
-    startComputer: controlPlane.startComputer,
-    stopComputer: controlPlane.stopComputer,
-    restartComputer: controlPlane.restartComputer,
-    restoreComputer: controlPlane.restoreComputer,
-    listImages: controlPlane.listImages,
-    listHostUnits: controlPlane.listHostUnits,
-    importVmImage: controlPlane.importVmImage,
-    pullContainerImage: controlPlane.pullContainerImage,
-    getHostUnit: controlPlane.getHostUnit,
-    updateBrowserViewport: controlPlane.updateBrowserViewport,
+  const controlPlane = new DevelopmentControlPlaneImpl();
+  const app = createApp(controlPlane, {
+    overrides: {
+      createExecSession: async (name) =>
+        name === "workspace-container"
+          ? {
+              computerName: name,
+              protocol: "ttyd",
+              connect: {
+                mode: "relative-websocket-path",
+                url: `/api/computers/${encodeURIComponent(name)}/exec/ws`,
+              },
+              authorization: {
+                mode: "none",
+              },
+            }
+          : await controlPlane.createExecSession(name),
+      openExecAttach: async (name) =>
+        name === "workspace-container"
+          ? {
+              command: "docker",
+              args: ["exec", "-it", "workspace-container", "/bin/sh"],
+              computerName: name,
+              release() {},
+            }
+          : await controlPlane.openExecAttach(name),
+      openAudioStream: async (name) => ({
+        computerName: name,
+        command: "/bin/bash",
+        args: ["-lc", "printf 'OggS-test-audio'"],
+        targetSelector: `computerd.computer.name=${name}`,
+        release() {},
+      }),
+      createMonitorSession: async (name) =>
+        name === "research-browser"
+          ? {
+              computerName: name,
+              protocol: "vnc",
+              connect: {
+                mode: "relative-websocket-path",
+                url: `/api/computers/${encodeURIComponent(name)}/monitor/ws`,
+              },
+              authorization: {
+                mode: "none",
+              },
+            }
+          : await controlPlane.createMonitorSession(name),
+    },
   });
 
   servers.push(app);
@@ -752,91 +730,98 @@ test("returns broken computers and blocks broken actions with conflict responses
     "broken-host",
     "Broken computers currently support inspect only.",
   );
-  const app = createApp({
-    deleteContainerImage: async () => {
-      throw brokenError;
-    },
-    deleteVmImage: async () => {
-      throw brokenError;
-    },
-    createAutomationSession: async () => {
-      throw brokenError;
-    },
-    createAudioSession: async () => {
-      throw brokenError;
-    },
-    createConsoleSession: async () => {
-      throw brokenError;
-    },
-    createExecSession: async () => {
-      throw brokenError;
-    },
-    openConsoleAttach: async () => {
-      throw brokenError;
-    },
-    openExecAttach: async () => {
-      throw brokenError;
-    },
-    openAutomationAttach: async () => {
-      throw brokenError;
-    },
-    openAudioStream: async () => {
-      throw brokenError;
-    },
-    listComputers: async () => [brokenDetail],
-    listComputerSnapshots: async () => {
-      throw brokenError;
-    },
-    createMonitorSession: async () => {
-      throw brokenError;
-    },
-    openMonitorAttach: async () => {
-      throw brokenError;
-    },
-    createScreenshot: async () => {
-      throw brokenError;
-    },
-    getComputer: async () => brokenDetail,
-    getImage: async () => {
-      throw brokenError;
-    },
-    createComputer: async () => brokenDetail,
-    createComputerSnapshot: async () => {
-      throw brokenError;
-    },
-    deleteComputer: async () => {
-      throw brokenError;
-    },
-    deleteComputerSnapshot: async () => {
-      throw brokenError;
-    },
-    startComputer: async () => {
-      throw brokenError;
-    },
-    stopComputer: async () => {
-      throw brokenError;
-    },
-    restartComputer: async () => {
-      throw brokenError;
-    },
-    restoreComputer: async () => {
-      throw brokenError;
-    },
-    listImages: async () => [],
-    listHostUnits: async () => [],
-    importVmImage: async () => {
-      throw brokenError;
-    },
-    pullContainerImage: async () => {
-      throw brokenError;
-    },
-    getHostUnit: async () => {
-      throw new Error("not used");
-    },
-    updateBrowserViewport: async () => {
-      throw brokenError;
-    },
-  });
+  const app = createApp(
+    createMockControlPlane({
+      imageProvider: {
+        deleteContainerImage: async () => {
+          throw brokenError;
+        },
+        deleteVmImage: async () => {
+          throw brokenError;
+        },
+        getImage: async () => {
+          throw brokenError;
+        },
+        importVmImage: async () => {
+          throw brokenError;
+        },
+        listImages: async () => [],
+        pullContainerImage: async () => {
+          throw brokenError;
+        },
+        requireVmImage: async () => {
+          throw brokenError;
+        },
+      },
+      createAutomationSession: async () => {
+        throw brokenError;
+      },
+      createAudioSession: async () => {
+        throw brokenError;
+      },
+      createConsoleSession: async () => {
+        throw brokenError;
+      },
+      createExecSession: async () => {
+        throw brokenError;
+      },
+      openConsoleAttach: async () => {
+        throw brokenError;
+      },
+      openExecAttach: async () => {
+        throw brokenError;
+      },
+      openAutomationAttach: async () => {
+        throw brokenError;
+      },
+      openAudioStream: async () => {
+        throw brokenError;
+      },
+      listComputers: async () => [brokenDetail],
+      listComputerSnapshots: async () => {
+        throw brokenError;
+      },
+      createMonitorSession: async () => {
+        throw brokenError;
+      },
+      openMonitorAttach: async () => {
+        throw brokenError;
+      },
+      createScreenshot: async () => {
+        throw brokenError;
+      },
+      getComputer: async () => brokenDetail,
+      createComputer: async () => brokenDetail,
+      createComputerSnapshot: async () => {
+        throw brokenError;
+      },
+      deleteComputer: async () => {
+        throw brokenError;
+      },
+      deleteComputerSnapshot: async () => {
+        throw brokenError;
+      },
+      startComputer: async () => {
+        throw brokenError;
+      },
+      stopComputer: async () => {
+        throw brokenError;
+      },
+      restartComputer: async () => {
+        throw brokenError;
+      },
+      restoreComputer: async () => {
+        throw brokenError;
+      },
+      listHostUnits: async () => [],
+      getHostUnit: async () => {
+        throw new Error("not used");
+      },
+      updateBrowserViewport: async () => {
+        throw brokenError;
+      },
+    }),
+  );
 
   servers.push(app);
   app.listen(0, "127.0.0.1");
@@ -879,40 +864,8 @@ test("returns broken computers and blocks broken actions with conflict responses
 });
 
 test("serves container session APIs across stopped and running states", async () => {
-  const controlPlane = createControlPlane({ COMPUTERD_RUNTIME_MODE: "development" });
-  const app = createApp({
-    deleteContainerImage: controlPlane.deleteContainerImage,
-    deleteVmImage: controlPlane.deleteVmImage,
-    createAutomationSession: controlPlane.createAutomationSession,
-    createAudioSession: controlPlane.createAudioSession,
-    createConsoleSession: controlPlane.createConsoleSession,
-    createExecSession: controlPlane.createExecSession,
-    openConsoleAttach: controlPlane.openConsoleAttach,
-    openExecAttach: controlPlane.openExecAttach,
-    openAutomationAttach: controlPlane.openAutomationAttach,
-    openAudioStream: controlPlane.openAudioStream,
-    listComputers: controlPlane.listComputers,
-    listComputerSnapshots: controlPlane.listComputerSnapshots,
-    createMonitorSession: controlPlane.createMonitorSession,
-    openMonitorAttach: controlPlane.openMonitorAttach,
-    createScreenshot: controlPlane.createScreenshot,
-    getComputer: controlPlane.getComputer,
-    getImage: controlPlane.getImage,
-    createComputer: controlPlane.createComputer,
-    createComputerSnapshot: controlPlane.createComputerSnapshot,
-    deleteComputer: controlPlane.deleteComputer,
-    deleteComputerSnapshot: controlPlane.deleteComputerSnapshot,
-    startComputer: controlPlane.startComputer,
-    stopComputer: controlPlane.stopComputer,
-    restartComputer: controlPlane.restartComputer,
-    restoreComputer: controlPlane.restoreComputer,
-    listImages: controlPlane.listImages,
-    listHostUnits: controlPlane.listHostUnits,
-    importVmImage: controlPlane.importVmImage,
-    pullContainerImage: controlPlane.pullContainerImage,
-    getHostUnit: controlPlane.getHostUnit,
-    updateBrowserViewport: controlPlane.updateBrowserViewport,
-  });
+  const controlPlane = new DevelopmentControlPlaneImpl();
+  const app = createApp(controlPlane);
 
   servers.push(app);
   app.listen(0, "127.0.0.1");
@@ -1033,3 +986,7 @@ test("serves container session APIs across stopped and running states", async ()
   });
   expect(deleteResponse.status).toBe(204);
 });
+
+function createMockControlPlane(methods: Partial<BaseControlPlane>) {
+  return methods as BaseControlPlane;
+}

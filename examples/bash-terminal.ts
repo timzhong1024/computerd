@@ -1,7 +1,7 @@
-import { createControlPlane } from "@computerd/control-plane";
+import { SystemdControlPlane } from "@computerd/control-plane";
 
 async function main() {
-  const controlPlane = createControlPlane({
+  const controlPlane = new SystemdControlPlane({
     ...process.env,
     COMPUTERD_METADATA_DIR: process.env.COMPUTERD_METADATA_DIR ?? "/var/lib/computerd/computers",
     COMPUTERD_UNIT_DIR: process.env.COMPUTERD_UNIT_DIR ?? "/etc/systemd/system",

@@ -12,10 +12,10 @@ export interface PipeWireHostManagerOptions {
   browserStateDirectory: string;
 }
 
-export interface PipeWireHostManager {
-  deleteRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  ensureRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  prepareRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
+export abstract class PipeWireHostManager {
+  abstract deleteRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract ensureRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract prepareRuntime(computer: PersistedBrowserComputer): Promise<void>;
 }
 
 export interface PipeWireNodeTarget {
@@ -23,50 +23,46 @@ export interface PipeWireNodeTarget {
   selector: string;
 }
 
-export function createPipeWireHostManager({
-  browserRuntimeDirectory,
-  browserStateDirectory,
-}: PipeWireHostManagerOptions): PipeWireHostManager {
-  const browserRuntimePaths = createBrowserRuntimePaths({
-    runtimeRootDirectory: browserRuntimeDirectory,
-    stateRootDirectory: browserStateDirectory,
-  });
+export class DefaultPipeWireHostManager extends PipeWireHostManager {
+  private readonly browserRuntimePaths;
 
-  return {
-    async ensureRuntimeIdentity(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      await ensureSystemUser(spec.runtimeUser, spec.homeDirectory);
-      await prepareBrowserRuntimeDirectories(spec.runtimeUser, [
-        spec.stateDirectory,
-        spec.runtimeDirectory,
-        spec.homeDirectory,
-        spec.configDirectory,
-        spec.pipewireClientConfigDirectory,
-        spec.profileDirectory,
-      ]);
-      await ensurePipeWireClientConfig(computer, spec.pipewireClientConfigDirectory);
-    },
-    async prepareRuntime(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      await ensureSystemUser(spec.runtimeUser, spec.homeDirectory);
-      await prepareBrowserRuntimeDirectories(spec.runtimeUser, [
-        spec.stateDirectory,
-        spec.runtimeDirectory,
-        spec.homeDirectory,
-        spec.configDirectory,
-        spec.pipewireClientConfigDirectory,
-        spec.profileDirectory,
-      ]);
-      await ensurePipeWireClientConfig(computer, spec.pipewireClientConfigDirectory);
-    },
-    async deleteRuntimeIdentity(computer) {
-      const spec = browserRuntimePaths.specForComputer(computer);
-      await execFileAsync("/usr/bin/bash", [
-        "-lc",
-        `id -u ${quoteShell(spec.runtimeUser)} >/dev/null 2>&1 && userdel ${quoteShell(spec.runtimeUser)} || true`,
-      ]);
-    },
-  };
+  constructor(options: PipeWireHostManagerOptions) {
+    super();
+    this.browserRuntimePaths = createBrowserRuntimePaths({
+      runtimeRootDirectory: options.browserRuntimeDirectory,
+      stateRootDirectory: options.browserStateDirectory,
+    });
+  }
+
+  async ensureRuntimeIdentity(computer: PersistedBrowserComputer) {
+    await this.prepareComputerRuntime(computer);
+  }
+
+  async prepareRuntime(computer: PersistedBrowserComputer) {
+    await this.prepareComputerRuntime(computer);
+  }
+
+  async deleteRuntimeIdentity(computer: PersistedBrowserComputer) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    await execFileAsync("/usr/bin/bash", [
+      "-lc",
+      `id -u ${quoteShell(spec.runtimeUser)} >/dev/null 2>&1 && userdel ${quoteShell(spec.runtimeUser)} || true`,
+    ]);
+  }
+
+  private async prepareComputerRuntime(computer: PersistedBrowserComputer) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    await ensureSystemUser(spec.runtimeUser, spec.homeDirectory);
+    await prepareBrowserRuntimeDirectories(spec.runtimeUser, [
+      spec.stateDirectory,
+      spec.runtimeDirectory,
+      spec.homeDirectory,
+      spec.configDirectory,
+      spec.pipewireClientConfigDirectory,
+      spec.profileDirectory,
+    ]);
+    await ensurePipeWireClientConfig(computer, spec.pipewireClientConfigDirectory);
+  }
 }
 
 export async function resolvePipeWireNodeTarget(

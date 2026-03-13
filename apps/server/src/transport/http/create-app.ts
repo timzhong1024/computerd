@@ -31,27 +31,12 @@ import {
   parsePullContainerImageInput,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
-  type ComputerAutomationSession,
-  type ComputerAudioSession,
-  type ComputerConsoleSession,
-  type ComputerDetail,
-  type ComputerExecSession,
-  type ComputerMonitorSession,
-  type ComputerScreenshot,
-  type ComputerSnapshot,
-  type ComputerSummary,
-  type CreateComputerInput,
-  type CreateComputerSnapshotInput,
-  type HostUnitDetail,
-  type HostUnitSummary,
-  type ImageDetail,
-  type ImageSummary,
-  type RestoreComputerInput,
 } from "@computerd/core";
 import {
   type BrowserAutomationLease,
   type BrowserAudioStreamLease,
   type BrowserMonitorLease,
+  type BaseControlPlane,
   BrokenImageError,
   BrokenComputerError,
   ComputerConsoleUnavailableError,
@@ -65,6 +50,7 @@ import {
   ImageNotFoundError,
   UnsupportedComputerFeatureError,
 } from "@computerd/control-plane";
+import { createMcpHandler } from "./create-mcp-handler";
 
 class InvalidJsonBodyError extends Error {
   constructor(message: string) {
@@ -74,82 +60,13 @@ class InvalidJsonBodyError extends Error {
 }
 
 interface CreateAppOptions {
-  deleteContainerImage: (id: string) => Promise<void>;
-  deleteVmImage: (id: string) => Promise<void>;
-  createAutomationSession: (name: string) => Promise<ComputerAutomationSession>;
-  createAudioSession: (name: string) => Promise<ComputerAudioSession>;
   handleMcpRequest?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
-  createConsoleSession: (name: string) => Promise<ComputerConsoleSession>;
-  createExecSession: (name: string) => Promise<ComputerExecSession>;
-  openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
-  openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
-  openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
-  openAudioStream: (name: string) => Promise<BrowserAudioStreamLease>;
-  listComputers: () => Promise<ComputerSummary[]>;
-  listComputerSnapshots: (name: string) => Promise<ComputerSnapshot[]>;
-  createMonitorSession: (name: string) => Promise<ComputerMonitorSession>;
-  openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
-  createScreenshot: (name: string) => Promise<ComputerScreenshot>;
-  getComputer: (name: string) => Promise<ComputerDetail>;
-  getImage: (id: string) => Promise<ImageDetail>;
-  createComputer: (input: CreateComputerInput) => Promise<ComputerDetail>;
-  createComputerSnapshot: (
-    name: string,
-    input: CreateComputerSnapshotInput,
-  ) => Promise<ComputerSnapshot>;
-  deleteComputer: (name: string) => Promise<void>;
-  deleteComputerSnapshot: (name: string, snapshotName: string) => Promise<void>;
-  startComputer: (name: string) => Promise<ComputerDetail>;
-  stopComputer: (name: string) => Promise<ComputerDetail>;
-  restartComputer: (name: string) => Promise<ComputerDetail>;
-  restoreComputer: (name: string, input: RestoreComputerInput) => Promise<ComputerDetail>;
-  listImages: () => Promise<ImageSummary[]>;
-  listHostUnits: () => Promise<HostUnitSummary[]>;
-  pullContainerImage: (reference: string) => Promise<ImageDetail>;
-  getHostUnit: (unitName: string) => Promise<HostUnitDetail>;
-  importVmImage: (input: {
-    source: { type: "file"; path: string } | { type: "url"; url: string };
-  }) => Promise<ImageDetail>;
-  updateBrowserViewport: (
-    name: string,
-    input: { width: number; height: number },
-  ) => Promise<ComputerDetail>;
+  overrides?: Partial<BaseControlPlane>;
 }
 
-export function createApp({
-  deleteContainerImage,
-  deleteVmImage,
-  createAutomationSession,
-  createAudioSession,
-  handleMcpRequest,
-  createConsoleSession,
-  createExecSession,
-  openConsoleAttach,
-  openExecAttach,
-  openAutomationAttach,
-  openAudioStream,
-  listComputers,
-  listComputerSnapshots,
-  createMonitorSession,
-  openMonitorAttach,
-  createScreenshot,
-  getComputer,
-  getImage,
-  createComputer,
-  createComputerSnapshot,
-  deleteComputer,
-  deleteComputerSnapshot,
-  startComputer,
-  stopComputer,
-  restartComputer,
-  restoreComputer,
-  listImages,
-  listHostUnits,
-  pullContainerImage,
-  getHostUnit,
-  importVmImage,
-  updateBrowserViewport,
-}: CreateAppOptions) {
+export function createApp(controlPlane: BaseControlPlane, options: CreateAppOptions = {}) {
+  const appControlPlane = withControlPlaneOverrides(controlPlane, options.overrides);
+  const handleMcpRequest = options.handleMcpRequest ?? createMcpHandler(appControlPlane);
   const websocketServer = new WebSocketServer({ noServer: true });
   const server = createServer(async (request, response) => {
     const requestLog = createRequestLogContext(request);
@@ -161,21 +78,25 @@ export function createApp({
 
       const url = new URL(request.url ?? "/", "http://localhost");
 
-      if (url.pathname === "/mcp" && handleMcpRequest) {
+      if (url.pathname === "/mcp") {
         if (await handleMcpRequest(request, response)) {
           return;
         }
       }
 
       if (request.method === "GET" && url.pathname === "/api/images") {
-        sendJson(response, 200, parseImageSummaries(await listImages()));
+        sendJson(response, 200, parseImageSummaries(await appControlPlane.imageProvider.listImages()));
         return;
       }
 
       if (request.method === "POST" && url.pathname === "/api/images/container/pull") {
         const body = await readJsonBody(request);
         const input = parsePullContainerImageInput(body);
-        sendJson(response, 201, parseImageDetail(await pullContainerImage(input.reference)));
+        sendJson(
+          response,
+          201,
+          parseImageDetail(await appControlPlane.imageProvider.pullContainerImage(input.reference)),
+        );
         return;
       }
 
@@ -184,7 +105,9 @@ export function createApp({
         sendJson(
           response,
           201,
-          parseImageDetail(await importVmImage(parseImportVmImageInput(body))),
+          parseImageDetail(
+            await appControlPlane.imageProvider.importVmImage(parseImportVmImageInput(body)),
+          ),
         );
         return;
       }
@@ -207,7 +130,7 @@ export function createApp({
             response,
             201,
             parseImageDetail(
-              await importVmImage({
+              await appControlPlane.imageProvider.importVmImage({
                 source: {
                   type: "file",
                   path: tempPath,
@@ -223,14 +146,18 @@ export function createApp({
 
       const vmImageDeleteMatch = /^\/api\/images\/vm\/(?<id>.+)$/.exec(url.pathname);
       if (request.method === "DELETE" && vmImageDeleteMatch?.groups?.id) {
-        await deleteVmImage(decodeURIComponent(vmImageDeleteMatch.groups.id));
+        await appControlPlane.imageProvider.deleteVmImage(
+          decodeURIComponent(vmImageDeleteMatch.groups.id),
+        );
         sendJson(response, 204, null);
         return;
       }
 
       const containerImageDeleteMatch = /^\/api\/images\/container\/(?<id>.+)$/.exec(url.pathname);
       if (request.method === "DELETE" && containerImageDeleteMatch?.groups?.id) {
-        await deleteContainerImage(decodeURIComponent(containerImageDeleteMatch.groups.id));
+        await appControlPlane.imageProvider.deleteContainerImage(
+          decodeURIComponent(containerImageDeleteMatch.groups.id),
+        );
         sendJson(response, 204, null);
         return;
       }
@@ -240,13 +167,17 @@ export function createApp({
         sendJson(
           response,
           200,
-          parseImageDetail(await getImage(decodeURIComponent(imageDetailMatch.groups.id))),
+          parseImageDetail(
+            await appControlPlane.imageProvider.getImage(
+              decodeURIComponent(imageDetailMatch.groups.id),
+            ),
+          ),
         );
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/api/computers") {
-        sendJson(response, 200, parseComputerSummaries(await listComputers()));
+        sendJson(response, 200, parseComputerSummaries(await appControlPlane.listComputers()));
         return;
       }
 
@@ -255,7 +186,7 @@ export function createApp({
         sendJson(
           response,
           201,
-          parseComputerDetail(await createComputer(parseCreateComputerInput(body))),
+          parseComputerDetail(await appControlPlane.createComputer(parseCreateComputerInput(body))),
         );
         return;
       }
@@ -266,7 +197,11 @@ export function createApp({
       if (computerSnapshotsMatch?.groups?.name) {
         const name = decodeURIComponent(computerSnapshotsMatch.groups.name);
         if (request.method === "GET") {
-          sendJson(response, 200, parseComputerSnapshots(await listComputerSnapshots(name)));
+          sendJson(
+            response,
+            200,
+            parseComputerSnapshots(await appControlPlane.listComputerSnapshots(name)),
+          );
           return;
         }
 
@@ -276,7 +211,10 @@ export function createApp({
             response,
             201,
             parseComputerSnapshot(
-              await createComputerSnapshot(name, parseCreateComputerSnapshotInput(body)),
+              await appControlPlane.createComputerSnapshot(
+                name,
+                parseCreateComputerSnapshotInput(body),
+              ),
             ),
           );
           return;
@@ -290,7 +228,9 @@ export function createApp({
         sendJson(
           response,
           200,
-          parseComputerDetail(await restoreComputer(name, parseRestoreComputerInput(body))),
+          parseComputerDetail(
+            await appControlPlane.restoreComputer(name, parseRestoreComputerInput(body)),
+          ),
         );
         return;
       }
@@ -304,14 +244,14 @@ export function createApp({
       ) {
         const name = decodeURIComponent(deleteSnapshotMatch.groups.name);
         const snapshotName = decodeURIComponent(deleteSnapshotMatch.groups.snapshotName);
-        await deleteComputerSnapshot(name, snapshotName);
+        await appControlPlane.deleteComputerSnapshot(name, snapshotName);
         sendJson(response, 204, null);
         return;
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/computers/")) {
         const name = decodeURIComponent(url.pathname.slice("/api/computers/".length));
-        await deleteComputer(name);
+        await appControlPlane.deleteComputer(name);
         sendJson(response, 204, null);
         return;
       }
@@ -329,9 +269,9 @@ export function createApp({
 
         const name = decodeURIComponent(encodedName);
         const handlers = {
-          restart: restartComputer,
-          start: startComputer,
-          stop: stopComputer,
+          restart: (computerName: string) => appControlPlane.restartComputer(computerName),
+          start: (computerName: string) => appControlPlane.startComputer(computerName),
+          stop: (computerName: string) => appControlPlane.stopComputer(computerName),
         } as const;
         const action = matchedAction as keyof typeof handlers;
 
@@ -354,7 +294,11 @@ export function createApp({
 
         const name = decodeURIComponent(encodedName);
         if (matchedSurface === "monitor") {
-          sendJson(response, 200, parseComputerMonitorSession(await createMonitorSession(name)));
+          sendJson(
+            response,
+            200,
+            parseComputerMonitorSession(await appControlPlane.createMonitorSession(name)),
+          );
           return;
         }
 
@@ -362,29 +306,41 @@ export function createApp({
           sendJson(
             response,
             200,
-            parseComputerAutomationSession(await createAutomationSession(name)),
+            parseComputerAutomationSession(await appControlPlane.createAutomationSession(name)),
           );
           return;
         }
 
         if (matchedSurface === "audio") {
-          sendJson(response, 200, parseComputerAudioSession(await createAudioSession(name)));
+          sendJson(
+            response,
+            200,
+            parseComputerAudioSession(await appControlPlane.createAudioSession(name)),
+          );
           return;
         }
 
         if (matchedSurface === "exec") {
-          sendJson(response, 200, parseComputerExecSession(await createExecSession(name)));
+          sendJson(
+            response,
+            200,
+            parseComputerExecSession(await appControlPlane.createExecSession(name)),
+          );
           return;
         }
 
-        sendJson(response, 200, parseComputerConsoleSession(await createConsoleSession(name)));
+        sendJson(
+          response,
+          200,
+          parseComputerConsoleSession(await appControlPlane.createConsoleSession(name)),
+        );
         return;
       }
 
       const browserAudioMatch = /^\/api\/computers\/(?<name>[^/]+)\/audio$/.exec(url.pathname);
       if (request.method === "GET" && browserAudioMatch?.groups?.name) {
         const name = decodeURIComponent(browserAudioMatch.groups.name);
-        await streamAudioResponse(response, request, await openAudioStream(name));
+        await streamAudioResponse(response, request, await appControlPlane.openAudioStream(name));
         return;
       }
 
@@ -395,7 +351,7 @@ export function createApp({
           );
         if (websocketStubMatch?.groups?.name) {
           const name = decodeURIComponent(websocketStubMatch.groups.name);
-          const detail = await getComputer(name);
+          const detail = await appControlPlane.getComputer(name);
           if (detail.state === "broken") {
             sendJson(response, 409, {
               error: `Computer "${name}" is broken because its backing runtime entity is missing. Websocket attach is not supported for broken computers.`,
@@ -415,7 +371,7 @@ export function createApp({
         }
 
         const name = decodeURIComponent(url.pathname.slice("/api/computers/".length));
-        sendJson(response, 200, parseComputerDetail(await getComputer(name)));
+        sendJson(response, 200, parseComputerDetail(await appControlPlane.getComputer(name)));
         return;
       }
       const computerScreenshotMatch = /^\/api\/computers\/(?<name>[^/]+)\/screenshots$/.exec(
@@ -423,7 +379,7 @@ export function createApp({
       );
       if (request.method === "POST" && computerScreenshotMatch?.groups?.name) {
         const name = decodeURIComponent(computerScreenshotMatch.groups.name);
-        sendJson(response, 200, parseComputerScreenshot(await createScreenshot(name)));
+        sendJson(response, 200, parseComputerScreenshot(await appControlPlane.createScreenshot(name)));
         return;
       }
 
@@ -437,20 +393,23 @@ export function createApp({
           response,
           200,
           parseComputerDetail(
-            await updateBrowserViewport(name, parseUpdateBrowserViewportInput(body)),
+            await appControlPlane.updateBrowserViewport(
+              name,
+              parseUpdateBrowserViewportInput(body),
+            ),
           ),
         );
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/api/host-units") {
-        sendJson(response, 200, parseHostUnitSummaries(await listHostUnits()));
+        sendJson(response, 200, parseHostUnitSummaries(await appControlPlane.listHostUnits()));
         return;
       }
 
       if (request.method === "GET" && url.pathname.startsWith("/api/host-units/")) {
         const unitName = decodeURIComponent(url.pathname.slice("/api/host-units/".length));
-        sendJson(response, 200, parseHostUnitDetail(await getHostUnit(unitName)));
+        sendJson(response, 200, parseHostUnitDetail(await appControlPlane.getHostUnit(unitName)));
         return;
       }
 
@@ -531,10 +490,7 @@ export function createApp({
       request,
       socket,
       head,
-      openConsoleAttach,
-      openExecAttach,
-      openAutomationAttach,
-      openMonitorAttach,
+      controlPlane: appControlPlane,
       websocketServer,
     });
   });
@@ -625,19 +581,13 @@ async function handleUpgradeRequest({
   request,
   socket,
   head,
-  openConsoleAttach,
-  openExecAttach,
-  openAutomationAttach,
-  openMonitorAttach,
+  controlPlane,
   websocketServer,
 }: {
   request: IncomingMessage;
   socket: Duplex;
   head: Buffer;
-  openConsoleAttach: (name: string) => Promise<ConsoleAttachLease>;
-  openExecAttach: (name: string) => Promise<ConsoleAttachLease>;
-  openAutomationAttach: (name: string) => Promise<BrowserAutomationLease>;
-  openMonitorAttach: (name: string) => Promise<BrowserMonitorLease>;
+  controlPlane: BaseControlPlane;
   websocketServer: WebSocketServer;
 }) {
   const requestLog = createRequestLogContext(request);
@@ -657,7 +607,7 @@ async function handleUpgradeRequest({
 
   try {
     if (surface === "console") {
-      const lease = await openConsoleAttach(computerName);
+      const lease = await controlPlane.openConsoleAttach(computerName);
       websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
         logUpgradeRequestComplete(requestLog, 101);
         bridgeConsoleWebSocket(websocket, lease);
@@ -666,7 +616,7 @@ async function handleUpgradeRequest({
     }
 
     if (surface === "exec") {
-      const lease = await openExecAttach(computerName);
+      const lease = await controlPlane.openExecAttach(computerName);
       websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
         logUpgradeRequestComplete(requestLog, 101);
         bridgeConsoleWebSocket(websocket, lease);
@@ -675,7 +625,7 @@ async function handleUpgradeRequest({
     }
 
     if (surface === "monitor") {
-      const lease = await openMonitorAttach(computerName);
+      const lease = await controlPlane.openMonitorAttach(computerName);
       websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
         logUpgradeRequestComplete(requestLog, 101);
         bridgeMonitorWebSocket(websocket, lease);
@@ -683,7 +633,7 @@ async function handleUpgradeRequest({
       return;
     }
 
-    const lease = await openAutomationAttach(computerName);
+    const lease = await controlPlane.openAutomationAttach(computerName);
     websocketServer.handleUpgrade(request, socket, head, (websocket: WebSocket) => {
       logUpgradeRequestComplete(requestLog, 101);
       bridgeAutomationWebSocket(websocket, lease);
@@ -693,6 +643,17 @@ async function handleUpgradeRequest({
     logUpgradeRequestError(requestLog, error, statusCode);
     writeUpgradeError(socket, statusCode, errorMessage(error));
   }
+}
+
+function withControlPlaneOverrides(
+  controlPlane: BaseControlPlane,
+  overrides: Partial<BaseControlPlane> | undefined,
+) {
+  if (!overrides) {
+    return controlPlane;
+  }
+
+  return Object.assign(Object.create(controlPlane), overrides) as BaseControlPlane;
 }
 
 function logUpgradeRequestComplete(context: RequestLogContext, statusCode: number) {
@@ -842,12 +803,12 @@ function bridgeAutomationWebSocket(websocket: WebSocket, lease: BrowserAutomatio
   }
 }
 
-interface TerminalProcess {
-  kill: () => void;
-  onData: (listener: (data: string) => void) => void;
-  onExit: (listener: (event: { exitCode?: number; signal?: number | string }) => void) => void;
-  resize: (cols: number, rows: number) => void;
-  write: (data: string) => void;
+abstract class TerminalProcess {
+  abstract kill(): void;
+  abstract onData(listener: (data: string) => void): void;
+  abstract onExit(listener: (event: { exitCode?: number; signal?: number | string }) => void): void;
+  abstract resize(cols: number, rows: number): void;
+  abstract write(data: string): void;
 }
 
 export function createTerminalProcess(lease: ConsoleAttachLease): TerminalProcess {
@@ -863,7 +824,7 @@ export function createTerminalProcess(lease: ConsoleAttachLease): TerminalProces
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    return createRawTerminalProcess(child);
+    return new RawTerminalProcess(child);
   }
 
   const terminal = spawnPty(lease.command, lease.args, {
@@ -874,53 +835,69 @@ export function createTerminalProcess(lease: ConsoleAttachLease): TerminalProces
     env,
   });
 
-  return {
-    kill() {
-      terminal.kill();
-    },
-    onData(listener) {
-      terminal.onData(listener);
-    },
-    onExit(listener) {
-      terminal.onExit(listener);
-    },
-    resize(cols, rows) {
-      terminal.resize(cols, rows);
-    },
-    write(data) {
-      terminal.write(data);
-    },
-  };
+  return new PtyTerminalProcess(terminal);
 }
 
-function createRawTerminalProcess(child: ChildProcessWithoutNullStreams): TerminalProcess {
-  return {
-    kill() {
-      if (!child.killed) {
-        child.kill("SIGTERM");
-      }
-    },
-    onData(listener) {
-      child.stdout.on("data", (chunk: Buffer) => {
-        listener(chunk.toString("utf8"));
+class PtyTerminalProcess extends TerminalProcess {
+  constructor(private readonly terminal: ReturnType<typeof spawnPty>) {
+    super();
+  }
+
+  kill() {
+    this.terminal.kill();
+  }
+
+  onData(listener: (data: string) => void) {
+    this.terminal.onData(listener);
+  }
+
+  onExit(listener: (event: { exitCode?: number; signal?: number | string }) => void) {
+    this.terminal.onExit(listener);
+  }
+
+  resize(cols: number, rows: number) {
+    this.terminal.resize(cols, rows);
+  }
+
+  write(data: string) {
+    this.terminal.write(data);
+  }
+}
+
+class RawTerminalProcess extends TerminalProcess {
+  constructor(private readonly child: ChildProcessWithoutNullStreams) {
+    super();
+  }
+
+  kill() {
+    if (!this.child.killed) {
+      this.child.kill("SIGTERM");
+    }
+  }
+
+  onData(listener: (data: string) => void) {
+    this.child.stdout.on("data", (chunk: Buffer) => {
+      listener(chunk.toString("utf8"));
+    });
+    this.child.stderr.on("data", (chunk: Buffer) => {
+      listener(chunk.toString("utf8"));
+    });
+  }
+
+  onExit(listener: (event: { exitCode?: number; signal?: number | string }) => void) {
+    this.child.on("close", (exitCode, signal) => {
+      listener({
+        exitCode: exitCode ?? undefined,
+        signal: signal ?? undefined,
       });
-      child.stderr.on("data", (chunk: Buffer) => {
-        listener(chunk.toString("utf8"));
-      });
-    },
-    onExit(listener) {
-      child.on("close", (exitCode, signal) => {
-        listener({
-          exitCode: exitCode ?? undefined,
-          signal: signal ?? undefined,
-        });
-      });
-    },
-    resize() {},
-    write(data) {
-      child.stdin.write(data);
-    },
-  };
+    });
+  }
+
+  resize() {}
+
+  write(data: string) {
+    this.child.stdin.write(data);
+  }
 }
 
 function sanitizeSpawnEnvironment(env: NodeJS.ProcessEnv) {

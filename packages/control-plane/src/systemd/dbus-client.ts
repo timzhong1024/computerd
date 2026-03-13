@@ -66,169 +66,187 @@ interface CachedUnitProxy {
   properties: PropertiesInterface;
 }
 
-export interface SystemdDbusClient {
-  deletePersistentUnit: (unitName: string) => Promise<void>;
-  getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
-  listHostUnits: () => Promise<HostUnitSummary[]>;
-  getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
-  reloadDaemon: () => Promise<void>;
-  restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  setUnitEnabled: (unitName: string, enabled: boolean) => Promise<void>;
-  startUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
+export abstract class SystemdDbusClient {
+  abstract deletePersistentUnit(unitName: string): Promise<void>;
+  abstract getRuntimeState(unitName: string): Promise<UnitRuntimeState | null>;
+  abstract listHostUnits(): Promise<HostUnitSummary[]>;
+  abstract getHostUnit(unitName: string): Promise<HostUnitDetail | null>;
+  abstract reloadDaemon(): Promise<void>;
+  abstract restartUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract setUnitEnabled(unitName: string, enabled: boolean): Promise<void>;
+  abstract startUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract stopUnit(unitName: string): Promise<UnitRuntimeState>;
 }
 
 export interface SystemdDbusClientOptions {
   bus?: MessageBus;
 }
 
-export function createSystemdDbusClient({
-  bus = dbus.systemBus(),
-}: SystemdDbusClientOptions = {}): SystemdDbusClient {
-  const managerPromise = getManager(bus);
-  const unitProxyCache = new Map<string, Promise<CachedUnitProxy>>();
-  const runtimeCache = new Map<string, UnitRuntimeState>();
-  let subscribed = false;
+export class DefaultSystemdDbusClient extends SystemdDbusClient {
+  private readonly managerPromise: Promise<SystemdManagerInterface>;
+  private readonly unitProxyCache = new Map<string, Promise<CachedUnitProxy>>();
+  private readonly runtimeCache = new Map<string, UnitRuntimeState>();
+  private subscribed = false;
 
-  return {
-    async reloadDaemon() {
-      const manager = await managerPromise;
-      await manager.Reload();
-    },
-    async setUnitEnabled(unitName, enabled) {
-      const manager = await managerPromise;
-      if (enabled) {
-        await manager.EnableUnitFiles([unitName], false, true);
-        return;
-      }
+  constructor(private readonly bus: MessageBus = dbus.systemBus()) {
+    super();
+    this.managerPromise = getManager(bus);
+  }
 
-      await manager.DisableUnitFiles([unitName], false);
-    },
-    async startUnit(unitName) {
-      const manager = await managerPromise;
-      await ensureSubscribed();
-      await manager.StartUnit(unitName, "replace");
-      return await waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
-    },
-    async stopUnit(unitName) {
-      const manager = await managerPromise;
-      await ensureSubscribed();
-      await manager.StopUnit(unitName, "replace");
-      return await waitForRuntimeState(unitName, (state) => state.activeState !== "deactivating");
-    },
-    async restartUnit(unitName) {
-      const manager = await managerPromise;
-      await ensureSubscribed();
-      await manager.RestartUnit(unitName, "replace");
-      return await waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
-    },
-    async deletePersistentUnit(unitName) {
-      const state = await this.getRuntimeState(unitName);
-      if (state?.activeState === "active") {
-        await this.stopUnit(unitName);
-      }
+  async reloadDaemon() {
+    const manager = await this.managerPromise;
+    await manager.Reload();
+  }
 
-      try {
-        await this.setUnitEnabled(unitName, false);
-      } catch (error: unknown) {
-        if (!isUnknownUnitError(error)) {
-          throw error;
-        }
-      }
-    },
-    async getRuntimeState(unitName) {
-      try {
-        const proxy = await getUnitProxy(unitName);
-        const state = await readRuntimeState(unitName, proxy.properties);
-        if (state === null) {
-          runtimeCache.delete(unitName);
-          return null;
-        }
-        runtimeCache.set(unitName, state);
-        return state;
-      } catch (error: unknown) {
-        if (isUnknownUnitError(error)) {
-          runtimeCache.delete(unitName);
-          return null;
-        }
+  async setUnitEnabled(unitName: string, enabled: boolean) {
+    const manager = await this.managerPromise;
+    if (enabled) {
+      await manager.EnableUnitFiles([unitName], false, true);
+      return;
+    }
 
+    await manager.DisableUnitFiles([unitName], false);
+  }
+
+  async startUnit(unitName: string) {
+    const manager = await this.managerPromise;
+    await this.ensureSubscribed();
+    await manager.StartUnit(unitName, "replace");
+    return await this.waitForRuntimeState(
+      unitName,
+      (state) => state.activeState !== "activating",
+    );
+  }
+
+  async stopUnit(unitName: string) {
+    const manager = await this.managerPromise;
+    await this.ensureSubscribed();
+    await manager.StopUnit(unitName, "replace");
+    return await this.waitForRuntimeState(
+      unitName,
+      (state) => state.activeState !== "deactivating",
+    );
+  }
+
+  async restartUnit(unitName: string) {
+    const manager = await this.managerPromise;
+    await this.ensureSubscribed();
+    await manager.RestartUnit(unitName, "replace");
+    return await this.waitForRuntimeState(
+      unitName,
+      (state) => state.activeState !== "activating",
+    );
+  }
+
+  async deletePersistentUnit(unitName: string) {
+    const state = await this.getRuntimeState(unitName);
+    if (state?.activeState === "active") {
+      await this.stopUnit(unitName);
+    }
+
+    try {
+      await this.setUnitEnabled(unitName, false);
+    } catch (error: unknown) {
+      if (!isUnknownUnitError(error)) {
         throw error;
       }
-    },
-    async listHostUnits() {
-      const manager = await managerPromise;
-      const units = await manager.ListUnits();
-      return units
-        .filter(([name]) => name.endsWith(".service"))
-        .map(([name, description, loadState, activeState]) => ({
-          unitName: name,
-          unitType: "service",
-          state: activeState,
-          description: description || undefined,
-          capabilities: {
-            canInspect: loadState !== "not-found",
-          },
-        }))
-        .sort((left, right) => left.unitName.localeCompare(right.unitName));
-    },
-    async getHostUnit(unitName) {
-      const state = await this.getRuntimeState(unitName);
+    }
+  }
+
+  async getRuntimeState(unitName: string) {
+    try {
+      const proxy = await this.getUnitProxy(unitName);
+      const state = await readRuntimeState(unitName, proxy.properties);
       if (state === null) {
+        this.runtimeCache.delete(unitName);
+        return null;
+      }
+      this.runtimeCache.set(unitName, state);
+      return state;
+    } catch (error: unknown) {
+      if (isUnknownUnitError(error)) {
+        this.runtimeCache.delete(unitName);
         return null;
       }
 
-      return {
-        unitName: state.unitName,
-        unitType: state.unitType,
-        state: state.activeState,
-        description: state.description,
-        capabilities: {
-          canInspect: true,
-        },
-        execStart: state.execStart ?? "[not configured]",
-        status: {
-          activeState: state.activeState,
-          subState: state.subState,
-          loadState: state.loadState,
-        },
-        recentLogs: [],
-      };
-    },
-  };
+      throw error;
+    }
+  }
 
-  async function getUnitProxy(unitName: string) {
-    const cached = unitProxyCache.get(unitName);
+  async listHostUnits() {
+    const manager = await this.managerPromise;
+    const units = await manager.ListUnits();
+    return units
+      .filter(([name]) => name.endsWith(".service"))
+      .map(([name, description, loadState, activeState]) => ({
+        unitName: name,
+        unitType: "service",
+        state: activeState,
+        description: description || undefined,
+        capabilities: {
+          canInspect: loadState !== "not-found",
+        },
+      }))
+      .sort((left, right) => left.unitName.localeCompare(right.unitName));
+  }
+
+  async getHostUnit(unitName: string) {
+    const state = await this.getRuntimeState(unitName);
+    if (state === null) {
+      return null;
+    }
+
+    return {
+      unitName: state.unitName,
+      unitType: state.unitType,
+      state: state.activeState,
+      description: state.description,
+      capabilities: {
+        canInspect: true,
+      },
+      execStart: state.execStart ?? "[not configured]",
+      status: {
+        activeState: state.activeState,
+        subState: state.subState,
+        loadState: state.loadState,
+      },
+      recentLogs: [],
+    };
+  }
+
+  private async getUnitProxy(unitName: string) {
+    const cached = this.unitProxyCache.get(unitName);
     if (cached) {
       return await cached;
     }
 
-    const proxyPromise = createUnitProxy(bus, managerPromise, unitName, runtimeCache);
-    unitProxyCache.set(unitName, proxyPromise);
+    const proxyPromise = createUnitProxy(this.bus, this.managerPromise, unitName, this.runtimeCache);
+    this.unitProxyCache.set(unitName, proxyPromise);
     return await proxyPromise;
   }
 
-  async function ensureSubscribed() {
-    if (subscribed) {
+  private async ensureSubscribed() {
+    if (this.subscribed) {
       return;
     }
 
-    const manager = await managerPromise;
+    const manager = await this.managerPromise;
     await manager.Subscribe();
-    subscribed = true;
+    this.subscribed = true;
   }
 
-  async function waitForRuntimeState(
+  private async waitForRuntimeState(
     unitName: string,
     predicate: (state: UnitRuntimeState) => boolean,
   ) {
     const startedAt = Date.now();
     while (true) {
-      const proxy = await getUnitProxy(unitName);
+      const proxy = await this.getUnitProxy(unitName);
       const state = await readRuntimeState(unitName, proxy.properties);
       if (state === null) {
         throw createNoSuchUnitError(unitName);
       }
-      runtimeCache.set(unitName, state);
+      this.runtimeCache.set(unitName, state);
       if (predicate(state)) {
         return state;
       }

@@ -32,17 +32,17 @@ export class ImageMutationNotAllowedError extends Error {
   }
 }
 
-export interface ImageProvider {
-  deleteContainerImage: (id: string) => Promise<void>;
-  deleteVmImage: (id: string) => Promise<void>;
-  getImage: (id: string) => Promise<ImageDetail>;
-  listImages: () => Promise<ImageSummary[]>;
-  pullContainerImage: (reference: string) => Promise<ContainerImageDetail>;
-  importVmImage: (input: ImportVmImageInput) => Promise<VmImageDetail>;
-  requireVmImage: (id: string, kind: "qcow2" | "iso") => Promise<VmImageDetail>;
+export abstract class ImageProvider {
+  abstract deleteContainerImage(id: string): Promise<void>;
+  abstract deleteVmImage(id: string): Promise<void>;
+  abstract getImage(id: string): Promise<ImageDetail>;
+  abstract listImages(): Promise<ImageSummary[]>;
+  abstract pullContainerImage(reference: string): Promise<ContainerImageDetail>;
+  abstract importVmImage(input: ImportVmImageInput): Promise<VmImageDetail>;
+  abstract requireVmImage(id: string, kind: "qcow2" | "iso"): Promise<VmImageDetail>;
 }
 
-export interface CreateImageProviderOptions {
+export interface SystemImageProviderOptions {
   configPath: string;
   docker?: Docker;
   dockerSocketPath: string;
@@ -51,88 +51,105 @@ export interface CreateImageProviderOptions {
   fetchImpl?: typeof fetch;
 }
 
-export function createImageProvider({
-  configPath,
-  docker,
-  dockerSocketPath,
-  qemuImgCommand = "qemu-img",
-  vmImageStoreDir,
-  fetchImpl = fetch,
-}: CreateImageProviderOptions): ImageProvider {
-  const dockerClient = docker ?? new Docker({ socketPath: dockerSocketPath });
+export class SystemImageProvider extends ImageProvider {
+  private readonly dockerClient: Docker;
+  private readonly configPath: string;
+  private readonly qemuImgCommand: string;
+  private readonly vmImageStoreDir: string;
+  private readonly fetchImpl: typeof fetch;
 
-  return {
-    async listImages() {
-      const [vmImages, containerImages] = await Promise.all([
-        listVmImages(configPath, qemuImgCommand, vmImageStoreDir),
-        listContainerImages(dockerClient),
-      ]);
-      return [...vmImages, ...containerImages].sort((left, right) =>
-        left.name.localeCompare(right.name),
-      );
-    },
-    async getImage(id) {
-      const images = await this.listImages();
-      const image = images.find((entry) => entry.id === id);
-      if (!image) {
-        throw new ImageNotFoundError(id);
-      }
+  constructor({
+    configPath,
+    docker,
+    dockerSocketPath,
+    qemuImgCommand = "qemu-img",
+    vmImageStoreDir,
+    fetchImpl = fetch,
+  }: SystemImageProviderOptions) {
+    super();
+    this.configPath = configPath;
+    this.dockerClient = docker ?? new Docker({ socketPath: dockerSocketPath });
+    this.qemuImgCommand = qemuImgCommand;
+    this.vmImageStoreDir = vmImageStoreDir;
+    this.fetchImpl = fetchImpl;
+  }
 
-      if (image.provider === "filesystem-vm") {
-        return image as VmImageDetail;
-      }
+  async listImages() {
+    const [vmImages, containerImages] = await Promise.all([
+      listVmImages(this.configPath, this.qemuImgCommand, this.vmImageStoreDir),
+      listContainerImages(this.dockerClient),
+    ]);
+    return [...vmImages, ...containerImages].sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+  }
 
-      return image as ContainerImageDetail;
-    },
-    async requireVmImage(id, kind) {
-      const image = await this.getImage(id);
-      if (image.provider !== "filesystem-vm" || image.kind !== kind) {
-        throw new ImageNotFoundError(id);
-      }
-      if (image.status === "broken") {
-        throw new BrokenImageError(id);
-      }
-      return image;
-    },
-    async importVmImage(input) {
-      return await importVmImage({
-        configPath,
-        input,
-        qemuImgCommand,
-        storeDir: vmImageStoreDir,
-        fetchImpl,
+  async getImage(id: string) {
+    const images = await this.listImages();
+    const image = images.find((entry) => entry.id === id);
+    if (!image) {
+      throw new ImageNotFoundError(id);
+    }
+
+    if (image.provider === "filesystem-vm") {
+      return image as VmImageDetail;
+    }
+
+    return image as ContainerImageDetail;
+  }
+
+  async requireVmImage(id: string, kind: "qcow2" | "iso") {
+    const image = await this.getImage(id);
+    if (image.provider !== "filesystem-vm" || image.kind !== kind) {
+      throw new ImageNotFoundError(id);
+    }
+    if (image.status === "broken") {
+      throw new BrokenImageError(id);
+    }
+    return image;
+  }
+
+  async importVmImage(input: ImportVmImageInput) {
+    return await importVmImage({
+      configPath: this.configPath,
+      input,
+      qemuImgCommand: this.qemuImgCommand,
+      storeDir: this.vmImageStoreDir,
+      fetchImpl: this.fetchImpl,
+    });
+  }
+
+  async deleteVmImage(id: string) {
+    const detail = await this.getImage(id);
+    if (detail.provider !== "filesystem-vm" || detail.sourceType !== "managed-import") {
+      throw new ImageMutationNotAllowedError(id);
+    }
+
+    await deleteManagedVmImage(this.configPath, detail.path);
+  }
+
+  async pullContainerImage(reference: string) {
+    const stream = await this.dockerClient.pull(reference);
+    await new Promise<void>((resolvePull, rejectPull) => {
+      this.dockerClient.modem.followProgress(stream, (error: Error | null) => {
+        if (error) {
+          rejectPull(error);
+          return;
+        }
+        resolvePull();
       });
-    },
-    async deleteVmImage(id) {
-      const detail = await this.getImage(id);
-      if (detail.provider !== "filesystem-vm" || detail.sourceType !== "managed-import") {
-        throw new ImageMutationNotAllowedError(id);
-      }
+    });
 
-      await deleteManagedVmImage(configPath, detail.path);
-    },
-    async pullContainerImage(reference) {
-      const stream = await dockerClient.pull(reference);
-      await new Promise<void>((resolvePull, rejectPull) => {
-        dockerClient.modem.followProgress(stream, (error: Error | null) => {
-          if (error) {
-            rejectPull(error);
-            return;
-          }
-          resolvePull();
-        });
-      });
+    return await getContainerImageByReference(this.dockerClient, reference);
+  }
 
-      return await getContainerImageByReference(dockerClient, reference);
-    },
-    async deleteContainerImage(id) {
-      const detail = await this.getImage(id);
-      if (detail.provider !== "docker") {
-        throw new ImageNotFoundError(id);
-      }
-      await dockerClient.getImage(detail.imageId).remove();
-    },
-  };
+  async deleteContainerImage(id: string) {
+    const detail = await this.getImage(id);
+    if (detail.provider !== "docker") {
+      throw new ImageNotFoundError(id);
+    }
+    await this.dockerClient.getImage(detail.imageId).remove();
+  }
 }
 
 async function listVmImages(

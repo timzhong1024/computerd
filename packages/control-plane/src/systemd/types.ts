@@ -117,59 +117,66 @@ export interface VmConsoleRuntimeSpec {
   socketPath: string;
 }
 
-export interface ComputerRuntimePort {
-  createContainerComputer: (
+export abstract class ComputerRuntimePort {
+  abstract createContainerComputer(
     input: CreateContainerComputerInput,
     unitName: string,
-  ) => Promise<PersistedContainerComputer["runtime"]>;
-  createVmComputer: (
+  ): Promise<PersistedContainerComputer["runtime"]>;
+  abstract createVmComputer(
     input: CreateVmComputerInput,
     imagePath: string,
-  ) => Promise<PersistedVmComputer["runtime"]>;
-  deleteBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  deleteContainerComputer: (computer: PersistedContainerComputer) => Promise<void>;
-  deleteVmComputer: (computer: PersistedVmComputer) => Promise<void>;
-  ensureBrowserRuntimeIdentity: (computer: PersistedBrowserComputer) => Promise<void>;
-  prepareBrowserRuntime: (computer: PersistedBrowserComputer) => Promise<void>;
-  prepareVmRuntime: (computer: PersistedVmComputer) => Promise<void>;
-  createAutomationSession: (
+  ): Promise<PersistedVmComputer["runtime"]>;
+  abstract deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;
+  abstract deleteVmComputer(computer: PersistedVmComputer): Promise<void>;
+  abstract ensureBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract prepareBrowserRuntime(computer: PersistedBrowserComputer): Promise<void>;
+  abstract prepareVmRuntime(computer: PersistedVmComputer): Promise<void>;
+  abstract createAutomationSession(
     computer: PersistedBrowserComputer,
-  ) => Promise<ComputerAutomationSession>;
-  createAudioSession: (computer: PersistedBrowserComputer) => Promise<ComputerAudioSession>;
-  createMonitorSession: (
+  ): Promise<ComputerAutomationSession>;
+  abstract createAudioSession(computer: PersistedBrowserComputer): Promise<ComputerAudioSession>;
+  abstract createMonitorSession(
     computer: PersistedBrowserComputer | PersistedVmComputer,
-  ) => Promise<ComputerMonitorSession>;
-  createPersistentUnit: (computer: PersistedComputer) => Promise<UnitRuntimeState>;
-  createScreenshot: (computer: PersistedBrowserComputer) => Promise<ComputerScreenshot>;
-  createVmSnapshot: (
+  ): Promise<ComputerMonitorSession>;
+  abstract createPersistentUnit(computer: PersistedComputer): Promise<UnitRuntimeState>;
+  abstract createScreenshot(computer: PersistedBrowserComputer): Promise<ComputerScreenshot>;
+  abstract createVmSnapshot(
     computer: PersistedVmComputer,
     input: CreateComputerSnapshotInput,
-  ) => Promise<ComputerSnapshot>;
-  deletePersistentUnit: (unitName: string) => Promise<void>;
-  deleteVmSnapshot: (computer: PersistedVmComputer, snapshotName: string) => Promise<void>;
-  getContainerRuntimeState: (
+  ): Promise<ComputerSnapshot>;
+  abstract deletePersistentUnit(unitName: string): Promise<void>;
+  abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
+  abstract getContainerRuntimeState(
     computer: PersistedContainerComputer,
-  ) => Promise<UnitRuntimeState | null>;
-  getRuntimeState: (unitName: string) => Promise<UnitRuntimeState | null>;
-  listHostUnits: () => Promise<HostUnitSummary[]>;
-  listVmSnapshots: (computer: PersistedVmComputer) => Promise<ComputerSnapshot[]>;
-  getHostUnit: (unitName: string) => Promise<HostUnitDetail | null>;
-  openAutomationAttach: (computer: PersistedBrowserComputer) => Promise<BrowserAutomationLease>;
-  openAudioStream: (computer: PersistedBrowserComputer) => Promise<BrowserAudioStreamLease>;
-  openMonitorAttach: (
+  ): Promise<UnitRuntimeState | null>;
+  abstract getRuntimeState(unitName: string): Promise<UnitRuntimeState | null>;
+  abstract listHostUnits(): Promise<HostUnitSummary[]>;
+  abstract listVmSnapshots(computer: PersistedVmComputer): Promise<ComputerSnapshot[]>;
+  abstract getHostUnit(unitName: string): Promise<HostUnitDetail | null>;
+  abstract openAutomationAttach(
+    computer: PersistedBrowserComputer,
+  ): Promise<BrowserAutomationLease>;
+  abstract openAudioStream(computer: PersistedBrowserComputer): Promise<BrowserAudioStreamLease>;
+  abstract openMonitorAttach(
     computer: PersistedBrowserComputer | PersistedVmComputer,
-  ) => Promise<BrowserMonitorLease>;
-  restartUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  restartContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
-  startUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  startContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
-  stopUnit: (unitName: string) => Promise<UnitRuntimeState>;
-  stopContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
-  restoreVmComputer: (computer: PersistedVmComputer, input: RestoreComputerInput) => Promise<void>;
-  updateBrowserViewport: (
+  ): Promise<BrowserMonitorLease>;
+  abstract restartUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract restartContainerComputer(
+    computer: PersistedContainerComputer,
+  ): Promise<UnitRuntimeState>;
+  abstract startUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract startContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
+  abstract stopUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract stopContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
+  abstract restoreVmComputer(
+    computer: PersistedVmComputer,
+    input: RestoreComputerInput,
+  ): Promise<void>;
+  abstract updateBrowserViewport(
     computer: PersistedBrowserComputer,
     viewport: BrowserViewport,
-  ) => Promise<void>;
+  ): Promise<void>;
 }
 
 export interface ConsoleAttachLease {
@@ -205,11 +212,11 @@ export interface BrowserAudioStreamLease {
   release: () => void;
 }
 
-export interface ComputerMetadataStore {
-  deleteComputer: (name: string) => Promise<void>;
-  getComputer: (name: string) => Promise<PersistedComputer | null>;
-  listComputers: () => Promise<PersistedComputer[]>;
-  putComputer: (computer: PersistedComputer) => Promise<void>;
+export abstract class ComputerMetadataStore {
+  abstract deleteComputer(name: string): Promise<void>;
+  abstract getComputer(name: string): Promise<PersistedComputer | null>;
+  abstract listComputers(): Promise<PersistedComputer[]>;
+  abstract putComputer(computer: PersistedComputer): Promise<void>;
 }
 
 export type {

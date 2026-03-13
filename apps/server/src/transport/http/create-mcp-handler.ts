@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ControlPlane } from "@computerd/control-plane";
+import type { BaseControlPlane } from "@computerd/control-plane";
 import { createComputerdMcpServer } from "@computerd/mcp";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-export function createMcpHandler(controlPlane: ControlPlane) {
+export function createMcpHandler(controlPlane: BaseControlPlane) {
   return async function handleMcpRequest(request: IncomingMessage, response: ServerResponse) {
     if (request.method !== "POST") {
       response.statusCode = 405;

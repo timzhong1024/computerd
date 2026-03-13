@@ -12,31 +12,9 @@ import {
 } from "@computerd/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ControlPlane } from "@computerd/control-plane";
+import type { BaseControlPlane } from "@computerd/control-plane";
 
-export interface ComputerdMcpContext {
-  deleteContainerImage: ControlPlane["deleteContainerImage"];
-  deleteVmImage: ControlPlane["deleteVmImage"];
-  createAutomationSession: ControlPlane["createAutomationSession"];
-  createComputer: ControlPlane["createComputer"];
-  createMonitorSession: ControlPlane["createMonitorSession"];
-  createScreenshot: ControlPlane["createScreenshot"];
-  deleteComputer: ControlPlane["deleteComputer"];
-  getComputer: ControlPlane["getComputer"];
-  getImage: ControlPlane["getImage"];
-  listComputers: ControlPlane["listComputers"];
-  listImages: ControlPlane["listImages"];
-  listHostUnits: ControlPlane["listHostUnits"];
-  getHostUnit: ControlPlane["getHostUnit"];
-  importVmImage: ControlPlane["importVmImage"];
-  pullContainerImage: ControlPlane["pullContainerImage"];
-  restartComputer: ControlPlane["restartComputer"];
-  startComputer: ControlPlane["startComputer"];
-  stopComputer: ControlPlane["stopComputer"];
-  updateBrowserViewport: ControlPlane["updateBrowserViewport"];
-}
-
-export function createComputerdMcpServer(context: ComputerdMcpContext) {
+export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
   const server = new McpServer({
     name: "computerd-mcp",
     version: "0.1.0",
@@ -47,7 +25,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
     {
       description: "List VM and container images visible to computerd.",
     },
-    async () => createJsonToolResult(await context.listImages()),
+    async () => createJsonToolResult(await controlPlane.imageProvider.listImages()),
   );
 
   server.registerTool(
@@ -58,7 +36,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         id: z.string().min(1),
       },
     },
-    async ({ id }) => createJsonToolResult(await context.getImage(id)),
+    async ({ id }) => createJsonToolResult(await controlPlane.imageProvider.getImage(id)),
   );
 
   server.registerTool(
@@ -79,7 +57,9 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
       },
     },
     async (input) =>
-      createJsonToolResult(await context.importVmImage(parseImportVmImageInput(input))),
+      createJsonToolResult(
+        await controlPlane.imageProvider.importVmImage(parseImportVmImageInput(input)),
+      ),
   );
 
   server.registerTool(
@@ -90,7 +70,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         id: z.string().min(1),
       },
     },
-    async ({ id }) => createJsonToolResult(await context.deleteVmImage(id)),
+    async ({ id }) => createJsonToolResult(await controlPlane.imageProvider.deleteVmImage(id)),
   );
 
   server.registerTool(
@@ -103,7 +83,9 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
     },
     async ({ reference }) =>
       createJsonToolResult(
-        await context.pullContainerImage(parsePullContainerImageInput({ reference }).reference),
+        await controlPlane.imageProvider.pullContainerImage(
+          parsePullContainerImageInput({ reference }).reference,
+        ),
       ),
   );
 
@@ -115,7 +97,8 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         id: z.string().min(1),
       },
     },
-    async ({ id }) => createJsonToolResult(await context.deleteContainerImage(id)),
+    async ({ id }) =>
+      createJsonToolResult(await controlPlane.imageProvider.deleteContainerImage(id)),
   );
 
   server.registerTool(
@@ -123,7 +106,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
     {
       description: "List managed computers available through computerd.",
     },
-    async () => createJsonToolResult(await context.listComputers()),
+    async () => createJsonToolResult(await controlPlane.listComputers()),
   );
 
   server.registerTool(
@@ -134,7 +117,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.getComputer(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.getComputer(name)),
   );
 
   server.registerTool(
@@ -197,7 +180,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
       },
     },
     async (input) =>
-      createJsonToolResult(await context.createComputer(parseCreateComputerInput(input))),
+      createJsonToolResult(await controlPlane.createComputer(parseCreateComputerInput(input))),
   );
 
   server.registerTool(
@@ -208,7 +191,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.createMonitorSession(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.createMonitorSession(name)),
   );
 
   server.registerTool(
@@ -219,7 +202,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.createAutomationSession(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.createAutomationSession(name)),
   );
 
   server.registerTool(
@@ -230,7 +213,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.createScreenshot(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.createScreenshot(name)),
   );
 
   server.registerTool(
@@ -245,7 +228,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
       },
     },
     async ({ name, width, height }) =>
-      createJsonToolResult(await context.updateBrowserViewport(name, { width, height })),
+      createJsonToolResult(await controlPlane.updateBrowserViewport(name, { width, height })),
   );
 
   server.registerTool(
@@ -256,7 +239,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.startComputer(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.startComputer(name)),
   );
 
   server.registerTool(
@@ -267,7 +250,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.deleteComputer(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.deleteComputer(name)),
   );
 
   server.registerTool(
@@ -278,7 +261,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.stopComputer(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.stopComputer(name)),
   );
 
   server.registerTool(
@@ -289,7 +272,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         name: z.string().min(1),
       },
     },
-    async ({ name }) => createJsonToolResult(await context.restartComputer(name)),
+    async ({ name }) => createJsonToolResult(await controlPlane.restartComputer(name)),
   );
 
   server.registerTool(
@@ -297,7 +280,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
     {
       description: "List lightweight host inspect units visible to computerd.",
     },
-    async () => createJsonToolResult(await context.listHostUnits()),
+    async () => createJsonToolResult(await controlPlane.listHostUnits()),
   );
 
   server.registerTool(
@@ -308,7 +291,7 @@ export function createComputerdMcpServer(context: ComputerdMcpContext) {
         unitName: z.string().min(1),
       },
     },
-    async ({ unitName }) => createJsonToolResult(await context.getHostUnit(unitName)),
+    async ({ unitName }) => createJsonToolResult(await controlPlane.getHostUnit(unitName)),
   );
 
   return server;

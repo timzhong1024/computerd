@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { createImageProvider, ImageMutationNotAllowedError, ImageNotFoundError } from "./images";
+import { ImageMutationNotAllowedError, ImageNotFoundError, SystemImageProvider } from "./images";
 
 const directories: string[] = [];
 
@@ -29,7 +29,7 @@ test("lists vm images from configured directories and explicit files", async () 
     }),
   );
 
-  const provider = createImageProvider({
+  const provider = new SystemImageProvider({
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     qemuImgCommand: join(root, "fake-qemu-img"),
@@ -77,7 +77,7 @@ test("imports vm images from file paths into the managed store and deletes them"
   await writeFile(join(root, "images.json"), JSON.stringify({}));
   await writeFakeQemuImg(join(root, "fake-qemu-img"));
 
-  const provider = createImageProvider({
+  const provider = new SystemImageProvider({
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     docker: createDockerStub(),
@@ -115,7 +115,7 @@ test("imports vm images from URLs into the managed store", async () => {
     arrayBuffer: async () => new TextEncoder().encode("qcow2").buffer,
   });
 
-  const provider = createImageProvider({
+  const provider = new SystemImageProvider({
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     docker: createDockerStub(),
@@ -145,7 +145,7 @@ test("refuses to delete readonly directory vm images", async () => {
   await writeFile(join(root, "images.json"), JSON.stringify({ directories: [imageDirectory] }));
   await writeFakeQemuImg(join(root, "fake-qemu-img"));
 
-  const provider = createImageProvider({
+  const provider = new SystemImageProvider({
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     docker: createDockerStub(),
@@ -168,7 +168,7 @@ test("lists, pulls, gets and deletes container images through docker inventory",
   directories.push(root);
   await writeFile(join(root, "images.json"), JSON.stringify({}));
 
-  const provider = createImageProvider({
+  const provider = new SystemImageProvider({
     configPath: join(root, "images.json"),
     dockerSocketPath: "/var/run/docker.sock",
     docker,

@@ -5,117 +5,116 @@ import type {
   UnitRuntimeState,
 } from "../systemd/types";
 
-export interface CreateDockerRuntimeOptions {
-  docker?: Docker;
-  socketPath?: string;
-}
-
-export interface DockerRuntime {
-  createContainerComputer: (
+export abstract class DockerRuntime {
+  abstract createContainerComputer(
     input: CreateContainerComputerInput,
     unitName: string,
-  ) => Promise<PersistedContainerComputer["runtime"]>;
-  deleteContainerComputer: (computer: PersistedContainerComputer) => Promise<void>;
-  getContainerRuntimeState: (
+  ): Promise<PersistedContainerComputer["runtime"]>;
+  abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;
+  abstract getContainerRuntimeState(
     computer: PersistedContainerComputer,
-  ) => Promise<UnitRuntimeState | null>;
-  restartContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
-  startContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
-  stopContainerComputer: (computer: PersistedContainerComputer) => Promise<UnitRuntimeState>;
+  ): Promise<UnitRuntimeState | null>;
+  abstract restartContainerComputer(
+    computer: PersistedContainerComputer,
+  ): Promise<UnitRuntimeState>;
+  abstract startContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
+  abstract stopContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
 }
 
-export function createDockerRuntime({
-  docker,
-  socketPath = "/var/run/docker.sock",
-}: CreateDockerRuntimeOptions = {}): DockerRuntime {
-  const dockerClient = docker ?? new Docker({ socketPath });
+export class DefaultDockerRuntime extends DockerRuntime {
+  constructor(private readonly dockerClient: Docker) {
+    super();
+  }
 
-  return {
-    async createContainerComputer(input, unitName) {
-      const containerName = unitName.replace(/\.service$/, "");
-      const command = resolveContainerCommand(input);
-      const createOptions = {
-        name: containerName,
-        Image: input.runtime.image,
-        Cmd: command,
-        WorkingDir: input.runtime.workingDirectory,
-        Env: toDockerEnvironment(input.runtime.environment),
-        Tty: input.access?.console?.mode === "pty",
-        OpenStdin: input.access?.console?.mode === "pty",
-        AttachStdin: input.access?.console?.mode === "pty",
-        AttachStdout: true,
-        AttachStderr: true,
-        Labels: {
-          "computerd.managed": "true",
-          "computerd.computer.name": input.name,
-          "computerd.profile": "container",
-        },
-      } satisfies Parameters<Docker["createContainer"]>[0];
-      const container = await createContainerWithAutoPull(
-        dockerClient,
-        input.runtime.image,
-        createOptions,
-      );
+  async createContainerComputer(input: CreateContainerComputerInput, unitName: string) {
+    const containerName = unitName.replace(/\.service$/, "");
+    const command = resolveContainerCommand(input);
+    const createOptions = {
+      name: containerName,
+      Image: input.runtime.image,
+      Cmd: command,
+      WorkingDir: input.runtime.workingDirectory,
+      Env: toDockerEnvironment(input.runtime.environment),
+      Tty: input.access?.console?.mode === "pty",
+      OpenStdin: input.access?.console?.mode === "pty",
+      AttachStdin: input.access?.console?.mode === "pty",
+      AttachStdout: true,
+      AttachStderr: true,
+      Labels: {
+        "computerd.managed": "true",
+        "computerd.computer.name": input.name,
+        "computerd.profile": "container",
+      },
+    } satisfies Parameters<Docker["createContainer"]>[0];
+    const container = await createContainerWithAutoPull(
+      this.dockerClient,
+      input.runtime.image,
+      createOptions,
+    );
 
-      return {
-        ...input.runtime,
-        command: input.runtime.command ?? defaultContainerCommand(input),
-        containerId: container.id,
-        containerName,
-      };
-    },
-    async deleteContainerComputer(computer) {
-      const container = dockerClient.getContainer(computer.runtime.containerId);
-      await container.remove({ force: true, v: true });
-    },
-    async getContainerRuntimeState(computer) {
-      try {
-        const inspection = await dockerClient.getContainer(computer.runtime.containerId).inspect();
-        return toUnitRuntimeState(computer, inspection);
-      } catch (error: unknown) {
-        if (isMissingContainerError(error)) {
-          return null;
-        }
+    return {
+      ...input.runtime,
+      command: input.runtime.command ?? defaultContainerCommand(input),
+      containerId: container.id,
+      containerName,
+    };
+  }
 
+  async deleteContainerComputer(computer: PersistedContainerComputer) {
+    const container = this.dockerClient.getContainer(computer.runtime.containerId);
+    await container.remove({ force: true, v: true });
+  }
+
+  async getContainerRuntimeState(computer: PersistedContainerComputer) {
+    try {
+      const inspection = await this.dockerClient.getContainer(computer.runtime.containerId).inspect();
+      return toUnitRuntimeState(computer, inspection);
+    } catch (error: unknown) {
+      if (isMissingContainerError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  async restartContainerComputer(computer: PersistedContainerComputer) {
+    const container = this.dockerClient.getContainer(computer.runtime.containerId);
+    await container.restart();
+    return await requireContainerRuntimeState(this.dockerClient, computer);
+  }
+
+  async startContainerComputer(computer: PersistedContainerComputer) {
+    const container = this.dockerClient.getContainer(computer.runtime.containerId);
+    await container.start().catch((error: unknown) => {
+      if (!looksLikeAlreadyStartedError(error)) {
         throw error;
       }
-    },
-    async restartContainerComputer(computer) {
-      const container = dockerClient.getContainer(computer.runtime.containerId);
-      await container.restart();
-      return await requireContainerRuntimeState(dockerClient, computer);
-    },
-    async startContainerComputer(computer) {
-      const container = dockerClient.getContainer(computer.runtime.containerId);
-      await container.start().catch((error: unknown) => {
-        if (!looksLikeAlreadyStartedError(error)) {
-          throw error;
-        }
-      });
-      return await requireContainerRuntimeState(dockerClient, computer);
-    },
-    async stopContainerComputer(computer) {
-      const container = dockerClient.getContainer(computer.runtime.containerId);
-      await container.stop().catch((error: unknown) => {
-        if (!looksLikeAlreadyStoppedError(error) && !isMissingContainerError(error)) {
-          throw error;
-        }
-      });
-      return (
-        (await this.getContainerRuntimeState(computer)) ?? {
-          unitName: computer.unitName,
-          description: computer.description,
-          unitType: "container",
-          loadState: "loaded",
-          activeState: "inactive",
-          subState: "dead",
-          execStart: computer.runtime.command,
-          workingDirectory: computer.runtime.workingDirectory,
-          environment: computer.runtime.environment,
-        }
-      );
-    },
-  };
+    });
+    return await requireContainerRuntimeState(this.dockerClient, computer);
+  }
+
+  async stopContainerComputer(computer: PersistedContainerComputer) {
+    const container = this.dockerClient.getContainer(computer.runtime.containerId);
+    await container.stop().catch((error: unknown) => {
+      if (!looksLikeAlreadyStoppedError(error) && !isMissingContainerError(error)) {
+        throw error;
+      }
+    });
+    return (
+      (await this.getContainerRuntimeState(computer)) ?? {
+        unitName: computer.unitName,
+        description: computer.description,
+        unitType: "container",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "dead",
+        execStart: computer.runtime.command,
+        workingDirectory: computer.runtime.workingDirectory,
+        environment: computer.runtime.environment,
+      }
+    );
+  }
 }
 
 async function createContainerWithAutoPull(

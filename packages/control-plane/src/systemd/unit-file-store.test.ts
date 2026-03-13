@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createFileUnitStore } from "./unit-file-store";
+import { FileUnitStore } from "./unit-file-store";
 
 const directories: string[] = [];
 
@@ -15,7 +15,7 @@ afterEach(async () => {
 test("renders browser exec start without invalid background separators", async () => {
   const root = await mkdtemp(join(tmpdir(), "computerd-unit-store-"));
   directories.push(root);
-  const store = createFileUnitStore({
+  const store = new FileUnitStore({
     directory: join(root, "units"),
     browserRuntimeDirectory: join(root, "run"),
     browserStateDirectory: join(root, "state"),
@@ -87,7 +87,7 @@ test("renders browser exec start without invalid background separators", async (
 test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", async () => {
   const root = await mkdtemp(join(tmpdir(), "computerd-unit-store-"));
   directories.push(root);
-  const store = createFileUnitStore({
+  const store = new FileUnitStore({
     directory: join(root, "units"),
     browserRuntimeDirectory: join(root, "run"),
     browserStateDirectory: join(root, "state"),
@@ -163,7 +163,7 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
 test("uses explicit vm nic mac address in qemu args", async () => {
   const root = await mkdtemp(join(tmpdir(), "computerd-unit-store-"));
   directories.push(root);
-  const store = createFileUnitStore({
+  const store = new FileUnitStore({
     directory: join(root, "units"),
     browserRuntimeDirectory: join(root, "run"),
     browserStateDirectory: join(root, "state"),

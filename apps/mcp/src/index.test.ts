@@ -4,6 +4,7 @@ import type {
   HostUnitDetail,
   HostUnitSummary,
 } from "@computerd/core";
+import type { BaseControlPlane } from "@computerd/control-plane";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, expect, test, vi } from "vitest";
@@ -82,7 +83,7 @@ afterEach(async () => {
 });
 
 test("registers computer and host inspect tools", async () => {
-  const server = createComputerdMcpServer({
+  const server = createComputerdMcpServer(createMockControlPlane({
     deleteContainerImage: vi.fn().mockResolvedValue(undefined),
     deleteVmImage: vi.fn().mockResolvedValue(undefined),
     createAutomationSession: vi.fn().mockResolvedValue({
@@ -154,7 +155,7 @@ test("registers computer and host inspect tools", async () => {
     updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
     listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
     getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
-  });
+  }));
   const client = new Client({
     name: "computerd-mcp-test-client",
     version: "0.1.0",
@@ -193,7 +194,7 @@ test("registers computer and host inspect tools", async () => {
 
 test("invokes handlers and returns JSON payloads", async () => {
   const getComputer = vi.fn().mockResolvedValue(createComputerDetail());
-  const server = createComputerdMcpServer({
+  const server = createComputerdMcpServer(createMockControlPlane({
     deleteContainerImage: vi.fn().mockResolvedValue(undefined),
     deleteVmImage: vi.fn().mockResolvedValue(undefined),
     createAutomationSession: vi.fn(),
@@ -241,7 +242,7 @@ test("invokes handlers and returns JSON payloads", async () => {
     updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
     listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
     getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
-  });
+  }));
   const client = new Client({
     name: "computerd-mcp-test-client",
     version: "0.1.0",
@@ -270,3 +271,7 @@ test("invokes handlers and returns JSON payloads", async () => {
     name: "lab-host",
   });
 });
+
+function createMockControlPlane(methods: Record<string, unknown>) {
+  return methods as unknown as BaseControlPlane;
+}
