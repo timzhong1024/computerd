@@ -80,7 +80,7 @@ computerd 当前不会自动 repair / recover broken computer，也不提供 for
 
 - `qcow2` 路径支持最小 cloud-init
 - `iso` 路径依赖人工安装系统
-- `computer.network` 表示这台 VM 接入哪种 bridge/network substrate
+- `computer.network` 表示这台 VM 当前连接到哪个 computerd network
 - `vm.runtime.nics[]` 表示 guest 内部 NIC 与 IP 配置
 - 当 VM 使用 `qcow2 + cloud-init enabled` 时，computerd 会根据 `vm.runtime.nics[0]` 生成并应用 `network-config`
 - `iso` 或 `cloud-init disabled` 时，NIC 配置仍会保留，但不会自动下发到 guest
@@ -91,9 +91,8 @@ computerd 当前不会自动 repair / recover broken computer，也不提供 for
 - 只支持 Linux / x86_64
 - 要求宿主存在 `/dev/kvm`
 - 图形输出只使用 QEMU VNC
-- `network.mode = "host"` 绑定 `COMPUTERD_VM_BRIDGE`
-- `network.mode = "isolated"` 绑定 `COMPUTERD_VM_ISOLATED_BRIDGE`
-- 当前开发机桥接模式是 host-only 静态网段，不做 NAT / DHCP
+- `host network` 绑定 `COMPUTERD_VM_BRIDGE`
+- `isolated network` 由 computerd 托管自己的 bridge / DHCP / NAT
 
 ## Current Recommendation
 

@@ -33,7 +33,6 @@ test("deleteVmComputer removes persisted vm state and runtime directories", asyn
       terminalRuntimeDirectory: join(root, "terminal-run"),
       vmRuntimeDirectory: join(root, "vm-run"),
       vmStateDirectory: join(root, "vm-state"),
-      vmHostBridge: "br0",
     },
   });
 
@@ -48,6 +47,7 @@ test("deleteVmComputer removes persisted vm state and runtime directories", asyn
       accelerator: "kvm" as const,
       architecture: "x86_64" as const,
       machine: "q35" as const,
+      bridgeName: "br0",
       source: {
         kind: "qcow2" as const,
         imageId: "filesystem-vm:test",
@@ -79,9 +79,7 @@ test("deleteVmComputer removes persisted vm state and runtime directories", asyn
     storage: {
       rootMode: "persistent" as const,
     },
-    network: {
-      mode: "host" as const,
-    },
+    networkId: "network-host",
     lifecycle: {},
   };
 
@@ -115,7 +113,6 @@ test("vm snapshot operations use qemu-img and managed snapshot paths", async () 
       terminalRuntimeDirectory: join(root, "terminal-run"),
       vmRuntimeDirectory: join(root, "vm-run"),
       vmStateDirectory: join(root, "vm-state"),
-      vmHostBridge: "br0",
     },
   });
 
@@ -134,6 +131,7 @@ test("vm snapshot operations use qemu-img and managed snapshot paths", async () 
       accelerator: "kvm" as const,
       architecture: "x86_64" as const,
       machine: "q35" as const,
+      bridgeName: "br0",
       source: {
         kind: "qcow2" as const,
         imageId: "filesystem-vm:base",
@@ -165,9 +163,7 @@ test("vm snapshot operations use qemu-img and managed snapshot paths", async () 
     storage: {
       rootMode: "persistent" as const,
     },
-    network: {
-      mode: "host" as const,
-    },
+    networkId: "network-host",
     lifecycle: {},
   };
 

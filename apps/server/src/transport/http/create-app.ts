@@ -28,6 +28,9 @@ import {
   parseImageDetail,
   parseImageSummaries,
   parseImportVmImageInput,
+  parseNetworkDetail,
+  parseNetworkSummaries,
+  parseCreateNetworkInput,
   parsePullContainerImageInput,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
@@ -48,6 +51,9 @@ import {
   HostUnitNotFoundError,
   ImageMutationNotAllowedError,
   ImageNotFoundError,
+  NetworkConflictError,
+  NetworkNotFoundError,
+  AttachedNetworkDeleteError,
   UnsupportedComputerFeatureError,
 } from "@computerd/control-plane";
 import { createMcpHandler } from "./create-mcp-handler";
@@ -90,6 +96,39 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
           200,
           parseImageSummaries(await appControlPlane.imageProvider.listImages()),
         );
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/networks") {
+        sendJson(response, 200, parseNetworkSummaries(await appControlPlane.listNetworks()));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/networks") {
+        const body = await readJsonBody(request);
+        sendJson(
+          response,
+          201,
+          parseNetworkDetail(await appControlPlane.createNetwork(parseCreateNetworkInput(body))),
+        );
+        return;
+      }
+
+      const networkDetailMatch = /^\/api\/networks\/(?<id>.+)$/.exec(url.pathname);
+      if (request.method === "GET" && networkDetailMatch?.groups?.id) {
+        sendJson(
+          response,
+          200,
+          parseNetworkDetail(
+            await appControlPlane.getNetwork(decodeURIComponent(networkDetailMatch.groups.id)),
+          ),
+        );
+        return;
+      }
+
+      if (request.method === "DELETE" && networkDetailMatch?.groups?.id) {
+        await appControlPlane.deleteNetwork(decodeURIComponent(networkDetailMatch.groups.id));
+        sendJson(response, 204, null);
         return;
       }
 
@@ -450,6 +489,16 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
         return;
       }
 
+      if (error instanceof NetworkConflictError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
+      if (error instanceof AttachedNetworkDeleteError) {
+        sendJson(response, 409, { error: error.message });
+        return;
+      }
+
       if (error instanceof BrokenImageError) {
         sendJson(response, 409, { error: error.message });
         return;
@@ -474,7 +523,8 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
         error instanceof ComputerNotFoundError ||
         error instanceof HostUnitNotFoundError ||
         error instanceof ComputerSnapshotNotFoundError ||
-        error instanceof ImageNotFoundError
+        error instanceof ImageNotFoundError ||
+        error instanceof NetworkNotFoundError
       ) {
         sendJson(response, 404, { error: error.message });
         return;

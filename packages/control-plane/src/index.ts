@@ -49,6 +49,19 @@ export type {
   HostRuntime,
 } from "@computerd/core";
 export {
+  AttachedNetworkDeleteError,
+  DEFAULT_HOST_NETWORK_ID,
+  DevelopmentNetworkProvider,
+  NetworkConflictError,
+  NetworkNotFoundError,
+  SystemNetworkProvider,
+} from "./networks";
+export type {
+  NetworkProvider,
+  PersistedNetworkRecord,
+  SystemNetworkProviderOptions,
+} from "./networks";
+export {
   BrokenImageError,
   ImageMutationNotAllowedError,
   ImageNotFoundError,

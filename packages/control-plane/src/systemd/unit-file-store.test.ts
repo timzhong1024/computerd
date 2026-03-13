@@ -22,7 +22,6 @@ test("renders browser exec start without invalid background separators", async (
     terminalRuntimeDirectory: join(root, "terminals"),
     vmRuntimeDirectory: join(root, "run"),
     vmStateDirectory: join(root, "state"),
-    vmHostBridge: "br0",
   });
 
   await store.writeUnitFile({
@@ -50,9 +49,7 @@ test("renders browser exec start without invalid background separators", async (
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: "network-host",
     lifecycle: {},
   });
 
@@ -94,7 +91,6 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
     terminalRuntimeDirectory: join(root, "terminals"),
     vmRuntimeDirectory: join(root, "run"),
     vmStateDirectory: join(root, "state"),
-    vmHostBridge: "br0",
   });
 
   await store.writeUnitFile({
@@ -108,6 +104,7 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
       accelerator: "kvm",
       architecture: "x86_64",
       machine: "q35",
+      bridgeName: "br0",
       source: {
         kind: "qcow2",
         imageId: "filesystem-vm:test",
@@ -144,9 +141,7 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: "network-host",
     lifecycle: {},
   });
 
@@ -170,7 +165,6 @@ test("uses explicit vm nic mac address in qemu args", async () => {
     terminalRuntimeDirectory: join(root, "terminals"),
     vmRuntimeDirectory: join(root, "run"),
     vmStateDirectory: join(root, "state"),
-    vmHostBridge: "br0",
   });
 
   await store.writeUnitFile({
@@ -184,6 +178,7 @@ test("uses explicit vm nic mac address in qemu args", async () => {
       accelerator: "kvm",
       architecture: "x86_64",
       machine: "q35",
+      bridgeName: "br0",
       source: {
         kind: "qcow2",
         imageId: "filesystem-vm:test",
@@ -220,9 +215,7 @@ test("uses explicit vm nic mac address in qemu args", async () => {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: "network-host",
     lifecycle: {},
   });
 

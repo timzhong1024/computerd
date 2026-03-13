@@ -21,6 +21,7 @@ import {
   resolveVmNicMacAddress,
   withPersistedVmRuntime,
 } from "./vm-runtime";
+import type { PersistedNetworkRecord } from "../networks";
 import type {
   BrowserViewport,
   CreateVmComputerInput,
@@ -45,6 +46,7 @@ export abstract class SystemdRuntime {
   abstract createVmComputer(
     input: CreateVmComputerInput,
     imagePath: string,
+    network: PersistedNetworkRecord,
   ): Promise<PersistedVmComputer["runtime"]>;
   abstract deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
   abstract deleteVmComputer(computer: PersistedVmComputer): Promise<void>;
@@ -135,11 +137,13 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
     this.unitFileStoreOptions = unitFileStoreOptions;
   }
 
-  async createVmComputer(input: CreateVmComputerInput, imagePath: string) {
-    assertVmHostSupport(
-      resolveVmBridgeName(input.network?.mode ?? "host", this.unitFileStoreOptions),
-    );
-    const runtime = withPersistedVmRuntime(input.runtime, imagePath);
+  async createVmComputer(
+    input: CreateVmComputerInput,
+    imagePath: string,
+    network: PersistedNetworkRecord,
+  ) {
+    assertVmHostSupport(network.bridgeName);
+    const runtime = withPersistedVmRuntime(input.runtime, imagePath, network.bridgeName);
     const spec = this.vmRuntimePaths.specForName(input.name);
     await mkdir(spec.stateDirectory, { recursive: true });
     await mkdir(spec.runtimeDirectory, { recursive: true });
@@ -905,18 +909,6 @@ function shouldWriteNetworkConfig(nic: {
   ipv6?: { type: "disabled" | "dhcp" | "slaac" | "static" };
 }) {
   return nic.ipv4?.type !== undefined || nic.ipv6?.type !== undefined;
-}
-
-function resolveVmBridgeName(networkMode: "host" | "isolated", options: FileUnitStoreOptions) {
-  if (networkMode === "host") {
-    return options.vmHostBridge;
-  }
-
-  if (options.vmIsolatedBridge === undefined) {
-    throw new Error("Isolated VM bridge is not configured.");
-  }
-
-  return options.vmIsolatedBridge;
 }
 
 function quoteShell(value: string) {

@@ -17,8 +17,6 @@ export interface FileUnitStoreOptions {
   terminalRuntimeDirectory: string;
   vmRuntimeDirectory: string;
   vmStateDirectory: string;
-  vmHostBridge: string;
-  vmIsolatedBridge?: string;
 }
 
 export abstract class UnitFileStore {
@@ -64,8 +62,6 @@ export class FileUnitStore extends UnitFileStore {
           : renderVmUnitFile(computer, {
               runtimeRootDirectory: this.options.vmRuntimeDirectory,
               stateRootDirectory: this.options.vmStateDirectory,
-              vmHostBridge: this.options.vmHostBridge,
-              vmIsolatedBridge: this.options.vmIsolatedBridge,
             });
     if (computer.profile === "host" && computer.access.console?.mode === "pty") {
       await this.consoleRuntimePaths.ensureComputerDirectory(computer);
@@ -201,8 +197,6 @@ function renderVmUnitFile(
   vmRuntimePathsOptions: {
     runtimeRootDirectory: string;
     stateRootDirectory: string;
-    vmHostBridge: string;
-    vmIsolatedBridge?: string;
   },
 ) {
   const vmRuntimePaths = createVmRuntimePaths({
@@ -219,7 +213,7 @@ function renderVmUnitFile(
     "KillMode=control-group",
     "TimeoutStopSec=30s",
     `WorkingDirectory=${spec.stateDirectory}`,
-    `ExecStart=${buildVmExecStart(computer, spec, resolveVmBridge(computer, vmRuntimePathsOptions.vmHostBridge, vmRuntimePathsOptions.vmIsolatedBridge))}`,
+    `ExecStart=${buildVmExecStart(computer, spec, computer.runtime.bridgeName)}`,
     `ExecStopPost=${buildVmExecStopPost(spec)}`,
   ];
 
@@ -369,16 +363,6 @@ function buildVmExecStart(
   ].join("; ");
 
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
-}
-
-function resolveVmBridge(
-  computer: PersistedVmComputer,
-  vmHostBridge: string,
-  vmIsolatedBridge?: string,
-) {
-  return computer.network.mode === "host"
-    ? vmHostBridge
-    : (vmIsolatedBridge ?? "__computerd_missing_isolated_bridge__");
 }
 
 function buildBrowserExecStopPost(

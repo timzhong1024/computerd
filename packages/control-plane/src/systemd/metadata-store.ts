@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DEFAULT_HOST_NETWORK_ID } from "../networks";
 import { createBrowserRuntimeUser } from "./browser-runtime";
 import { ComputerMetadataStore, type PersistedComputer } from "./types";
 
@@ -69,16 +70,33 @@ export class DevelopmentComputerMetadataStore extends ComputerMetadataStore {
 }
 
 function normalizePersistedComputer(computer: PersistedComputer): PersistedComputer {
-  if (computer.profile !== "browser" || computer.runtime.runtimeUser !== undefined) {
-    return computer;
+  const withRuntimeUser =
+    computer.profile === "browser" && computer.runtime.runtimeUser === undefined
+      ? {
+          ...computer,
+          runtime: {
+            ...computer.runtime,
+            runtimeUser: createBrowserRuntimeUser(computer.name),
+          },
+        }
+      : computer;
+
+  if ("networkId" in withRuntimeUser && typeof withRuntimeUser.networkId === "string") {
+    return withRuntimeUser;
   }
 
+  const legacyNetwork =
+    "network" in withRuntimeUser && typeof withRuntimeUser.network === "object"
+      ? withRuntimeUser.network
+      : undefined;
+  const legacyNetworkId =
+    legacyNetwork && "mode" in legacyNetwork && legacyNetwork.mode === "isolated"
+      ? "network-legacy-isolated"
+      : DEFAULT_HOST_NETWORK_ID;
+
   return {
-    ...computer,
-    runtime: {
-      ...computer.runtime,
-      runtimeUser: createBrowserRuntimeUser(computer.name),
-    },
+    ...withRuntimeUser,
+    networkId: legacyNetworkId,
   };
 }
 

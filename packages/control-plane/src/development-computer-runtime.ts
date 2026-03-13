@@ -35,6 +35,7 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
   async createContainerComputer(
     input: Parameters<ComputerRuntimePort["createContainerComputer"]>[0],
     unitName: string,
+    _network: Parameters<ComputerRuntimePort["createContainerComputer"]>[2],
   ) {
     const containerName = unitName.replace(/\.service$/, "");
     const containerId = `development-${slugify(input.name)}`;
@@ -62,8 +63,9 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
   async createVmComputer(
     input: Parameters<ComputerRuntimePort["createVmComputer"]>[0],
     imagePath: string,
+    network: Parameters<ComputerRuntimePort["createVmComputer"]>[2],
   ) {
-    return withPersistedVmRuntime(input.runtime, imagePath);
+    return withPersistedVmRuntime(input.runtime, imagePath, network.bridgeName);
   }
 
   async deleteBrowserRuntimeIdentity() {}

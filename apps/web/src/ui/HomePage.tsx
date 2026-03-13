@@ -10,6 +10,8 @@ import {
   parseHostUnitSummaries,
   parseImageDetail,
   parseImageSummaries,
+  parseNetworkDetail,
+  parseNetworkSummaries,
   type ComputerAutomationSession,
   type ComputerDetail,
   type ComputerScreenshot,
@@ -18,6 +20,7 @@ import {
   type HostUnitDetail,
   type HostUnitSummary,
   type ImageSummary,
+  type NetworkSummary,
 } from "@computerd/core";
 import { createAutomationSession, createScreenshot } from "../transport/computer-sessions";
 import { deleteRequest, formatError, getJson, postJson } from "../transport/http";
@@ -36,6 +39,7 @@ export function HomePage() {
   const [computers, setComputers] = useState<ComputerSummary[]>([]);
   const [hostUnits, setHostUnits] = useState<HostUnitSummary[]>([]);
   const [images, setImages] = useState<ImageSummary[]>([]);
+  const [networks, setNetworks] = useState<NetworkSummary[]>([]);
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [selectedComputer, setSelectedComputer] = useState<ComputerDetail | null>(null);
   const [selectedHostUnit, setSelectedHostUnit] = useState<HostUnitDetail | null>(null);
@@ -53,6 +57,10 @@ export function HomePage() {
   const [vmImageUpload, setVmImageUpload] = useState<File | null>(null);
   const [vmImageUploadKey, setVmImageUploadKey] = useState(0);
   const [containerImageReference, setContainerImageReference] = useState("ubuntu:24.04");
+  const [networkForm, setNetworkForm] = useState({
+    name: "",
+    cidr: "192.168.252.0/24",
+  });
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [form, setForm] = useState({
@@ -62,6 +70,7 @@ export function HomePage() {
     workingDirectory: "",
     browser: "chromium",
     image: "ubuntu:24.04",
+    networkId: "network-host",
     vmSourceKind: "qcow2",
     vmImageId: "filesystem-vm:dev-qcow2",
     vmIsoImageId: "filesystem-vm:dev-iso",
@@ -86,15 +95,17 @@ export function HomePage() {
 
   async function refreshInventory() {
     try {
-      const [nextComputers, nextHostUnits, nextImages] = await Promise.all([
+      const [nextComputers, nextHostUnits, nextImages, nextNetworks] = await Promise.all([
         getJson("/api/computers", parseComputerSummaries),
         getJson("/api/host-units", parseHostUnitSummaries),
         getJson("/api/images", parseImageSummaries),
+        getJson("/api/networks", parseNetworkSummaries),
       ]);
 
       setComputers(nextComputers);
       setHostUnits(nextHostUnits);
       setImages(nextImages);
+      setNetworks(nextNetworks);
       setForm((current) => ({
         ...current,
         image: nextImages.some(
@@ -115,6 +126,11 @@ export function HomePage() {
           ? current.vmIsoImageId
           : (nextImages.find((image) => image.provider === "filesystem-vm" && image.kind === "iso")
               ?.id ?? current.vmIsoImageId),
+        networkId: nextNetworks.some((network) => network.id === current.networkId)
+          ? current.networkId
+          : (nextNetworks.find((network) => network.kind === "host")?.id ??
+            nextNetworks[0]?.id ??
+            current.networkId),
       }));
 
       if (
@@ -201,6 +217,7 @@ export function HomePage() {
           ? {
               name: form.name,
               profile: "host" as const,
+              ...(form.networkId.length > 0 ? { networkId: form.networkId } : {}),
               access: form.consoleEnabled
                 ? {
                     console: {
@@ -223,6 +240,7 @@ export function HomePage() {
             ? {
                 name: form.name,
                 profile: "container" as const,
+                ...(form.networkId.length > 0 ? { networkId: form.networkId } : {}),
                 access: form.consoleEnabled
                   ? {
                       console: {
@@ -247,6 +265,7 @@ export function HomePage() {
               ? {
                   name: form.name,
                   profile: "browser" as const,
+                  ...(form.networkId.length > 0 ? { networkId: form.networkId } : {}),
                   runtime: {
                     browser: form.browser as "chromium",
                     persistentProfile: true,
@@ -255,6 +274,7 @@ export function HomePage() {
               : {
                   name: form.name,
                   profile: "vm" as const,
+                  ...(form.networkId.length > 0 ? { networkId: form.networkId } : {}),
                   access: {
                     ...(form.consoleEnabled
                       ? {
@@ -528,6 +548,36 @@ export function HomePage() {
     }
   }
 
+  async function handleCreateNetwork(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await postJson("/api/networks", networkForm, parseNetworkDetail);
+      setNetworkForm((current) => ({ ...current, name: "" }));
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteNetwork(id: string) {
+    setIsBusy(true);
+    setError(null);
+
+    try {
+      await deleteRequest(`/api/networks/${encodeURIComponent(id)}`);
+      await refreshInventory();
+    } catch (caughtError) {
+      setError(formatError(caughtError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleCreateAutomationSession() {
     if (selectedComputer === null || selectedComputer.profile !== "browser") {
       return;
@@ -688,6 +738,11 @@ export function HomePage() {
   }
 
   const isSelectedComputerBroken = selectedComputer?.state === "broken";
+  const selectedCreateNetwork = networks.find((network) => network.id === form.networkId) ?? null;
+  const createNetworkUnsupported =
+    selectedCreateNetwork !== null &&
+    selectedCreateNetwork.kind === "isolated" &&
+    (form.profile === "host" || form.profile === "browser");
   const canMutateSnapshots =
     selectedComputer !== null &&
     selectedComputer.profile === "vm" &&
@@ -762,6 +817,30 @@ export function HomePage() {
                 }
               />
             </label>
+
+            <label>
+              Network
+              <select
+                name="networkId"
+                value={form.networkId}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, networkId: event.target.value }))
+                }
+              >
+                {networks.map((network) => (
+                  <option key={network.id} value={network.id}>
+                    {network.name} · {network.kind} · {network.cidr}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {createNetworkUnsupported ? (
+              <p className="meta">
+                {form.profile} computers do not support isolated networks yet. Choose the host
+                network for now.
+              </p>
+            ) : null}
 
             {form.profile === "host" ? (
               <>
@@ -1084,7 +1163,7 @@ export function HomePage() {
               </>
             )}
 
-            <button type="submit" disabled={isBusy}>
+            <button type="submit" disabled={isBusy || createNetworkUnsupported}>
               Create computer
             </button>
           </form>
@@ -1250,6 +1329,65 @@ export function HomePage() {
         </div>
 
         <div className="panel">
+          <div className="panel-header">
+            <h2>Networks</h2>
+          </div>
+          <form className="create-form" onSubmit={handleCreateNetwork}>
+            <label>
+              Network name
+              <input
+                name="networkName"
+                value={networkForm.name}
+                onChange={(event) =>
+                  setNetworkForm((current) => ({ ...current, name: event.target.value }))
+                }
+                placeholder="isolated-dev"
+                required
+              />
+            </label>
+            <label>
+              CIDR
+              <input
+                name="networkCidr"
+                value={networkForm.cidr}
+                onChange={(event) =>
+                  setNetworkForm((current) => ({ ...current, cidr: event.target.value }))
+                }
+                placeholder="192.168.252.0/24"
+                required
+              />
+            </label>
+            <button type="submit" disabled={isBusy}>
+              Create network
+            </button>
+          </form>
+          <ul className="item-list">
+            {networks.map((network) => (
+              <li key={network.id}>
+                <div className="panel-header">
+                  <span>
+                    {network.name}{" "}
+                    <span className="meta">
+                      {network.kind} · {network.cidr} · {network.status.state} · attached{" "}
+                      {network.attachedComputerCount}
+                    </span>
+                  </span>
+                  {network.deletable ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteNetwork(network.id)}
+                      disabled={isBusy}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="panel">
           <h2>Host inspect</h2>
           <div className="scroll-list">
             <ul className="item-list">
@@ -1387,7 +1525,10 @@ export function HomePage() {
               </div>
               <div>
                 <dt>Network</dt>
-                <dd>{selectedComputer.network.mode}</dd>
+                <dd>
+                  {selectedComputer.network.name} · {selectedComputer.network.kind} ·{" "}
+                  {selectedComputer.network.cidr}
+                </dd>
               </div>
               <div>
                 <dt>Storage</dt>
@@ -1444,8 +1585,11 @@ export function HomePage() {
                     <dd>{selectedComputer.runtime.bridge}</dd>
                   </div>
                   <div>
-                    <dt>Network mode</dt>
-                    <dd>{selectedComputer.network.mode}</dd>
+                    <dt>Network</dt>
+                    <dd>
+                      {selectedComputer.network.name} · {selectedComputer.network.kind} ·{" "}
+                      {selectedComputer.network.cidr}
+                    </dd>
                   </div>
                   <div>
                     <dt>Cloud-init</dt>

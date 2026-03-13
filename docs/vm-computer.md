@@ -26,7 +26,7 @@
 - monitor 是图形主入口
 - console 是 serial 主入口
 - VM 的网络分两层：
-  - `computer.network` 表示接入哪种 bridge
+  - `computer.network` 表示接入哪个 computerd network
   - `vm.runtime.nics[]` 表示 guest NIC 与 IP 配置
 
 用户不需要理解：
@@ -203,26 +203,32 @@ console 复用现有 websocket terminal surface，但背后接的是 QEMU serial
 
 ### Layer 1: `computer.network`
 
-`computer.network` 表示 computerd 提供给 VM 的网络承载/bridge 类型。
+`computer.network` 表示这台 VM 当前连接到哪个 computerd network object。
 
-当前只支持两种：
+network object 当前至少表达：
 
-- `network.mode = "host"`
-- `network.mode = "isolated"`
+- `id`
+- `name`
+- `kind`
+- `cidr`
+- bridge / router / DHCP / NAT 的只读健康状态
+
+当前第一版 `kind` 只有两种：
+
+- `host`
+- `isolated`
 
 当前语义固定为：
 
-- `host` = 接入默认 host bridge
-- `isolated` = 接入默认 isolated bridge
+- `host` = 接入保留的 host network
+- `isolated` = 接入用户创建的 isolated network
 
 桥接映射：
 
-- `host` -> `COMPUTERD_VM_BRIDGE`，默认 `br0`
-- `isolated` -> `COMPUTERD_VM_ISOLATED_BRIDGE`
+- `host network` -> `COMPUTERD_VM_BRIDGE`，默认 `br0`
+- `isolated network` -> 该 network 自己的 `bridgeName`
 
-如果 `isolated` bridge 没配置：
-
-- create/start 会明确报 unsupported/runtime error
+VM create 当前不再直接传 `network.mode`，而是通过 `networkId` 选择 network object。
 
 ### Layer 2: `vm.runtime.nics[]`
 
@@ -324,11 +330,15 @@ detail 里会通过：
 
 - [vm-remote-smoke/SKILL.md](/Users/timzhong/computerd/.codex/skills/vm-remote-smoke/SKILL.md)
 
+统一 network object 设计见：
+
+- [docs/computer-networks.md](/Users/timzhong/computerd/docs/computer-networks.md)
+
 这条 smoke 只覆盖最关键主链路：
 
 - `qcow2`
 - `cloud-init enabled`
-- `network.mode = "host"`
+- `host network`
 - 单 NIC
 - 静态 IPv4
 

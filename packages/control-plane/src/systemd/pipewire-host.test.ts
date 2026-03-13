@@ -94,9 +94,7 @@ test("creates a per-browser pipewire runtime environment", () => {
       storage: {
         rootMode: "persistent",
       },
-      network: {
-        mode: "host",
-      },
+      networkId: "network-host",
       lifecycle: {},
     },
     {

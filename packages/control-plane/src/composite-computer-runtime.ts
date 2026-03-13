@@ -20,12 +20,17 @@ export class CompositeComputerRuntime extends ComputerRuntimePort {
   createContainerComputer(
     input: Parameters<DockerRuntime["createContainerComputer"]>[0],
     unitName: string,
+    network: Parameters<DockerRuntime["createContainerComputer"]>[2],
   ) {
-    return this.dockerRuntime.createContainerComputer(input, unitName);
+    return this.dockerRuntime.createContainerComputer(input, unitName, network);
   }
 
-  createVmComputer(input: Parameters<SystemdRuntime["createVmComputer"]>[0], imagePath: string) {
-    return this.systemdRuntime.createVmComputer(input, imagePath);
+  createVmComputer(
+    input: Parameters<SystemdRuntime["createVmComputer"]>[0],
+    imagePath: string,
+    network: Parameters<SystemdRuntime["createVmComputer"]>[2],
+  ) {
+    return this.systemdRuntime.createVmComputer(input, imagePath, network);
   }
 
   deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer) {

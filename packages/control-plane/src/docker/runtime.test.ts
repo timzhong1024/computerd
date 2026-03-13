@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import { afterEach, expect, test, vi } from "vitest";
+import { DEFAULT_HOST_NETWORK_ID } from "../networks";
 import { DefaultDockerRuntime } from "./runtime";
 
 vi.mock("dockerode", () => {
@@ -63,6 +64,13 @@ test("pulls missing images before retrying container creation", async () => {
       },
     },
     "computerd-workspace-container.service",
+    {
+      id: DEFAULT_HOST_NETWORK_ID,
+      name: "Host network",
+      kind: "host",
+      cidr: "192.168.250.0/24",
+      bridgeName: "br0",
+    },
   );
 
   expect(dockerClient.pull).toHaveBeenCalledWith("ubuntu:24.04");

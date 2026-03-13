@@ -15,9 +15,15 @@ import {
   type CreateHostComputerInput,
   type CreateVmComputerInput,
   type HostUnitDetail,
+  type NetworkSummary,
   type RestoreComputerInput,
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
+import {
+  DEFAULT_HOST_NETWORK_ID,
+  type NetworkProvider,
+  type PersistedNetworkRecord,
+} from "./networks";
 import {
   createBrowserRuntimePaths,
   createBrowserRuntimeUser,
@@ -101,6 +107,7 @@ export class ComputerSnapshotNotFoundError extends Error {
 export interface BaseControlPlaneDependencies {
   environment: NodeJS.ProcessEnv;
   imageProvider: ImageProvider;
+  networkProvider: NetworkProvider;
   metadataStore: ComputerMetadataStore;
   runtime: ComputerRuntimePort;
   consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>;
@@ -112,6 +119,8 @@ export interface BaseControlPlaneDependencies {
 export async function ensureDirectories(environment: NodeJS.ProcessEnv) {
   const paths = [
     environment.COMPUTERD_METADATA_DIR ?? "/var/lib/computerd/computers",
+    environment.COMPUTERD_NETWORK_CONFIG_DIR ?? "/var/lib/computerd",
+    environment.COMPUTERD_NETWORK_RUNTIME_DIR ?? "/run/computerd/networks",
     environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
     environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
     environment.COMPUTERD_VM_STATE_DIR ?? "/var/lib/computerd/computers",
@@ -127,6 +136,7 @@ export async function createPersistedComputer(
   input: CreateComputerInput,
   runtime: ComputerRuntimePort,
   resolveVmImagePath: (imageId: string, kind: "qcow2" | "iso") => Promise<string>,
+  network: PersistedNetworkRecord,
 ): Promise<PersistedComputer> {
   const timestamp = new Date().toISOString();
   const access =
@@ -171,9 +181,7 @@ export async function createPersistedComputer(
     storage: input.storage ?? {
       rootMode: "persistent" as const,
     },
-    network: input.network ?? {
-      mode: "host" as const,
-    },
+    networkId: input.networkId ?? DEFAULT_HOST_NETWORK_ID,
     lifecycle: input.lifecycle ?? {},
   };
 
@@ -190,7 +198,7 @@ export async function createPersistedComputer(
   }
 
   if (input.profile === "container") {
-    const containerRuntime = await runtime.createContainerComputer(input, common.unitName);
+    const containerRuntime = await runtime.createContainerComputer(input, common.unitName, network);
     return {
       ...common,
       unitName: toContainerUnitName(input.name),
@@ -207,7 +215,7 @@ export async function createPersistedComputer(
     return {
       ...common,
       profile: "vm",
-      runtime: await runtime.createVmComputer(input, imagePath),
+      runtime: await runtime.createVmComputer(input, imagePath, network),
     };
   }
 
@@ -229,20 +237,8 @@ export function mapComputerState(runtimeState: UnitRuntimeState | null) {
   return runtimeState.activeState === "active" ? ("running" as const) : ("stopped" as const);
 }
 
-export function resolveVmBridgeName(
-  networkMode: "host" | "isolated",
-  environment: NodeJS.ProcessEnv,
-) {
-  if (networkMode === "host") {
-    return environment.COMPUTERD_VM_BRIDGE ?? "br0";
-  }
-
-  return environment.COMPUTERD_VM_ISOLATED_BRIDGE ?? "__computerd_missing_isolated_bridge__";
-}
-
 export function assertSupportedCreateInput(
   input: CreateComputerInput,
-  environment: NodeJS.ProcessEnv,
 ): asserts input is
   | CreateHostComputerInput
   | CreateBrowserComputerInput
@@ -252,10 +248,6 @@ export function assertSupportedCreateInput(
     throw new UnsupportedComputerFeatureError(
       '`storage.rootMode="ephemeral"` is not supported yet.',
     );
-  }
-
-  if (input.profile !== "vm" && input.network?.mode === "isolated") {
-    throw new UnsupportedComputerFeatureError('`network.mode="isolated"` is not supported yet.');
   }
 
   if (input.resources?.tasksMax !== undefined) {
@@ -278,15 +270,6 @@ export function assertSupportedCreateInput(
     if (input.runtime.nics.length !== 1) {
       throw new UnsupportedComputerFeatureError(
         `Computer "${input.name}" currently supports exactly one VM NIC.`,
-      );
-    }
-
-    if (
-      input.network?.mode === "isolated" &&
-      (environment.COMPUTERD_VM_ISOLATED_BRIDGE ?? "").length === 0
-    ) {
-      throw new UnsupportedComputerFeatureError(
-        `Computer "${input.name}" cannot use network.mode="isolated" until COMPUTERD_VM_ISOLATED_BRIDGE is configured.`,
       );
     }
   }
@@ -510,7 +493,6 @@ export function toComputerDetail(
   summary: ComputerSummary,
   browserRuntimePaths: ReturnType<typeof createBrowserRuntimePaths>,
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>,
-  environment: NodeJS.ProcessEnv,
 ): ComputerDetail {
   const common = {
     ...summary,
@@ -519,7 +501,6 @@ export function toComputerDetail(
       memoryMaxMiB: runtimeState?.memoryMaxMiB ?? record.resources.memoryMaxMiB,
     },
     storage: record.storage,
-    network: record.network,
     lifecycle: record.lifecycle,
     status: {
       lastActionAt: record.lastActionAt,
@@ -559,7 +540,6 @@ export function toComputerDetail(
       runtime: toVmRuntimeDetail(record, {
         runtimeRootDirectory: vmRuntimePaths.runtimeRootDirectory,
         stateRootDirectory: vmRuntimePaths.stateRootDirectory,
-        bridge: resolveVmBridgeName(record.network.mode, environment),
       }),
     };
   }
@@ -577,6 +557,7 @@ export function toComputerDetail(
 export function toComputerSummary(
   record: PersistedComputer,
   state: ComputerSummary["state"],
+  network: NetworkSummary,
 ): ComputerSummary {
   return {
     name: record.name,
@@ -587,6 +568,7 @@ export function toComputerSummary(
     createdAt: record.createdAt,
     access: record.access,
     capabilities: createComputerCapabilities(record.profile, state, record.access),
+    network,
   };
 }
 

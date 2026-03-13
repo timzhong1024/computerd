@@ -4,11 +4,13 @@ import type {
   PersistedContainerComputer,
   UnitRuntimeState,
 } from "../systemd/types";
+import type { PersistedNetworkRecord } from "../networks";
 
 export abstract class DockerRuntime {
   abstract createContainerComputer(
     input: CreateContainerComputerInput,
     unitName: string,
+    network: PersistedNetworkRecord,
   ): Promise<PersistedContainerComputer["runtime"]>;
   abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;
   abstract getContainerRuntimeState(
@@ -26,7 +28,11 @@ export class DefaultDockerRuntime extends DockerRuntime {
     super();
   }
 
-  async createContainerComputer(input: CreateContainerComputerInput, unitName: string) {
+  async createContainerComputer(
+    input: CreateContainerComputerInput,
+    unitName: string,
+    network: PersistedNetworkRecord,
+  ) {
     const containerName = unitName.replace(/\.service$/, "");
     const command = resolveContainerCommand(input);
     const createOptions = {
@@ -44,7 +50,16 @@ export class DefaultDockerRuntime extends DockerRuntime {
         "computerd.managed": "true",
         "computerd.computer.name": input.name,
         "computerd.profile": "container",
+        "computerd.network.id": network.id,
       },
+      HostConfig:
+        network.kind === "host"
+          ? {
+              NetworkMode: "host",
+            }
+          : {
+              NetworkMode: network.dockerNetworkName,
+            },
     } satisfies Parameters<Docker["createContainer"]>[0];
     const container = await createContainerWithAutoPull(
       this.dockerClient,

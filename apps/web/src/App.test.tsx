@@ -24,6 +24,7 @@ interface FakeComputer {
   state: "stopped" | "running" | "broken";
   access?: Record<string, unknown>;
   runtime: Record<string, unknown>;
+  networkId?: string;
 }
 
 const hostUnits = [
@@ -47,6 +48,7 @@ const hostUnits = [
 
 let computers: FakeComputer[];
 let images: Array<Record<string, unknown>>;
+let networks: Array<Record<string, unknown>>;
 let snapshotsByComputer: Record<
   string,
   Array<{ name: string; createdAt: string; sizeBytes: number }>
@@ -125,6 +127,23 @@ beforeEach(() => {
       status: "available",
     },
   ];
+  networks = [
+    createNetworkSummary({
+      id: "network-host",
+      name: "Host network",
+      kind: "host",
+      cidr: "192.168.250.0/24",
+      attachedComputerCount: 2,
+      deletable: false,
+      status: {
+        state: "healthy",
+        bridgeName: "br0",
+        routerState: "unsupported",
+        dhcpState: "unsupported",
+        natState: "unsupported",
+      },
+    }),
+  ];
 
   vi.mocked(connectMonitorClient).mockReset();
   vi.mocked(connectMonitorClient).mockImplementation(
@@ -150,6 +169,38 @@ beforeEach(() => {
 
       if (url === "/api/computers" && method === "GET") {
         return jsonResponse(computers.map((computer) => createComputerSummary(computer)));
+      }
+
+      if (url === "/api/networks" && method === "GET") {
+        return jsonResponse(networks);
+      }
+
+      if (url === "/api/networks" && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as { name: string; cidr: string };
+        const created = createNetworkSummary({
+          id: `network-${body.name}`,
+          name: body.name,
+          kind: "isolated",
+          cidr: body.cidr,
+          attachedComputerCount: 0,
+          deletable: true,
+          status: {
+            state: "healthy",
+            bridgeName: "ctd12345678",
+            routerState: "healthy",
+            dhcpState: "healthy",
+            natState: "healthy",
+          },
+        });
+        networks = [...networks, created];
+        return jsonResponse(created, 201);
+      }
+
+      const deleteNetworkMatch = /^\/api\/networks\/(?<id>.+)$/.exec(url);
+      if (deleteNetworkMatch?.groups?.id && method === "DELETE") {
+        const id = decodeURIComponent(deleteNetworkMatch.groups.id);
+        networks = networks.filter((network) => network.id !== id);
+        return jsonResponse(null, 204);
       }
 
       if (url === "/api/images" && method === "GET") {
@@ -434,6 +485,7 @@ beforeEach(() => {
             body.profile === "container" ? `docker:${body.name}` : `computerd-${body.name}.service`,
           profile: body.profile,
           state: "stopped",
+          networkId: (body.networkId as string | undefined) ?? "network-host",
           runtime:
             body.profile === "browser"
               ? {
@@ -512,6 +564,66 @@ test("creates a browser computer and refreshes inventory", async () => {
   await waitFor(() => {
     expect(screen.getByText(/chromium · profile persistent/i)).toBeInTheDocument();
   });
+});
+
+test("creates and deletes isolated networks from the inventory", async () => {
+  renderApp("/");
+
+  fireEvent.change(await screen.findByLabelText("Network name"), {
+    target: { value: "isolated-lab" },
+  });
+  fireEvent.change(screen.getByLabelText("CIDR"), {
+    target: { value: "192.168.252.0/24" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create network" }));
+
+  const networkRow = await screen.findByText("isolated-lab");
+  expect(networkRow).toBeInTheDocument();
+
+  const networkListItem = networkRow.closest("li");
+  if (networkListItem === null) {
+    throw new TypeError("Expected network list item");
+  }
+  fireEvent.click(within(networkListItem).getByRole("button", { name: "Delete" }));
+
+  await waitFor(() => {
+    expect(screen.queryByText("isolated-lab")).not.toBeInTheDocument();
+  });
+});
+
+test("blocks isolated networks for browser and host computers in the create form", async () => {
+  networks = [
+    ...networks,
+    createNetworkSummary({
+      id: "network-isolated-lab",
+      name: "isolated-lab",
+      kind: "isolated",
+      cidr: "192.168.252.0/24",
+      attachedComputerCount: 0,
+      deletable: true,
+      status: {
+        state: "healthy",
+        bridgeName: "ctd12345678",
+        routerState: "healthy",
+        dhcpState: "healthy",
+        natState: "healthy",
+      },
+    }),
+  ];
+
+  renderApp("/");
+
+  fireEvent.change(await screen.findByLabelText("Profile"), {
+    target: { value: "browser" },
+  });
+  fireEvent.change(screen.getByLabelText("Network"), {
+    target: { value: "network-isolated-lab" },
+  });
+
+  expect(
+    screen.getByText(/browser computers do not support isolated networks yet/i),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create computer" })).toBeDisabled();
 });
 
 test("creates a container computer and shows exec shell affordance", async () => {
@@ -957,6 +1069,24 @@ function renderApp(initialPath: string) {
 }
 
 function createComputerSummary(computer: FakeComputer) {
+  const networkId = computer.networkId ?? "network-host";
+  const network =
+    networks.find((entry) => entry.id === networkId) ??
+    createNetworkSummary({
+      id: networkId,
+      name: networkId,
+      kind: "isolated",
+      cidr: "192.168.252.0/24",
+      attachedComputerCount: 0,
+      deletable: true,
+      status: {
+        state: "healthy",
+        bridgeName: "ctd12345678",
+        routerState: "healthy",
+        dhcpState: "healthy",
+        natState: "healthy",
+      },
+    });
   return {
     name: computer.name,
     unitName: computer.unitName,
@@ -1014,6 +1144,7 @@ function createComputerSummary(computer: FakeComputer) {
       screenshotAvailable: computer.profile === "browser" && computer.state === "running",
       audioAvailable: computer.profile === "browser" && computer.state === "running",
     },
+    network,
   };
 }
 
@@ -1132,9 +1263,6 @@ function createComputerDetail(computer: FakeComputer) {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
     lifecycle: {},
     status: {
       lastActionAt: "2026-03-09T08:00:00.000Z",
@@ -1142,6 +1270,24 @@ function createComputerDetail(computer: FakeComputer) {
     },
     runtime,
   };
+}
+
+function createNetworkSummary(input: {
+  id: string;
+  name: string;
+  kind: "host" | "isolated";
+  cidr: string;
+  attachedComputerCount: number;
+  deletable: boolean;
+  status: {
+    state: "healthy" | "degraded" | "broken";
+    bridgeName: string;
+    routerState: "healthy" | "degraded" | "broken" | "unsupported";
+    dhcpState: "healthy" | "degraded" | "broken" | "unsupported";
+    natState: "healthy" | "degraded" | "broken" | "unsupported";
+  };
+}) {
+  return input;
 }
 
 function jsonResponse(payload: unknown, status = 200) {

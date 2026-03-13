@@ -12,11 +12,30 @@ import {
   parseComputerScreenshot,
   parseCreateComputerInput,
   parseCreateComputerSnapshotInput,
+  parseCreateNetworkInput,
   parseHostUnitDetail,
   parseImportVmImageInput,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
 } from "./index";
+
+function createHostNetworkSummary(attachedComputerCount = 1) {
+  return {
+    id: "network-host",
+    name: "Host network",
+    kind: "host" as const,
+    cidr: "192.168.250.0/24",
+    status: {
+      state: "healthy" as const,
+      bridgeName: "br0",
+      routerState: "unsupported" as const,
+      dhcpState: "unsupported" as const,
+      natState: "unsupported" as const,
+    },
+    attachedComputerCount,
+    deletable: false,
+  };
+}
 
 test("parses host computer creation input", () => {
   const input = parseCreateComputerInput({
@@ -81,6 +100,22 @@ test("parses container computer creation input", () => {
       command: "sleep infinity",
     },
   });
+});
+
+test("rejects invalid network create cidr input", () => {
+  expect(() =>
+    parseCreateNetworkInput({
+      name: "bad-network",
+      cidr: "abc",
+    }),
+  ).toThrow(/ipv4 cidr/i);
+
+  expect(() =>
+    parseCreateNetworkInput({
+      name: "bad-network",
+      cidr: "10.0.0.1/99",
+    }),
+  ).toThrow(/ipv4 cidr/i);
 });
 
 test("parses qcow2 vm computer creation input", () => {
@@ -199,9 +234,7 @@ test("parses vm computer details", () => {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    network: createHostNetworkSummary(),
     lifecycle: {},
     status: {
       lastActionAt: "2026-03-09T08:00:00.000Z",
@@ -359,9 +392,7 @@ test("parses container computer details", () => {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    network: createHostNetworkSummary(),
     lifecycle: {},
     status: {
       lastActionAt: "2026-03-09T08:00:00.000Z",
@@ -409,9 +440,7 @@ test("parses broken computer details", () => {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    network: createHostNetworkSummary(),
     lifecycle: {},
     status: {
       lastActionAt: "2026-03-09T08:00:00.000Z",
@@ -442,6 +471,7 @@ test("parses broken computer summaries", () => {
         logs: true,
       },
       capabilities: createComputerCapabilities("browser", "broken"),
+      network: createHostNetworkSummary(),
     },
   ]);
 
@@ -466,9 +496,7 @@ test("parses browser computer details", () => {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    network: createHostNetworkSummary(),
     lifecycle: {},
     status: {
       lastActionAt: "2026-03-09T08:00:00.000Z",

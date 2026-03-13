@@ -2,10 +2,10 @@ import {
   createBrowserRuntimeSchema,
   computerAccessSchema,
   computerLifecycleSchema,
-  computerNetworkSchema,
   computerProfileSchema,
   computerResourcesSchema,
   computerStorageSchema,
+  createNetworkInputSchema,
   parseImportVmImageInput,
   parsePullContainerImageInput,
   parseCreateComputerInput,
@@ -19,6 +19,48 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
     name: "computerd-mcp",
     version: "0.1.0",
   });
+
+  server.registerTool(
+    "list_networks",
+    {
+      description: "List computerd networks and their health.",
+    },
+    async () => createJsonToolResult(await controlPlane.listNetworks()),
+  );
+
+  server.registerTool(
+    "get_network",
+    {
+      description: "Inspect one computerd network by id.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => createJsonToolResult(await controlPlane.getNetwork(id)),
+  );
+
+  server.registerTool(
+    "create_network",
+    {
+      description: "Create a new isolated computerd network.",
+      inputSchema: {
+        name: createNetworkInputSchema.shape.name,
+        cidr: createNetworkInputSchema.shape.cidr,
+      },
+    },
+    async (input) => createJsonToolResult(await controlPlane.createNetwork(input)),
+  );
+
+  server.registerTool(
+    "delete_network",
+    {
+      description: "Delete an empty computerd network.",
+      inputSchema: {
+        id: z.string().min(1),
+      },
+    },
+    async ({ id }) => createJsonToolResult(await controlPlane.deleteNetwork(id)),
+  );
 
   server.registerTool(
     "list_images",
@@ -131,7 +173,7 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
         access: computerAccessSchema.optional(),
         resources: computerResourcesSchema.optional(),
         storage: computerStorageSchema.optional(),
-        network: computerNetworkSchema.optional(),
+        networkId: z.string().min(1).optional(),
         lifecycle: computerLifecycleSchema.optional(),
         runtime: z.object({
           command: z.string().min(1).optional(),

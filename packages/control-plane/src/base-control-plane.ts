@@ -2,11 +2,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import type {
   ComputerAudioSession,
   ComputerDetail,
+  CreateNetworkInput,
   ComputerSummary,
   CreateComputerInput,
   CreateComputerSnapshotInput,
   HostUnitDetail,
   HostUnitSummary,
+  NetworkDetail,
+  NetworkSummary,
 } from "@computerd/core";
 import {
   ComputerConflictError,
@@ -59,10 +62,17 @@ import {
   type UpdateBrowserViewportInput,
   withBrowserViewport,
 } from "./shared";
+import {
+  AttachedNetworkDeleteError,
+  DEFAULT_HOST_NETWORK_ID,
+  type NetworkProvider,
+  type PersistedNetworkRecord,
+} from "./networks";
 
 export abstract class BaseControlPlane {
   protected readonly environment: NodeJS.ProcessEnv;
   readonly imageProvider: BaseControlPlaneDependencies["imageProvider"];
+  readonly networkProvider: NetworkProvider;
   protected readonly metadataStore: ComputerMetadataStore;
   protected readonly runtime: ComputerRuntimePort;
   protected readonly consoleRuntimePaths: BaseControlPlaneDependencies["consoleRuntimePaths"];
@@ -74,6 +84,7 @@ export abstract class BaseControlPlane {
   protected constructor(dependencies: BaseControlPlaneDependencies) {
     this.environment = dependencies.environment;
     this.imageProvider = dependencies.imageProvider;
+    this.networkProvider = dependencies.networkProvider;
     this.metadataStore = dependencies.metadataStore;
     this.runtime = dependencies.runtime;
     this.consoleRuntimePaths = dependencies.consoleRuntimePaths;
@@ -88,13 +99,55 @@ export abstract class BaseControlPlane {
     return summaries.sort(compareByName);
   }
 
+  async listNetworks(): Promise<NetworkSummary[]> {
+    const [networks, computers] = await Promise.all([
+      this.networkProvider.listNetworkRecords(),
+      this.metadataStore.listComputers(),
+    ]);
+    return await Promise.all(
+      networks.map((network) =>
+        this.networkProvider.toNetworkSummary(
+          network,
+          computers.filter((computer) => computer.networkId === network.id).length,
+        ),
+      ),
+    );
+  }
+
+  async getNetwork(id: string): Promise<NetworkDetail> {
+    const [network, computers] = await Promise.all([
+      this.networkProvider.getNetworkRecord(id),
+      this.metadataStore.listComputers(),
+    ]);
+    return await this.networkProvider.toNetworkDetail(
+      network,
+      computers.filter((computer) => computer.networkId === network.id).length,
+    );
+  }
+
+  async createNetwork(input: CreateNetworkInput): Promise<NetworkDetail> {
+    const network = await this.networkProvider.createIsolatedNetwork(input);
+    return await this.networkProvider.toNetworkDetail(network, 0);
+  }
+
+  async deleteNetwork(id: string) {
+    if (id === DEFAULT_HOST_NETWORK_ID) {
+      throw new AttachedNetworkDeleteError(id);
+    }
+    const computers = await this.metadataStore.listComputers();
+    if (computers.some((computer) => computer.networkId === id)) {
+      throw new AttachedNetworkDeleteError(id);
+    }
+    await this.networkProvider.deleteIsolatedNetwork(id);
+  }
+
   async getComputer(name: string): Promise<ComputerDetail> {
     const record = await this.requireComputer(name);
     return await this.toComputerDetail(record);
   }
 
   async createComputer(input: CreateComputerInput): Promise<ComputerDetail> {
-    assertSupportedCreateInput(input, this.environment);
+    assertSupportedCreateInput(input);
     if (this.usesDefaultPersistence) {
       await ensureDirectories(this.environment);
     }
@@ -108,10 +161,21 @@ export abstract class BaseControlPlane {
       throw new ComputerConflictError(input.name);
     }
 
-    const record = await createPersistedComputer(input, this.runtime, async (imageId, kind) => {
-      const image = await this.imageProvider.requireVmImage(imageId, kind);
-      return image.path;
-    });
+    const network = await this.resolveComputerNetwork(input.networkId);
+    this.assertSupportedNetworkAttachment(input, network);
+    if (input.profile === "container" || input.profile === "vm") {
+      await this.networkProvider.ensureNetworkRuntime(network);
+    }
+
+    const record = await createPersistedComputer(
+      input,
+      this.runtime,
+      async (imageId, kind) => {
+        const image = await this.imageProvider.requireVmImage(imageId, kind);
+        return image.path;
+      },
+      network,
+    );
     if (record.profile === "browser") {
       await this.runtime.ensureBrowserRuntimeIdentity(record);
     }
@@ -295,6 +359,11 @@ export abstract class BaseControlPlane {
       await this.getPersistedComputerRuntimeState(record),
       "Start is not supported for broken computers.",
     );
+    if (record.profile === "container" || record.profile === "vm") {
+      await this.networkProvider.ensureNetworkRuntime(
+        await this.networkProvider.getNetworkRecord(record.networkId),
+      );
+    }
     if (record.profile === "browser") {
       await this.runtime.prepareBrowserRuntime(record);
       await this.runtime.createPersistentUnit(record);
@@ -345,6 +414,11 @@ export abstract class BaseControlPlane {
       await this.getPersistedComputerRuntimeState(record),
       "Restart is not supported for broken computers.",
     );
+    if (record.profile === "container" || record.profile === "vm") {
+      await this.networkProvider.ensureNetworkRuntime(
+        await this.networkProvider.getNetworkRecord(record.networkId),
+      );
+    }
     if (record.profile === "browser") {
       await this.runtime.prepareBrowserRuntime(record);
       await this.runtime.createPersistentUnit(record);
@@ -524,7 +598,11 @@ export abstract class BaseControlPlane {
 
   protected async toComputerSummary(record: PersistedComputer): Promise<ComputerSummary> {
     const state = mapComputerState(await this.getPersistedComputerRuntimeState(record));
-    return toComputerSummary(record, state);
+    const network = await this.networkProvider.toNetworkSummary(
+      await this.networkProvider.getNetworkRecord(record.networkId),
+      1,
+    );
+    return toComputerSummary(record, state, network);
   }
 
   protected async toComputerDetail(record: PersistedComputer): Promise<ComputerDetail> {
@@ -536,7 +614,6 @@ export abstract class BaseControlPlane {
       summary,
       this.browserRuntimePaths,
       this.vmRuntimePaths,
-      this.environment,
     );
   }
 
@@ -609,5 +686,20 @@ export abstract class BaseControlPlane {
     action: string,
   ) {
     throwIfBroken(record, runtimeState, action);
+  }
+
+  protected async resolveComputerNetwork(networkId: string | undefined) {
+    return await this.networkProvider.getNetworkRecord(networkId ?? DEFAULT_HOST_NETWORK_ID);
+  }
+
+  protected assertSupportedNetworkAttachment(
+    input: CreateComputerInput,
+    network: PersistedNetworkRecord,
+  ) {
+    if ((input.profile === "host" || input.profile === "browser") && network.kind !== "host") {
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${input.name}" cannot use isolated network "${network.name}" yet.`,
+      );
+    }
   }
 }

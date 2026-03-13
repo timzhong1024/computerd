@@ -153,6 +153,52 @@ test("serves computer and host unit APIs", async () => {
   const list = await listResponse.json();
   expect(list).toEqual(expect.arrayContaining([expect.objectContaining({ name: "lab-host" })]));
 
+  const networkListResponse = await fetch(`${baseUrl}/api/networks`);
+  expect(networkListResponse.status).toBe(200);
+  await expect(networkListResponse.json()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "network-host",
+        kind: "host",
+      }),
+    ]),
+  );
+
+  const createdNetworkResponse = await fetch(`${baseUrl}/api/networks`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "isolated-lab",
+      cidr: "192.168.252.0/24",
+    }),
+  });
+  expect(createdNetworkResponse.status).toBe(201);
+  const createdNetwork = await createdNetworkResponse.json();
+  expect(createdNetwork).toMatchObject({
+    name: "isolated-lab",
+    kind: "isolated",
+    cidr: "192.168.252.0/24",
+  });
+
+  const networkDetailResponse = await fetch(
+    `${baseUrl}/api/networks/${encodeURIComponent(createdNetwork.id)}`,
+  );
+  expect(networkDetailResponse.status).toBe(200);
+  await expect(networkDetailResponse.json()).resolves.toMatchObject({
+    id: createdNetwork.id,
+    name: "isolated-lab",
+  });
+
+  const deleteAttachedHostNetworkResponse = await fetch(
+    `${baseUrl}/api/networks/${encodeURIComponent("network-host")}`,
+    {
+      method: "DELETE",
+    },
+  );
+  expect(deleteAttachedHostNetworkResponse.status).toBe(409);
+
   const imageListResponse = await fetch(`${baseUrl}/api/images`);
   expect(imageListResponse.status).toBe(200);
   await expect(imageListResponse.json()).resolves.toEqual(
@@ -238,6 +284,14 @@ test("serves computer and host unit APIs", async () => {
     },
   );
   expect(deleteVmImageResponse.status).toBe(204);
+
+  const deleteNetworkResponse = await fetch(
+    `${baseUrl}/api/networks/${encodeURIComponent(createdNetwork.id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  expect(deleteNetworkResponse.status).toBe(204);
 
   const startResponse = await fetch(`${baseUrl}/api/computers/lab-host/start`, {
     method: "POST",
@@ -715,7 +769,19 @@ test("returns broken computers and blocks broken actions with conflict responses
       rootMode: "persistent" as const,
     },
     network: {
-      mode: "host" as const,
+      id: "network-host",
+      name: "Host network",
+      kind: "host" as const,
+      cidr: "192.168.250.0/24",
+      status: {
+        state: "healthy" as const,
+        bridgeName: "br0",
+        routerState: "unsupported" as const,
+        dhcpState: "unsupported" as const,
+        natState: "unsupported" as const,
+      },
+      attachedComputerCount: 1,
+      deletable: false,
     },
     lifecycle: {},
     status: {
@@ -861,6 +927,34 @@ test("returns broken computers and blocks broken actions with conflict responses
 
   const websocketStubResponse = await fetch(`${baseUrl}/api/computers/broken-host/console/ws`);
   expect(websocketStubResponse.status).toBe(409);
+});
+
+test("returns 400 for invalid network create input", async () => {
+  const app = createApp(new DevelopmentControlPlaneImpl());
+  servers.push(app);
+  app.listen(0, "127.0.0.1");
+  await once(app, "listening");
+
+  const address = app.address();
+  if (address === null || typeof address === "string") {
+    throw new TypeError("Expected a TCP server address");
+  }
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/networks`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "bad-network",
+      cidr: "abc",
+    }),
+  });
+
+  expect(response.status).toBe(400);
+  await expect(response.json()).resolves.toMatchObject({
+    error: expect.stringMatching(/cidr/i),
+  });
 });
 
 test("serves container session APIs across stopped and running states", async () => {

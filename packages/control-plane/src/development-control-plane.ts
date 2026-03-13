@@ -4,6 +4,7 @@ import {
   ensureDevelopmentConsoleSocket,
 } from "./development-computer-runtime";
 import { DevelopmentImageProvider } from "./development-image-provider";
+import { DEFAULT_HOST_NETWORK_ID, DevelopmentNetworkProvider } from "./networks";
 import { DevelopmentComputerMetadataStore } from "./systemd/metadata-store";
 import { BaseControlPlane } from "./base-control-plane";
 import { createBrowserRuntimeUser, createBrowserRuntimePaths } from "./systemd/browser-runtime";
@@ -60,9 +61,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
       storage: {
         rootMode: "persistent",
       },
-      network: {
-        mode: "host",
-      },
+      networkId: DEFAULT_HOST_NETWORK_ID,
       lifecycle: {},
       runtime: {
         command: "/bin/sh -i",
@@ -86,9 +85,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
       storage: {
         rootMode: "persistent",
       },
-      network: {
-        mode: "host",
-      },
+      networkId: DEFAULT_HOST_NETWORK_ID,
       lifecycle: {},
       runtime: {
         browser: "chromium",
@@ -118,9 +115,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
       storage: {
         rootMode: "persistent",
       },
-      network: {
-        mode: "host",
-      },
+      networkId: DEFAULT_HOST_NETWORK_ID,
       lifecycle: {},
       runtime: {
         hypervisor: "qemu",
@@ -138,6 +133,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
         accelerator: "kvm",
         architecture: "x86_64",
         machine: "q35",
+        bridgeName: "br0",
         source: {
           kind: "qcow2",
           imageId: "filesystem-vm:dev-qcow2",
@@ -250,6 +246,30 @@ export class DevelopmentControlPlane extends BaseControlPlane {
         },
       ],
     ]);
+    const networks = new Map<string, import("./networks").PersistedNetworkRecord>([
+      [
+        DEFAULT_HOST_NETWORK_ID,
+        {
+          id: DEFAULT_HOST_NETWORK_ID,
+          name: "Host network",
+          kind: "host" as const,
+          cidr: "192.168.250.0/24",
+          bridgeName: "br0",
+        },
+      ],
+      [
+        "network-dev-isolated",
+        {
+          id: "network-dev-isolated",
+          name: "isolated-dev",
+          kind: "isolated" as const,
+          cidr: "192.168.251.0/24",
+          bridgeName: "br1",
+          dockerNetworkName: "computerd-network-dev-isolated",
+          createdAt: now,
+        },
+      ],
+    ]);
 
     const runtime = new DevelopmentComputerRuntime({
       browserRuntimePaths,
@@ -263,6 +283,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
     });
     const metadataStore = new DevelopmentComputerMetadataStore(records);
     const imageProvider = new DevelopmentImageProvider(images);
+    const networkProvider = new DevelopmentNetworkProvider(networks);
 
     super({
       environment: {
@@ -276,6 +297,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
         COMPUTERD_TERMINAL_RUNTIME_DIR: consoleRuntimePaths.runtimeDirectory,
       },
       imageProvider,
+      networkProvider,
       metadataStore,
       runtime,
       consoleRuntimePaths,

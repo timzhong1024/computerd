@@ -58,13 +58,13 @@ export function createVmSnapshotImagePath(
 
 export function toVmRuntimeDetail(
   computer: PersistedVmComputer,
-  options: VmRuntimePathsOptions & { bridge: string },
+  options: VmRuntimePathsOptions,
 ): VmRuntime {
   const spec = createVmRuntimePaths(options).specForComputer(computer);
 
   return {
     ...computer.runtime,
-    bridge: options.bridge,
+    bridge: computer.runtime.bridgeName,
     nics: computer.runtime.nics.map((nic, index) => ({
       ...nic,
       macAddress: resolveVmNicMacAddress(spec, nic.macAddress, index),
@@ -89,6 +89,7 @@ export function toVmRuntimeDetail(
 export function withPersistedVmRuntime(
   runtime: CreateVmRuntime,
   imagePath: string,
+  bridgeName: string,
 ): PersistedVmComputer["runtime"] {
   return {
     ...runtime,
@@ -99,6 +100,7 @@ export function withPersistedVmRuntime(
     accelerator: "kvm",
     architecture: "x86_64",
     machine: "q35",
+    bridgeName,
   };
 }
 

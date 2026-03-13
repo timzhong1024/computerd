@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import { SystemImageProvider, type ImageProvider } from "./images";
+import { SystemNetworkProvider, type NetworkProvider } from "./networks";
 import { BaseControlPlane } from "./base-control-plane";
 import { CompositeComputerRuntime } from "./composite-computer-runtime";
 import { DefaultDockerRuntime } from "./docker/runtime";
@@ -12,6 +13,7 @@ import { ComputerRuntimePort, type ComputerMetadataStore } from "./shared";
 
 export interface SystemdControlPlaneOptions {
   imageProvider?: ImageProvider;
+  networkProvider?: NetworkProvider;
   metadataStore?: ComputerMetadataStore;
   runtime?: ComputerRuntimePort;
 }
@@ -53,8 +55,6 @@ export class SystemdControlPlane extends BaseControlPlane {
             terminalRuntimeDirectory: consoleRuntimePaths.runtimeDirectory,
             vmRuntimeDirectory: environment.COMPUTERD_VM_RUNTIME_DIR ?? "/run/computerd/computers",
             vmStateDirectory: environment.COMPUTERD_VM_STATE_DIR ?? "/var/lib/computerd/computers",
-            vmHostBridge: environment.COMPUTERD_VM_BRIDGE ?? "br0",
-            vmIsolatedBridge: environment.COMPUTERD_VM_ISOLATED_BRIDGE,
           },
         }),
       });
@@ -66,10 +66,19 @@ export class SystemdControlPlane extends BaseControlPlane {
         qemuImgCommand: environment.COMPUTERD_QEMU_IMG ?? "qemu-img",
         vmImageStoreDir: environment.COMPUTERD_VM_IMAGE_STORE ?? "/var/lib/computerd/images/vm",
       });
+    const networkProvider =
+      options.networkProvider ??
+      new SystemNetworkProvider({
+        configPath: environment.COMPUTERD_NETWORK_CONFIG ?? "/etc/computerd/networks.json",
+        dockerSocketPath: environment.COMPUTERD_DOCKER_SOCKET ?? "/var/run/docker.sock",
+        environment,
+        runtimeDirectory: environment.COMPUTERD_NETWORK_RUNTIME_DIR ?? "/run/computerd/networks",
+      });
 
     super({
       environment,
       imageProvider,
+      networkProvider,
       metadataStore,
       runtime,
       consoleRuntimePaths,

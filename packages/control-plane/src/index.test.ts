@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { ComputerRuntimePort } from "./index";
 import { ImageProvider } from "./images";
+import { DEFAULT_HOST_NETWORK_ID } from "./networks";
 import { DevelopmentComputerMetadataStore } from "./systemd/metadata-store";
 import type {
   ComputerMetadataStore,
@@ -12,6 +13,7 @@ import type {
   UnitRuntimeState,
 } from "./systemd/types";
 import {
+  AttachedNetworkDeleteError,
   BrokenComputerError,
   ComputerConsoleUnavailableError,
   ComputerConflictError,
@@ -103,6 +105,82 @@ test("rejects vm create input with more than one nic", async () => {
             user: "ubuntu",
           },
         },
+      },
+    }),
+  ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
+});
+
+test("lists host network, creates isolated networks, and rejects deleting attached networks", async () => {
+  const controlPlane = new DevelopmentControlPlane();
+
+  const initialNetworks = await controlPlane.listNetworks();
+  expect(initialNetworks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: DEFAULT_HOST_NETWORK_ID,
+        kind: "host",
+        deletable: false,
+      }),
+    ]),
+  );
+
+  const created = await controlPlane.createNetwork({
+    name: "isolated-lab",
+    cidr: "192.168.252.0/24",
+  });
+  expect(created).toMatchObject({
+    name: "isolated-lab",
+    kind: "isolated",
+    cidr: "192.168.252.0/24",
+    deletable: true,
+  });
+
+  await expect(controlPlane.deleteNetwork(DEFAULT_HOST_NETWORK_ID)).rejects.toBeInstanceOf(
+    AttachedNetworkDeleteError,
+  );
+
+  await controlPlane.createComputer({
+    name: "isolated-container",
+    profile: "container",
+    networkId: created.id,
+    runtime: {
+      provider: "docker",
+      image: "node:22",
+      command: "sleep infinity",
+    },
+  });
+
+  await expect(controlPlane.deleteNetwork(created.id)).rejects.toBeInstanceOf(
+    AttachedNetworkDeleteError,
+  );
+});
+
+test("rejects isolated networks for host and browser computers", async () => {
+  const controlPlane = new DevelopmentControlPlane();
+  const network = await controlPlane.createNetwork({
+    name: "isolated-lab",
+    cidr: "192.168.252.0/24",
+  });
+
+  await expect(
+    controlPlane.createComputer({
+      name: "host-isolated",
+      profile: "host",
+      networkId: network.id,
+      runtime: {
+        command: "/bin/sh -i",
+      },
+    }),
+  ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
+
+  await expect(
+    controlPlane.createComputer({
+      name: "browser-isolated",
+      profile: "browser",
+      networkId: network.id,
+      runtime: {
+        browser: "chromium",
+        persistentProfile: true,
       },
     }),
   ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
@@ -1381,9 +1459,7 @@ function createBrowserComputerRecord(): PersistedComputer {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: DEFAULT_HOST_NETWORK_ID,
     lifecycle: {},
     runtime: {
       browser: "chromium",
@@ -1412,9 +1488,7 @@ function createHostComputerRecord(): PersistedHostComputer {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: DEFAULT_HOST_NETWORK_ID,
     lifecycle: {},
     runtime: {
       command: "/usr/bin/bash",
@@ -1441,9 +1515,7 @@ function createContainerComputerRecord(): PersistedComputer {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: DEFAULT_HOST_NETWORK_ID,
     lifecycle: {},
     runtime: {
       provider: "docker",
@@ -1477,9 +1549,7 @@ function createVmComputerRecord(): PersistedVmComputer {
     storage: {
       rootMode: "persistent",
     },
-    network: {
-      mode: "host",
-    },
+    networkId: DEFAULT_HOST_NETWORK_ID,
     lifecycle: {},
     runtime: {
       hypervisor: "qemu",
@@ -1497,6 +1567,7 @@ function createVmComputerRecord(): PersistedVmComputer {
       accelerator: "kvm",
       architecture: "x86_64",
       machine: "q35",
+      bridgeName: "br0",
       source: {
         kind: "qcow2",
         imageId: "filesystem-vm:dev-qcow2",
@@ -1671,7 +1742,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         containerName: unitName,
       };
     },
-    async createVmComputer(input, imagePath) {
+    async createVmComputer(input, imagePath, network) {
       return {
         ...input.runtime,
         source: {
@@ -1681,6 +1752,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         accelerator: "kvm",
         architecture: "x86_64",
         machine: "q35",
+        bridgeName: network.bridgeName,
       };
     },
     async deleteBrowserRuntimeIdentity() {},

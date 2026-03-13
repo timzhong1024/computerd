@@ -9,7 +9,6 @@ import type {
   ComputerDetail,
   ComputerLifecycle,
   ComputerMonitorSession,
-  ComputerNetwork,
   ComputerProfile,
   ComputerResources,
   ComputerScreenshot,
@@ -33,6 +32,7 @@ import type {
   VmRuntime,
   UpdateBrowserViewportInput,
 } from "@computerd/core";
+import type { PersistedNetworkRecord } from "../networks";
 
 export interface PersistedBrowserComputerRuntime extends CreateBrowserRuntime {
   runtimeUser: string;
@@ -48,7 +48,7 @@ export interface PersistedComputerBase {
   access: ComputerAccess;
   resources: ComputerResources;
   storage: ComputerStorage;
-  network: ComputerNetwork;
+  networkId: string;
   lifecycle: ComputerLifecycle;
 }
 
@@ -79,6 +79,7 @@ export interface PersistedVmComputer extends PersistedComputerBase {
     accelerator: "kvm";
     architecture: "x86_64";
     machine: "q35";
+    bridgeName: string;
   };
 }
 
@@ -121,10 +122,12 @@ export abstract class ComputerRuntimePort {
   abstract createContainerComputer(
     input: CreateContainerComputerInput,
     unitName: string,
+    network: PersistedNetworkRecord,
   ): Promise<PersistedContainerComputer["runtime"]>;
   abstract createVmComputer(
     input: CreateVmComputerInput,
     imagePath: string,
+    network: PersistedNetworkRecord,
   ): Promise<PersistedVmComputer["runtime"]>;
   abstract deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
   abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;

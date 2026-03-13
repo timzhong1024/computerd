@@ -121,9 +121,48 @@ export const computerStorageSchema = z.object({
   storageGiB: z.number().int().positive().optional(),
 });
 
-export const computerNetworkSchema = z.object({
-  mode: z.enum(["host", "isolated"]),
-  proxy: z.string().optional(),
+export const networkKindSchema = z.enum(["host", "isolated"]);
+export const networkComponentStateSchema = z.enum(["healthy", "degraded", "broken", "unsupported"]);
+
+export const networkStatusSchema = z.object({
+  state: z.enum(["healthy", "degraded", "broken"]),
+  bridgeName: z.string().min(1),
+  routerState: networkComponentStateSchema,
+  dhcpState: networkComponentStateSchema,
+  natState: networkComponentStateSchema,
+});
+
+export const networkSummarySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: networkKindSchema,
+  cidr: z.string().min(1),
+  status: networkStatusSchema,
+  attachedComputerCount: z.number().int().nonnegative(),
+  deletable: z.boolean(),
+});
+
+export const networkDetailSchema = networkSummarySchema;
+
+function isValidIpv4Cidr(value: string) {
+  const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(value.trim());
+  if (!match) {
+    return false;
+  }
+
+  const prefixLength = Number.parseInt(match[2] ?? "", 10);
+  if (prefixLength < 16 || prefixLength > 29) {
+    return false;
+  }
+
+  return isValidIpv4Address(match[1] ?? "");
+}
+
+export const createNetworkInputSchema = z.object({
+  name: z.string().min(1),
+  cidr: z.string().refine(isValidIpv4Cidr, {
+    message: "Expected an IPv4 CIDR with prefix length between /16 and /29.",
+  }),
 });
 
 export const computerLifecycleSchema = z.object({
@@ -388,12 +427,12 @@ const computerSummaryBaseSchema = z.object({
   createdAt: z.string().datetime(),
   access: computerAccessSchema,
   capabilities: computerCapabilitiesSchema,
+  network: networkSummarySchema,
 });
 
 const computerDetailBaseSchema = computerSummaryBaseSchema.extend({
   resources: computerResourcesSchema,
   storage: computerStorageSchema,
-  network: computerNetworkSchema,
   lifecycle: computerLifecycleSchema,
   status: z.object({
     lastActionAt: z.string().datetime(),
@@ -457,7 +496,7 @@ const createComputerBaseSchema = z.object({
   access: computerAccessSchema.optional(),
   resources: computerResourcesSchema.optional(),
   storage: computerStorageSchema.optional(),
-  network: computerNetworkSchema.optional(),
+  networkId: z.string().min(1).optional(),
   lifecycle: computerLifecycleSchema.optional(),
 });
 
@@ -559,7 +598,6 @@ export type ComputerExecSession = z.infer<typeof computerExecSessionSchema>;
 export type ComputerDetail = z.infer<typeof computerDetailSchema>;
 export type ComputerLifecycle = z.infer<typeof computerLifecycleSchema>;
 export type ComputerMonitorSession = z.infer<typeof computerMonitorSessionSchema>;
-export type ComputerNetwork = z.infer<typeof computerNetworkSchema>;
 export type ComputerProfile = z.infer<typeof computerProfileSchema>;
 export type ComputerResources = z.infer<typeof computerResourcesSchema>;
 export type ComputerSessionAuthorization = z.infer<typeof computerSessionAuthorizationSchema>;
@@ -592,6 +630,11 @@ export type ImageDetail = z.infer<typeof imageDetailSchema>;
 export type ImageProvider = z.infer<typeof imageProviderSchema>;
 export type ImageStatus = z.infer<typeof imageStatusSchema>;
 export type ImageSummary = z.infer<typeof imageSummarySchema>;
+export type NetworkDetail = z.infer<typeof networkDetailSchema>;
+export type NetworkKind = z.infer<typeof networkKindSchema>;
+export type NetworkStatus = z.infer<typeof networkStatusSchema>;
+export type NetworkSummary = z.infer<typeof networkSummarySchema>;
+export type CreateNetworkInput = z.infer<typeof createNetworkInputSchema>;
 export type VmComputerDetail = z.infer<typeof vmComputerDetailSchema>;
 export type VmCloudInit = z.infer<typeof vmCloudInitSchema>;
 export type VmRuntimeSource = z.infer<typeof vmRuntimeSourceSchema>;
@@ -614,6 +657,14 @@ export function parseImageSummaries(value: unknown) {
 
 export function parseImageDetail(value: unknown) {
   return imageDetailSchema.parse(value);
+}
+
+export function parseNetworkSummaries(value: unknown) {
+  return z.array(networkSummarySchema).parse(value);
+}
+
+export function parseNetworkDetail(value: unknown) {
+  return networkDetailSchema.parse(value);
 }
 
 export function parseComputerMonitorSession(value: unknown) {
@@ -678,6 +729,10 @@ export function parsePullContainerImageInput(value: unknown) {
 
 export function parseImportVmImageInput(value: unknown) {
   return importVmImageInputSchema.parse(value);
+}
+
+export function parseCreateNetworkInput(value: unknown) {
+  return createNetworkInputSchema.parse(value);
 }
 
 export function createComputerCapabilities(
