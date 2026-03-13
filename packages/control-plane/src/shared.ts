@@ -13,11 +13,13 @@ import {
   type CreateComputerInput,
   type CreateContainerComputerInput,
   type CreateHostComputerInput,
+  type CreateVmComputerInput,
   type HostUnitDetail,
   type RestoreComputerInput,
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
 import {
+  createBrowserRuntimePaths,
   createBrowserRuntimeUser,
   toBrowserRuntimeDetail,
   withBrowserViewport,
@@ -102,9 +104,7 @@ export interface BaseControlPlaneDependencies {
   metadataStore: ComputerMetadataStore;
   runtime: ComputerRuntimePort;
   consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>;
-  browserRuntimePaths: ReturnType<
-    typeof import("./systemd/browser-runtime").createBrowserRuntimePaths
-  >;
+  browserRuntimePaths: ReturnType<typeof createBrowserRuntimePaths>;
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>;
   usesDefaultPersistence: boolean;
 }
@@ -247,7 +247,7 @@ export function assertSupportedCreateInput(
   | CreateHostComputerInput
   | CreateBrowserComputerInput
   | CreateContainerComputerInput
-  | import("@computerd/core").CreateVmComputerInput {
+  | CreateVmComputerInput {
   if (input.storage?.rootMode === "ephemeral") {
     throw new UnsupportedComputerFeatureError(
       '`storage.rootMode="ephemeral"` is not supported yet.',
@@ -508,9 +508,7 @@ export function toComputerDetail(
   record: PersistedComputer,
   runtimeState: UnitRuntimeState | null,
   summary: ComputerSummary,
-  browserRuntimePaths: ReturnType<
-    typeof import("./systemd/browser-runtime").createBrowserRuntimePaths
-  >,
+  browserRuntimePaths: ReturnType<typeof createBrowserRuntimePaths>,
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>,
   environment: NodeJS.ProcessEnv,
 ): ComputerDetail {
