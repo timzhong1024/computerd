@@ -423,18 +423,14 @@ async function startDnsmasq(
   await rm(spec.pidFile, { force: true }).catch(() => undefined);
   await execFileAsync("dnsmasq", [
     "--conf-file=",
-    "--interface",
-    network.bridgeName,
+    `--interface=${network.bridgeName}`,
     "--bind-interfaces",
     "--except-interface=lo",
-    "--dhcp-range",
-    `${range.start},${range.end},12h`,
+    `--dhcp-range=${range.start},${range.end},12h`,
     "--dhcp-option=option:router," + gateway,
     "--dhcp-option=option:dns-server,1.1.1.1,8.8.8.8",
-    "--pid-file",
-    spec.pidFile,
-    "--dhcp-leasefile",
-    spec.leaseFile,
+    `--pid-file=${spec.pidFile}`,
+    `--dhcp-leasefile=${spec.leaseFile}`,
   ]);
 }
 
