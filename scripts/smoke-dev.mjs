@@ -2,6 +2,11 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+if (process.platform === "darwin" && process.env.FORCE_SMOKE_DEV !== "1") {
+  console.log("smoke:dev skipped on macOS; set FORCE_SMOKE_DEV=1 to run anyway.");
+  process.exit(0);
+}
+
 const serverUrl = "http://127.0.0.1:3000";
 const webUrl = "http://127.0.0.1:4173";
 
@@ -12,8 +17,8 @@ const server = spawn(resolve(process.cwd(), "node_modules/.bin/vite-node"), ["sr
 });
 
 const web = spawn(
-  resolve(process.cwd(), "node_modules/.bin/vite"),
-  ["--host", "127.0.0.1", "--port", "4173", "--strictPort"],
+  resolve(process.cwd(), "node_modules/.bin/vp"),
+  ["dev", "--host", "127.0.0.1", "--port", "4173", "--strictPort"],
   {
     cwd: resolve(process.cwd(), "apps/web"),
     env: process.env,

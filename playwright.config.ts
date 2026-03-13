@@ -24,7 +24,7 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      command: `pnpm --filter @computerd/web exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
+      command: `pnpm --filter @computerd/web exec vp dev --host 127.0.0.1 --port ${webPort} --strictPort`,
       url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: !process.env.CI,
       stdout: "pipe",

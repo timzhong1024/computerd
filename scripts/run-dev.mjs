@@ -16,7 +16,7 @@ if (await isPortReachable(serverHost, serverPort)) {
 }
 
 children.push(
-  spawn("pnpm", ["--filter", "@computerd/server", "dev"], {
+  spawn("vp", ["run", "@computerd/server#dev"], {
     env: {
       ...process.env,
       COMPUTERD_RUNTIME_MODE: runtimeMode,
@@ -26,7 +26,7 @@ children.push(
 );
 
 children.push(
-  spawn("pnpm", ["--filter", "@computerd/web", "dev"], {
+  spawn("vp", ["run", "@computerd/web#dev"], {
     env: process.env,
     stdio: "inherit",
   }),

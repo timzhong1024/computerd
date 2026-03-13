@@ -4,6 +4,39 @@ import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { ComputerdHttpError, createComputerdClient, runBrowserCli } from "./index";
 
+function createHostNetworkSummary(attachedComputerCount = 1) {
+  return {
+    id: "network-host",
+    name: "Host network",
+    kind: "host" as const,
+    cidr: "192.168.250.0/24",
+    status: {
+      state: "healthy" as const,
+      bridgeName: "br0",
+    },
+    gateway: {
+      dhcp: {
+        provider: "dnsmasq" as const,
+        state: "unsupported" as const,
+      },
+      dns: {
+        provider: "dnsmasq" as const,
+        state: "unsupported" as const,
+      },
+      programmableGateway: {
+        provider: null,
+        state: "unsupported" as const,
+      },
+      health: {
+        state: "healthy" as const,
+        natState: "unsupported" as const,
+      },
+    },
+    attachedComputerCount,
+    deletable: false,
+  };
+}
+
 describe("createComputerdClient", () => {
   test("parses browser automation sessions", async () => {
     const client = createComputerdClient({
@@ -112,9 +145,7 @@ describe("createComputerdClient", () => {
           storage: {
             rootMode: "persistent",
           },
-          network: {
-            mode: "host",
-          },
+          network: createHostNetworkSummary(),
           lifecycle: {},
           status: {
             lastActionAt: "2026-03-10T00:00:00.000Z",
@@ -221,9 +252,7 @@ describe("createComputerdClient", () => {
           storage: {
             rootMode: "persistent",
           },
-          network: {
-            mode: "host",
-          },
+          network: createHostNetworkSummary(),
           lifecycle: {},
           status: {
             lastActionAt: "2026-03-10T00:00:00.000Z",
@@ -404,9 +433,7 @@ describe("runBrowserCli", () => {
         storage: {
           rootMode: "persistent",
         },
-        network: {
-          mode: "host",
-        },
+        network: createHostNetworkSummary(),
         lifecycle: {},
         status: {
           lastActionAt: "2026-03-10T00:00:00.000Z",

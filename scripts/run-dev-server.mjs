@@ -13,7 +13,7 @@ if (await isPortReachable(serverHost, serverPort)) {
   process.exit(1);
 }
 
-const child = spawn("pnpm", ["--filter", "@computerd/server", "dev"], {
+const child = spawn("vp", ["run", "@computerd/server#dev"], {
   env: {
     ...process.env,
     COMPUTERD_RUNTIME_MODE: runtimeMode,

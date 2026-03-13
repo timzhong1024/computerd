@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vp build",
     "dev": "vite-node src/index.ts",
     "smoke:dist": "node ./scripts/smoke-dist-server.mjs",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

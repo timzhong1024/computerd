@@ -13,10 +13,10 @@
     }
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
-    "dev": "vite build --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "build": "vp build && tsc -p tsconfig.build.json",
+    "dev": "vp build --watch",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

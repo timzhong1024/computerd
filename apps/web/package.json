@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "build": "vp build",
+    "dev": "vp dev",
+    "test": "vp test run",
+    "test:watch": "vp test",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
