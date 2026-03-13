@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { SystemdControlPlane } from "@computerd/control-plane";
 import { ensureVmBridge } from "./runtime/ensure-vm-bridge";
 import { createApp } from "./transport/http/create-app";
@@ -37,6 +36,6 @@ export function startServer(options: StartServerOptions = {}) {
   return { app, controlPlane };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.env.VITEST !== "true") {
   startServer();
 }
