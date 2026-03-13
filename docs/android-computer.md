@@ -12,7 +12,7 @@
 
 设计背景、方案取舍和完整讨论记录见：
 
-- [docs/android-computer-rationale.md](/Users/timzhong/computerd/docs/android-computer-rationale.md)
+- [docs/incubation/android-computer-rationale.md](/Users/timzhong/computerd/docs/incubation/android-computer-rationale.md)
 
 ## User Mental Model
 

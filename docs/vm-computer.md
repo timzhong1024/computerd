@@ -12,7 +12,7 @@
 
 设计讨论与取舍记录见：
 
-- [docs/vm-computer-rationale.md](/Users/timzhong/computerd/docs/vm-computer-rationale.md)
+- [docs/incubation/vm-computer-rationale.md](/Users/timzhong/computerd/docs/incubation/vm-computer-rationale.md)
 
 ## User Mental Model
 

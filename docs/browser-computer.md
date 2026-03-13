@@ -21,6 +21,10 @@ browser computer 仍然是统一 `computer` 模型的一种 profile：
 
 没有新增顶层 `browser` object kind。
 
+关于为什么 `browser` 作为产品 profile 应保留，但底层 runtime 值得演进到 container-backed substrate，见：
+
+- [docs/incubation/browser-container-runtime-rationale.md](/Users/timzhong/computerd/docs/incubation/browser-container-runtime-rationale.md)
+
 ## Runtime Layout
 
 browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11 stack：
