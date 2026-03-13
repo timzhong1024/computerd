@@ -1198,8 +1198,8 @@ export function HomePage() {
           <div className="panel-header">
             <h2>Images</h2>
           </div>
-          <div className="detail-grid">
-            <div>
+          <div className="stacked-sections">
+            <section>
               <strong>VM images</strong>
               <form className="create-form" onSubmit={handleImportVmImage}>
                 <label>
@@ -1290,8 +1290,8 @@ export function HomePage() {
                     </li>
                   ))}
               </ul>
-            </div>
-            <div>
+            </section>
+            <section>
               <strong>Container images</strong>
               <form className="create-form" onSubmit={handlePullContainerImage}>
                 <label>
@@ -1324,7 +1324,7 @@ export function HomePage() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           </div>
         </div>
 

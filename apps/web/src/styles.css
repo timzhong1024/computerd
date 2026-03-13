@@ -191,6 +191,17 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.stacked-sections {
+  display: grid;
+  gap: 24px;
+}
+
+.stacked-sections > section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
 .detail-grid dt {
   font-weight: 700;
 }
