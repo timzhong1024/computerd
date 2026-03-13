@@ -1,8 +1,4 @@
-import type {
-  ComputerSnapshot,
-  HostUnitDetail,
-  ImageDetail,
-} from "@computerd/core";
+import type { ComputerSnapshot, HostUnitDetail, ImageDetail } from "@computerd/core";
 import {
   DevelopmentComputerRuntime,
   ensureDevelopmentConsoleSocket,
@@ -43,7 +39,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
           loadState: "loaded",
         },
         recentLogs: [],
-      }
+      },
     ];
     const records = new Map<string, PersistedComputer>();
     const seeded: PersistedHostComputer = {

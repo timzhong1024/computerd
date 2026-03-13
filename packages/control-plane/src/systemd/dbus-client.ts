@@ -112,10 +112,7 @@ export class DefaultSystemdDbusClient extends SystemdDbusClient {
     const manager = await this.managerPromise;
     await this.ensureSubscribed();
     await manager.StartUnit(unitName, "replace");
-    return await this.waitForRuntimeState(
-      unitName,
-      (state) => state.activeState !== "activating",
-    );
+    return await this.waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
   }
 
   async stopUnit(unitName: string) {
@@ -132,10 +129,7 @@ export class DefaultSystemdDbusClient extends SystemdDbusClient {
     const manager = await this.managerPromise;
     await this.ensureSubscribed();
     await manager.RestartUnit(unitName, "replace");
-    return await this.waitForRuntimeState(
-      unitName,
-      (state) => state.activeState !== "activating",
-    );
+    return await this.waitForRuntimeState(unitName, (state) => state.activeState !== "activating");
   }
 
   async deletePersistentUnit(unitName: string) {
@@ -220,7 +214,12 @@ export class DefaultSystemdDbusClient extends SystemdDbusClient {
       return await cached;
     }
 
-    const proxyPromise = createUnitProxy(this.bus, this.managerPromise, unitName, this.runtimeCache);
+    const proxyPromise = createUnitProxy(
+      this.bus,
+      this.managerPromise,
+      unitName,
+      this.runtimeCache,
+    );
     this.unitProxyCache.set(unitName, proxyPromise);
     return await proxyPromise;
   }

@@ -85,7 +85,11 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
       }
 
       if (request.method === "GET" && url.pathname === "/api/images") {
-        sendJson(response, 200, parseImageSummaries(await appControlPlane.imageProvider.listImages()));
+        sendJson(
+          response,
+          200,
+          parseImageSummaries(await appControlPlane.imageProvider.listImages()),
+        );
         return;
       }
 
@@ -379,7 +383,11 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
       );
       if (request.method === "POST" && computerScreenshotMatch?.groups?.name) {
         const name = decodeURIComponent(computerScreenshotMatch.groups.name);
-        sendJson(response, 200, parseComputerScreenshot(await appControlPlane.createScreenshot(name)));
+        sendJson(
+          response,
+          200,
+          parseComputerScreenshot(await appControlPlane.createScreenshot(name)),
+        );
         return;
       }
 

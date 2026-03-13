@@ -24,7 +24,11 @@ import {
   withBrowserViewport,
 } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
-import { createVmRuntimePaths, toVmRuntimeDetail, withPersistedVmRuntime } from "./systemd/vm-runtime";
+import {
+  createVmRuntimePaths,
+  toVmRuntimeDetail,
+  withPersistedVmRuntime,
+} from "./systemd/vm-runtime";
 import { ImageProvider } from "./images";
 import {
   ComputerRuntimePort,
@@ -103,7 +107,9 @@ export interface BaseControlPlaneDependencies {
   metadataStore: ComputerMetadataStore;
   runtime: ComputerRuntimePort;
   consoleRuntimePaths: ReturnType<typeof createConsoleRuntimePaths>;
-  browserRuntimePaths: ReturnType<typeof import("./systemd/browser-runtime").createBrowserRuntimePaths>;
+  browserRuntimePaths: ReturnType<
+    typeof import("./systemd/browser-runtime").createBrowserRuntimePaths
+  >;
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>;
   usesDefaultPersistence: boolean;
 }
@@ -507,7 +513,9 @@ export function toComputerDetail(
   record: PersistedComputer,
   runtimeState: UnitRuntimeState | null,
   summary: ComputerSummary,
-  browserRuntimePaths: ReturnType<typeof import("./systemd/browser-runtime").createBrowserRuntimePaths>,
+  browserRuntimePaths: ReturnType<
+    typeof import("./systemd/browser-runtime").createBrowserRuntimePaths
+  >,
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>,
   environment: NodeJS.ProcessEnv,
 ): ComputerDetail {

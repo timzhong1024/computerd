@@ -315,7 +315,7 @@ test("prepares vm runtime before start and restart", async () => {
     async stopContainerComputer() {
       throw new Error("not implemented");
     },
-    async updateBrowserViewport() {}
+    async updateBrowserViewport() {},
   });
 
   const controlPlane = new SystemdControlPlane(
@@ -1193,7 +1193,7 @@ test("waits for host console runtime readiness during start", async () => {
     async stopContainerComputer() {
       return runtimeState;
     },
-    async updateBrowserViewport() {}
+    async updateBrowserViewport() {},
   });
   const runtimeState: UnitRuntimeState = {
     unitName: terminalRecord.unitName,
@@ -1554,9 +1554,7 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.prepareVmRuntime(...args);
   }
 
-  createAutomationSession(
-    ...args: Parameters<ComputerRuntimePort["createAutomationSession"]>
-  ) {
+  createAutomationSession(...args: Parameters<ComputerRuntimePort["createAutomationSession"]>) {
     return this.methods.createAutomationSession(...args);
   }
 
@@ -1588,9 +1586,7 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.deleteVmSnapshot(...args);
   }
 
-  getContainerRuntimeState(
-    ...args: Parameters<ComputerRuntimePort["getContainerRuntimeState"]>
-  ) {
+  getContainerRuntimeState(...args: Parameters<ComputerRuntimePort["getContainerRuntimeState"]>) {
     return this.methods.getContainerRuntimeState(...args);
   }
 
@@ -1626,9 +1622,7 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.restartUnit(...args);
   }
 
-  restartContainerComputer(
-    ...args: Parameters<ComputerRuntimePort["restartContainerComputer"]>
-  ) {
+  restartContainerComputer(...args: Parameters<ComputerRuntimePort["restartContainerComputer"]>) {
     return this.methods.restartContainerComputer(...args);
   }
 

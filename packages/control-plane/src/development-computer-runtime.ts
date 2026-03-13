@@ -32,7 +32,10 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     super();
   }
 
-  async createContainerComputer(input: Parameters<ComputerRuntimePort["createContainerComputer"]>[0], unitName: string) {
+  async createContainerComputer(
+    input: Parameters<ComputerRuntimePort["createContainerComputer"]>[0],
+    unitName: string,
+  ) {
     const containerName = unitName.replace(/\.service$/, "");
     const containerId = `development-${slugify(input.name)}`;
     this.options.containerStates.set(containerId, {
@@ -43,22 +46,23 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
       activeState: "inactive",
       subState: "created",
       execStart:
-        input.runtime.command ??
-        (input.access?.console?.mode === "pty" ? "/bin/sh -i" : undefined),
+        input.runtime.command ?? (input.access?.console?.mode === "pty" ? "/bin/sh -i" : undefined),
       workingDirectory: input.runtime.workingDirectory,
       environment: input.runtime.environment,
     });
     return {
       ...input.runtime,
       command:
-        input.runtime.command ??
-        (input.access?.console?.mode === "pty" ? "/bin/sh -i" : undefined),
+        input.runtime.command ?? (input.access?.console?.mode === "pty" ? "/bin/sh -i" : undefined),
       containerId,
       containerName,
     };
   }
 
-  async createVmComputer(input: Parameters<ComputerRuntimePort["createVmComputer"]>[0], imagePath: string) {
+  async createVmComputer(
+    input: Parameters<ComputerRuntimePort["createVmComputer"]>[0],
+    imagePath: string,
+  ) {
     return withPersistedVmRuntime(input.runtime, imagePath);
   }
 
@@ -184,7 +188,10 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     } satisfies Awaited<ReturnType<ComputerRuntimePort["createScreenshot"]>>;
   }
 
-  async createVmSnapshot(computer: PersistedVmComputer, input: Parameters<ComputerRuntimePort["createVmSnapshot"]>[1]) {
+  async createVmSnapshot(
+    computer: PersistedVmComputer,
+    input: Parameters<ComputerRuntimePort["createVmSnapshot"]>[1],
+  ) {
     const snapshots = this.options.vmSnapshots.get(computer.name) ?? [];
     if (snapshots.some((snapshot) => snapshot.name === input.name)) {
       throw new Error(`Snapshot "${input.name}" already exists for computer "${computer.name}".`);
@@ -377,24 +384,34 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     return state;
   }
 
-  async restoreVmComputer(computer: PersistedVmComputer, input: Parameters<ComputerRuntimePort["restoreVmComputer"]>[1]) {
+  async restoreVmComputer(
+    computer: PersistedVmComputer,
+    input: Parameters<ComputerRuntimePort["restoreVmComputer"]>[1],
+  ) {
     if (input.target === "initial") {
       return;
     }
 
     const snapshots = this.options.vmSnapshots.get(computer.name) ?? [];
     if (!snapshots.some((snapshot) => snapshot.name === input.snapshotName)) {
-      throw new Error(`Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`);
+      throw new Error(
+        `Snapshot "${input.snapshotName}" was not found for computer "${computer.name}".`,
+      );
     }
   }
 
-  async updateBrowserViewport(computer: PersistedBrowserComputer, viewport: Parameters<ComputerRuntimePort["updateBrowserViewport"]>[1]) {
+  async updateBrowserViewport(
+    computer: PersistedBrowserComputer,
+    viewport: Parameters<ComputerRuntimePort["updateBrowserViewport"]>[1],
+  ) {
     const state = this.options.runtimeStates.get(computer.unitName);
     if (state?.activeState !== "active") {
       return;
     }
 
-    const spec = this.options.browserRuntimePaths.specForComputer(withBrowserViewport(computer, viewport));
+    const spec = this.options.browserRuntimePaths.specForComputer(
+      withBrowserViewport(computer, viewport),
+    );
     await mkdir(spec.runtimeDirectory, { recursive: true });
   }
 

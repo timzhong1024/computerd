@@ -540,10 +540,7 @@ export abstract class BaseControlPlane {
     );
   }
 
-  protected async requireBrowserRunning(
-    record: PersistedBrowserComputer,
-    capability: string,
-  ) {
+  protected async requireBrowserRunning(record: PersistedBrowserComputer, capability: string) {
     const runtimeState = await this.runtime.getRuntimeState(record.unitName);
     this.throwIfBroken(
       record,
@@ -574,10 +571,7 @@ export abstract class BaseControlPlane {
     }
   }
 
-  protected async requireContainerRunning(
-    record: PersistedContainerComputer,
-    capability: string,
-  ) {
+  protected async requireContainerRunning(record: PersistedContainerComputer, capability: string) {
     const runtimeState = await this.runtime.getContainerRuntimeState(record);
     this.throwIfBroken(
       record,

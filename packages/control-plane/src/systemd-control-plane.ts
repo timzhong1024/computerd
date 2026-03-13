@@ -32,10 +32,8 @@ export class SystemdControlPlane extends BaseControlPlane {
       runtimeDirectory: environment.COMPUTERD_TERMINAL_RUNTIME_DIR ?? "/run/computerd/terminals",
     });
     const browserRuntimePaths = createBrowserRuntimePaths({
-      runtimeRootDirectory:
-        environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
-      stateRootDirectory:
-        environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
+      runtimeRootDirectory: environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
+      stateRootDirectory: environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
     });
     const vmRuntimePaths = createVmRuntimePaths({
       runtimeRootDirectory: environment.COMPUTERD_VM_RUNTIME_DIR ?? "/run/computerd/computers",

@@ -67,7 +67,9 @@ export class DefaultDockerRuntime extends DockerRuntime {
 
   async getContainerRuntimeState(computer: PersistedContainerComputer) {
     try {
-      const inspection = await this.dockerClient.getContainer(computer.runtime.containerId).inspect();
+      const inspection = await this.dockerClient
+        .getContainer(computer.runtime.containerId)
+        .inspect();
       return toUnitRuntimeState(computer, inspection);
     } catch (error: unknown) {
       if (isMissingContainerError(error)) {
