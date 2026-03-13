@@ -14,7 +14,6 @@ import {
   type CreateContainerComputerInput,
   type CreateHostComputerInput,
   type HostUnitDetail,
-  type ImportVmImageInput,
   type RestoreComputerInput,
   type UpdateBrowserViewportInput,
 } from "@computerd/core";
@@ -27,7 +26,6 @@ import { createConsoleRuntimePaths } from "./systemd/console-runtime";
 import {
   createVmRuntimePaths,
   toVmRuntimeDetail,
-  withPersistedVmRuntime,
 } from "./systemd/vm-runtime";
 import { ImageProvider } from "./images";
 import {
