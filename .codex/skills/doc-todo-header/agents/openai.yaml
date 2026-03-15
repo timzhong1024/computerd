@@ -1,0 +1,4 @@
+interface:
+  display_name: "Doc TODO Header"
+  short_description: "Keep markdown TODOs at the top"
+  default_prompt: "Maintain markdown docs by keeping a canonical TODO block at the top, syncing any in-body next steps into that block, and checking that block first when the user asks what to do next."
