@@ -177,7 +177,20 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     return state;
   }
 
-  async createScreenshot(computer: PersistedBrowserComputer) {
+  async createScreenshot(computer: PersistedBrowserComputer | PersistedVmComputer) {
+    if (computer.profile === "vm") {
+      const spec = this.options.vmRuntimePaths.specForComputer(computer);
+      return {
+        computerName: computer.name,
+        format: "jpeg",
+        mimeType: "image/jpeg",
+        capturedAt: new Date().toISOString(),
+        width: spec.viewport.width,
+        height: spec.viewport.height,
+        dataBase64: Buffer.from(`development-screenshot:${computer.name}`).toString("base64"),
+      } satisfies Awaited<ReturnType<ComputerRuntimePort["createScreenshot"]>>;
+    }
+
     const spec = this.options.browserRuntimePaths.specForComputer(computer);
     return {
       computerName: computer.name,

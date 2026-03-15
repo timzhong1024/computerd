@@ -1555,7 +1555,7 @@ export function HomePage() {
                   Create automation session
                 </button>
               ) : null}
-              {!isSelectedComputerBroken && selectedComputer.profile === "browser" ? (
+              {!isSelectedComputerBroken ? (
                 <button
                   type="button"
                   className="surface-link surface-link-secondary"
@@ -1805,7 +1805,7 @@ export function HomePage() {
                 </dl>
               </section>
             ) : null}
-            {selectedComputer.profile === "browser" && screenshot ? (
+            {screenshot ? (
               <section className="panel">
                 <div className="panel-header">
                   <h3>Screenshot</h3>
@@ -1816,7 +1816,7 @@ export function HomePage() {
                 </p>
                 <img
                   alt={`${selectedComputer.name} screenshot`}
-                  data-testid="browser-screenshot-preview"
+                  data-testid="computer-screenshot-preview"
                   className="novnc-shell"
                   src={`data:${screenshot.mimeType};base64,${screenshot.dataBase64}`}
                 />

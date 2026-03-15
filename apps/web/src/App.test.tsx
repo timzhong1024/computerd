@@ -695,6 +695,7 @@ test("creates a vm computer and shows monitor plus console affordances", async (
   expect(screen.getByText(/192.168.250.10\/24/)).toBeInTheDocument();
   expect(screen.getByTestId("open-monitor-link")).toHaveTextContent("Open monitor");
   expect(screen.getByTestId("open-console-link")).toBeInTheDocument();
+  expect(screen.getByTestId("capture-screenshot")).toBeDisabled();
   expect(screen.getByTestId("vm-snapshot-list")).toHaveTextContent("No snapshots yet.");
 });
 
@@ -864,6 +865,7 @@ test("disables vm snapshot mutations while running", async () => {
 
   fireEvent.click(await screen.findByRole("button", { name: /running-vm/i }));
 
+  expect(await screen.findByTestId("capture-screenshot")).toBeEnabled();
   expect(await screen.findByRole("button", { name: "Create snapshot" })).toBeDisabled();
   expect(screen.getByTestId("restore-initial")).toBeDisabled();
 });
@@ -955,7 +957,7 @@ test("creates browser automation sessions and screenshot previews from the detai
   );
 
   fireEvent.click(screen.getByTestId("capture-screenshot"));
-  expect(await screen.findByTestId("browser-screenshot-preview")).toHaveAttribute(
+  expect(await screen.findByTestId("computer-screenshot-preview")).toHaveAttribute(
     "src",
     "data:image/png;base64,c2NyZWVuc2hvdA==",
   );
@@ -1153,7 +1155,9 @@ function createComputerSummary(computer: FakeComputer) {
           (computer.access?.console as { mode?: string } | undefined)?.mode === "pty"),
       browserAvailable: computer.profile === "browser",
       automationAvailable: computer.profile === "browser" && computer.state === "running",
-      screenshotAvailable: computer.profile === "browser" && computer.state === "running",
+      screenshotAvailable:
+        (computer.profile === "browser" || computer.profile === "vm") &&
+        computer.state === "running",
       audioAvailable: computer.profile === "browser" && computer.state === "running",
     },
     network,

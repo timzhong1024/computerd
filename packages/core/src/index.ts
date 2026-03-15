@@ -71,15 +71,24 @@ export const computerAudioSessionSchema = z.object({
   expiresAt: z.string().datetime().optional(),
 });
 
-export const computerScreenshotSchema = z.object({
+const computerScreenshotBaseSchema = z.object({
   computerName: z.string().min(1),
-  format: z.literal("png"),
-  mimeType: z.literal("image/png"),
   capturedAt: z.string().datetime(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   dataBase64: z.string().min(1),
 });
+
+export const computerScreenshotSchema = z.discriminatedUnion("format", [
+  computerScreenshotBaseSchema.extend({
+    format: z.literal("png"),
+    mimeType: z.literal("image/png"),
+  }),
+  computerScreenshotBaseSchema.extend({
+    format: z.literal("jpeg"),
+    mimeType: z.literal("image/jpeg"),
+  }),
+]);
 
 export const computerSnapshotSchema = z.object({
   name: z.string().min(1),
@@ -777,6 +786,10 @@ export function createComputerCapabilities(
   access?: ComputerAccess,
 ) {
   const isBroken = state === "broken";
+  const isMonitorCapable =
+    profile === "browser" ||
+    (profile === "vm" && access?.display?.mode === "vnc");
+
   return {
     canInspect: true,
     canStart: !isBroken && state === "stopped",
@@ -787,7 +800,7 @@ export function createComputerCapabilities(
       access?.console?.mode === "pty",
     browserAvailable: profile === "browser",
     automationAvailable: profile === "browser" && state === "running",
-    screenshotAvailable: profile === "browser" && state === "running",
+    screenshotAvailable: isMonitorCapable && state === "running",
     audioAvailable: profile === "browser" && state === "running",
   } satisfies ComputerCapabilities;
 }

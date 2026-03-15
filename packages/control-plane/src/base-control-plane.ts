@@ -259,9 +259,9 @@ export abstract class BaseControlPlane {
 
   async createScreenshot(name: string): Promise<ComputerScreenshot> {
     const record = await this.requireComputer(name);
-    const browserRecord = requireBrowserRecord(record);
-    await this.requireBrowserRunning(browserRecord, "screenshots");
-    return await this.runtime.createScreenshot(browserRecord);
+    const screenshotRecord = requireMonitorCapableRecord(record);
+    await this.requireMonitorRunning(screenshotRecord, "screenshots");
+    return await this.runtime.createScreenshot(screenshotRecord);
   }
 
   async createConsoleSession(name: string) {

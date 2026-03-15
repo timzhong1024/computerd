@@ -654,6 +654,21 @@ test("parses computer screenshots", () => {
 
   expect(screenshot.mimeType).toBe("image/png");
   expect(screenshot.dataBase64).toBe("c2NyZWVuc2hvdA==");
+
+  expect(
+    parseComputerScreenshot({
+      computerName: "linux-vm",
+      format: "jpeg",
+      mimeType: "image/jpeg",
+      capturedAt: "2026-03-09T08:00:00.000Z",
+      width: 1440,
+      height: 900,
+      dataBase64: "c2NyZWVuc2hvdA==",
+    }),
+  ).toMatchObject({
+    format: "jpeg",
+    mimeType: "image/jpeg",
+  });
 });
 
 test("parses computer console sessions", () => {
@@ -784,6 +799,23 @@ test("derives computer capabilities from profile and state", () => {
     automationAvailable: true,
     screenshotAvailable: true,
     audioAvailable: true,
+  });
+
+  expect(
+    createComputerCapabilities("vm", "running", {
+      display: {
+        mode: "vnc",
+      },
+      console: {
+        mode: "pty",
+        writable: true,
+      },
+    }),
+  ).toMatchObject({
+    consoleAvailable: true,
+    browserAvailable: false,
+    screenshotAvailable: true,
+    audioAvailable: false,
   });
 
   expect(

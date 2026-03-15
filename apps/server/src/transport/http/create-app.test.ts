@@ -422,6 +422,16 @@ test("serves computer and host unit APIs", async () => {
     protocol: "vnc",
   });
 
+  const vmScreenshotResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/screenshots`, {
+    method: "POST",
+  });
+  expect(vmScreenshotResponse.status).toBe(200);
+  await expect(vmScreenshotResponse.json()).resolves.toMatchObject({
+    computerName: "vm-smoke",
+    format: "jpeg",
+    mimeType: "image/jpeg",
+  });
+
   const vmConsoleSessionResponse = await fetch(
     `${baseUrl}/api/computers/vm-smoke/console-sessions`,
     {

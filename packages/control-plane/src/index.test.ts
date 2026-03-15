@@ -277,6 +277,13 @@ test("creates and manages a qcow2 vm computer with monitor and console support",
     computerName: "linux-vm",
     protocol: "vnc",
   });
+  await expect(controlPlane.createScreenshot("linux-vm")).resolves.toMatchObject({
+    computerName: "linux-vm",
+    format: "jpeg",
+    mimeType: "image/jpeg",
+    width: 1440,
+    height: 900,
+  });
   await expect(controlPlane.createConsoleSession("linux-vm")).resolves.toMatchObject({
     computerName: "linux-vm",
     protocol: "ttyd",
@@ -1003,6 +1010,7 @@ test("rejects lifecycle, delete, and session actions for broken computers", asyn
   await metadataStore.putComputer(createHostComputerRecord());
   await metadataStore.putComputer(createBrowserComputerRecord());
   await metadataStore.putComputer(createContainerComputerRecord());
+  await metadataStore.putComputer(createVmComputerRecord());
   const controlPlane = new SystemdControlPlane(
     {
       COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
@@ -1041,6 +1049,9 @@ test("rejects lifecycle, delete, and session actions for broken computers", asyn
     BrokenComputerError,
   );
   await expect(controlPlane.createScreenshot("research-browser")).rejects.toBeInstanceOf(
+    BrokenComputerError,
+  );
+  await expect(controlPlane.createScreenshot("linux-vm")).rejects.toBeInstanceOf(
     BrokenComputerError,
   );
   await expect(controlPlane.createExecSession("workspace-container")).rejects.toBeInstanceOf(
@@ -1202,6 +1213,18 @@ test("waits for host console runtime readiness during start", async () => {
       };
     },
     async createScreenshot(computer) {
+      if (computer.profile === "vm") {
+        return {
+          computerName: computer.name,
+          format: "jpeg",
+          mimeType: "image/jpeg",
+          capturedAt: new Date().toISOString(),
+          width: 1440,
+          height: 900,
+          dataBase64: Buffer.from("screenshot").toString("base64"),
+        };
+      }
+
       return {
         computerName: computer.name,
         format: "png",
@@ -1849,6 +1872,18 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     },
     async createScreenshot(computer) {
       const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
+      if (computer.profile === "vm") {
+        return {
+          computerName: computer.name,
+          format: "jpeg",
+          mimeType: "image/jpeg",
+          capturedAt: new Date().toISOString(),
+          width: viewport.width,
+          height: viewport.height,
+          dataBase64: Buffer.from(`screenshot:${computer.name}`).toString("base64"),
+        };
+      }
+
       return {
         computerName: computer.name,
         format: "png",

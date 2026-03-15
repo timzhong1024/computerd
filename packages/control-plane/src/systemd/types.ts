@@ -143,7 +143,9 @@ export abstract class ComputerRuntimePort {
     computer: PersistedBrowserComputer | PersistedVmComputer,
   ): Promise<ComputerMonitorSession>;
   abstract createPersistentUnit(computer: PersistedComputer): Promise<UnitRuntimeState>;
-  abstract createScreenshot(computer: PersistedBrowserComputer): Promise<ComputerScreenshot>;
+  abstract createScreenshot(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+  ): Promise<ComputerScreenshot>;
   abstract createVmSnapshot(
     computer: PersistedVmComputer,
     input: CreateComputerSnapshotInput,

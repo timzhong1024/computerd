@@ -65,7 +65,9 @@ export abstract class SystemdRuntime {
     computer: PersistedVmComputer,
     input: CreateComputerSnapshotInput,
   ): Promise<ComputerSnapshot>;
-  abstract createScreenshot(computer: PersistedBrowserComputer): Promise<ComputerScreenshot>;
+  abstract createScreenshot(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+  ): Promise<ComputerScreenshot>;
   abstract deletePersistentUnit(unitName: string): Promise<void>;
   abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
   abstract getHostUnit(unitName: string): Promise<HostUnitDetail | null>;
@@ -296,7 +298,11 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
     } satisfies Awaited<ReturnType<SystemdRuntime["openAutomationAttach"]>>;
   }
 
-  async createScreenshot(computer: PersistedBrowserComputer) {
+  async createScreenshot(computer: PersistedBrowserComputer | PersistedVmComputer) {
+    if (computer.profile === "vm") {
+      return await this.createVmScreenshot(computer);
+    }
+
     const spec = this.browserRuntimePaths.specForComputer(computer);
     const { stdout } = await execFileAsync("/usr/bin/bash", [
       "-lc",
@@ -310,6 +316,21 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
       width: spec.viewport.width,
       height: spec.viewport.height,
       dataBase64: stdout.trim(),
+    } satisfies Awaited<ReturnType<SystemdRuntime["createScreenshot"]>>;
+  }
+
+  private async createVmScreenshot(computer: PersistedVmComputer) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    const jpegBuffer = await captureJpegFromVnc(spec.vncDisplay);
+    const dimensions = readJpegDimensions(jpegBuffer);
+    return {
+      computerName: computer.name,
+      format: "jpeg",
+      mimeType: "image/jpeg",
+      capturedAt: new Date().toISOString(),
+      width: dimensions.width,
+      height: dimensions.height,
+      dataBase64: jpegBuffer.toString("base64"),
     } satisfies Awaited<ReturnType<SystemdRuntime["createScreenshot"]>>;
   }
 
@@ -909,6 +930,69 @@ function shouldWriteNetworkConfig(nic: {
   ipv6?: { type: "disabled" | "dhcp" | "slaac" | "static" };
 }) {
   return nic.ipv4?.type !== undefined || nic.ipv6?.type !== undefined;
+}
+
+async function captureJpegFromVnc(display: number) {
+  const outputPath = `/tmp/computerd-vnc-screenshot-${randomUUID()}.jpg`;
+
+  try {
+    await execFileAsync("/usr/bin/vncsnapshot", [`127.0.0.1:${display}`, outputPath]);
+    return await readFile(outputPath);
+  } finally {
+    await rm(outputPath, { force: true });
+  }
+}
+
+function readJpegDimensions(buffer: Buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+    throw new Error("Captured VNC screenshot is not a valid JPEG image.");
+  }
+
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+
+    const marker = buffer[offset + 1] ?? -1;
+    offset += 2;
+
+    // Standalone markers without payload.
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+      continue;
+    }
+
+    const segmentLength = buffer.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > buffer.length) {
+      break;
+    }
+
+    if (
+      marker === 0xc0 ||
+      marker === 0xc1 ||
+      marker === 0xc2 ||
+      marker === 0xc3 ||
+      marker === 0xc5 ||
+      marker === 0xc6 ||
+      marker === 0xc7 ||
+      marker === 0xc9 ||
+      marker === 0xca ||
+      marker === 0xcb ||
+      marker === 0xcd ||
+      marker === 0xce ||
+      marker === 0xcf
+    ) {
+      return {
+        height: buffer.readUInt16BE(offset + 3),
+        width: buffer.readUInt16BE(offset + 5),
+      };
+    }
+
+    offset += segmentLength;
+  }
+
+  throw new Error("Could not determine JPEG screenshot dimensions.");
 }
 
 function quoteShell(value: string) {

@@ -73,7 +73,7 @@ export class CompositeComputerRuntime extends ComputerRuntimePort {
     return this.systemdRuntime.createPersistentUnit(computer);
   }
 
-  createScreenshot(computer: PersistedBrowserComputer) {
+  createScreenshot(computer: PersistedBrowserComputer | PersistedVmComputer) {
     return this.systemdRuntime.createScreenshot(computer);
   }
 
