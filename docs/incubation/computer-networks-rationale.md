@@ -314,3 +314,96 @@ router 不再作为单独顶层资源，而是 network detail 的一部分。
 
 - DNS provider 的真实 runtime 分化
 - programmable gateway provider 的真实实现与状态面
+
+## Why Gateway Runtime Stays Behind Network
+
+在 gateway 复杂度继续上升之后，一个自然问题是：
+
+- 要不要把 gateway 单独做成新的顶层对象
+- 或至少做成一种“特殊 computer”
+
+当前结论仍然是否定的。
+
+更合适的方向是：
+
+- `network` 继续是唯一用户主对象
+- `gateway` 继续挂在 `network` 下
+- per-network gateway runtime 只是 `network.gateway` 的底层承载
+
+原因是：
+
+- 用户心智仍然是“我管理一张网”
+- 不是“我再额外编排一台路由器/网关机器”
+- DHCP / DNS / programmable gateway 都是这张网的出口与策略能力，不值得再拆出第三个主对象
+
+## Why We Reserved A Managed Gateway Runtime
+
+当 gateway 只包含：
+
+- DHCP
+- DNS
+- 基础 NAT
+
+时，还可以勉强继续堆在宿主脚本里。
+
+但一旦开始预留：
+
+- `smartdns`
+- `tailscale`
+- `openvpn`
+- 未来 transparent proxy / policy routing / L3/L4 programmable gateway
+
+它就越来越像一个长期运行、可替换、可观测的专用 runtime。
+
+所以当前收敛出的实现方向是：
+
+- 每张 `isolated network` 最终拥有一个 per-network managed gateway runtime
+- 它逻辑上是双口设备：
+  - `lan` -> inside segment
+  - `wan` -> host-provided transit/uplink substrate
+- 宿主继续拥有 network substrate
+- gateway runtime 拥有 gateway logic
+
+一句话：
+
+- host owns substrate
+- gateway runtime owns gateway logic
+
+## Why We Did Not Freeze The Data Plane Contract Yet
+
+虽然方向已经收敛，但当前没有把这些细节升级成正式合同：
+
+- workload 默认网关究竟直接指向 gateway runtime，还是先经过宿主控制点
+- host bridge address 是否长期保留为 inside segment 的管理地址
+- transit subnet、veth 命名、NAT 层次是否对外可见
+
+这些都属于仍在演进的数据面实现，而不是产品层对象模型。
+
+因此当前文档策略刻意分成两层：
+
+- 正式文档只承认：
+  - `network`
+  - `network.gateway`
+  - provider 插槽
+- incubation 文档记录：
+  - managed gateway runtime 的推演
+  - host/gateway 的职责切分
+  - 数据面的候选落法
+
+## Reserved Space
+
+当前已经明确预留、但不应写成“已完成”的空间包括：
+
+- per-network managed gateway runtime 的最终稳定 runtime contract
+- gateway provider 的真实生命周期与 inspect surface
+- workload 默认路由是否最终直接下发到 gateway runtime
+- programmable gateway provider 的真实数据面
+
+也就是说，预留空间已经定了，但它们仍然是：
+
+- directionally locked
+- implementation in progress
+
+而不是：
+
+- finished public feature

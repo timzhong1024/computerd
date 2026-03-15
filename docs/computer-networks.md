@@ -92,6 +92,32 @@ network 对外现在统一暴露 `gateway`，而不是零散的 `routerState/dhc
 - network health 会明确显示为 `unsupported/degraded`
 - 不会静默回退成“已经正常运行”
 
+## Reserved Gateway Runtime Direction
+
+当前已经明确预留的后续方向是：
+
+- `isolated network` 最终会拥有一个 per-network managed gateway runtime
+- 这个 runtime 不会提升成新的顶层对象
+- 用户仍然只管理 `network`
+
+这个方向下，gateway runtime 的目标形态是：
+
+- 逻辑上是双口设备
+- `lan` 面向 network inside segment
+- `wan` 通过宿主提供的 transit/uplink substrate 对外
+- DHCP / DNS / programmable gateway provider 最终都应收敛到这个 runtime
+
+但这里要特别注意：
+
+- 这仍然是方向性设计，不是已经稳定开放的外部合同
+- 当前不要把 gateway runtime 的内部拓扑、地址分配、container 细节当成正式 API
+- 当前文档层面只把它视为 `network.gateway` 背后的实现预留，而不是用户可单独操作的新资源
+
+换句话说：
+
+- `network.gateway` 是稳定能力视图
+- “per-network managed gateway runtime” 是当前已收敛、但仍在继续实现中的底层方向
+
 当前实现中：
 
 - `container` 和 `vm` 已经能真实接入 isolated network
@@ -155,6 +181,26 @@ container 第一版只暴露 DHCP 语义，不提供 runtime-level NIC/IP 配置
 
 - business traffic 进入 selected network
 - control-plane traffic 始终通过宿主侧本地 IPC 旁路
+
+## Current Boundary
+
+虽然 gateway runtime 方向已经收敛，但目前仍有几条边界不应误解为“已经做完”：
+
+- 不应把 gateway runtime 当成新的 public managed object
+- 不应假设 DHCP / DNS / programmable gateway provider 的最终 runtime contract 已固定
+- 不应假设 workload 的默认网关地址、host bridge address、transit subnet 这些内部细节已经成为正式外部约定
+
+当前真正稳定的只有：
+
+- `network` 作为顶层对象
+- `network.gateway` 作为统一能力视图
+- `programmableGateway.provider` 作为高阶 software gateway 的预留插槽
+
+而下面这些仍然属于继续实现中的底层设计空间：
+
+- per-network managed gateway runtime 的最终数据面形态
+- workload 是否最终直接把 gateway runtime 作为默认路由
+- 宿主 substrate 与 gateway runtime 的最终职责切分
 
 ## Lifecycle And Deletion
 
