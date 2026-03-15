@@ -1,5 +1,7 @@
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: 定义并落地 profile-independent 的 generic input injection contract，先覆盖 pointer / keyboard，再决定各 profile 的暴露范围。
 - [ ] P2: 设计 optional perception sidecar contract，明确其作为增强面而不是 core control contract 前置依赖。
 <!-- DOC-TODO-END -->

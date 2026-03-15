@@ -1,5 +1,7 @@
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: 为 browser computer 增加 generic pointer / keyboard injection surface，并明确它只作为 `CDP` 失效时的视觉兜底面。
 - [ ] P2: 为 browser monitor / automation session 补充 ticket/token 鉴权，收紧当前默认无鉴权的最小实现。
 <!-- DOC-TODO-END -->

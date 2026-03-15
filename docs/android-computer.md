@@ -1,5 +1,7 @@
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: 落地 `profile = "android"` 的最小 vertical slice，先覆盖 runtime、monitor、screenshot 和 `adb shell` console surface。
 - [ ] P2: 增加 Appium attach surface，并把 touch / device-key input contract 明确到稳定 API 面。
 <!-- DOC-TODO-END -->

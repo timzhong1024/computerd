@@ -16,7 +16,9 @@ description: Maintain markdown documents by extracting active todos, next steps,
 
 ```md
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: <最重要、最具体、可直接执行的下一步>
 - [ ] P2: <第二优先级的下一步>
 <!-- DOC-TODO-END -->
@@ -73,7 +75,9 @@ description: Maintain markdown documents by extracting active todos, next steps,
 
 ```md
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: 用真实 runtime port 替换当前内存/fixture control plane。
 - [ ] P2: 把 Web 代码继续收紧为 transport / use-case / view-model / ui 边界。
 <!-- DOC-TODO-END -->

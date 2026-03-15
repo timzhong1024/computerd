@@ -1,5 +1,7 @@
 <!-- DOC-TODO-START -->
+
 ## 当前 TODO
+
 - [ ] P1: 用真实 runtime port 替换当前内存/fixture control plane。
 - [ ] P2: 保持 `computer` 为主模型，不把 runtime helper 反向抬升成顶层对象。
 - [ ] P3: 把 Web 代码从当前单文件状态继续收紧为更清晰的 `transport / use-cases / view-model / ui` 边界。
