@@ -1,3 +1,9 @@
+<!-- DOC-TODO-START -->
+## 当前 TODO
+- [ ] P1: 落地 `profile = "android"` 的最小 vertical slice，先覆盖 runtime、monitor、screenshot 和 `adb shell` console surface。
+- [ ] P2: 增加 Appium attach surface，并把 touch / device-key input contract 明确到稳定 API 面。
+<!-- DOC-TODO-END -->
+
 # Android Computer
 
 ## Status
@@ -5,6 +11,8 @@
 本文定义一个拟新增的 `android computer` profile。
 
 除非明确说明，下面描述的是目标产品形态与 runtime 定义，不表示当前仓库已经实现。
+
+当前仓库尚未实现 `android computer` profile；本文中的绝大多数能力都属于设计目标，而不是现状。
 
 正式原则：
 
@@ -259,6 +267,8 @@ live snapshot 可以保留为未来增强方向，但不进入第一版正式 co
 
 ## Supported Capabilities
 
+下面这一节描述的是目标能力面，不代表当前仓库已实现。
+
 ### Lifecycle
 
 - create
@@ -313,6 +323,7 @@ android computer 的 agent-facing 接口建议拆成三层：
 - display interface
 - console interface
 - specialized Android interface
+- optional perception sidecar
 
 其中：
 
@@ -566,6 +577,40 @@ android computer 的最小 API 面建议是：
 - `POST /api/computers/:name/adb-sessions`
 
 monitor / console / automation 的 session 返回值应继续遵守 computerd 现有的“创建 session，再返回 attach/connect 信息”的模式。
+
+## Current Implementation Status
+
+为避免和目标形态混淆，当前仓库里的实际状态单独列出如下。
+
+### Already Implemented In Repository
+
+- `browser` profile
+- `vm` profile
+- browser monitor / screenshot / `CDP` attach
+- vm monitor / screenshot
+- host/container console surface
+- snapshot / restore 基础设施主要存在于 `vm`
+
+### Not Implemented Yet For Android
+
+- `profile = "android"`
+- Android runtime substrate
+- Android monitor session
+- Android screenshot surface
+- Android touch / key input injection
+- `adb shell` console surface
+- Appium attach surface
+- Android-specific snapshot / restore product surface
+- Android-oriented WebUI
+- perception / visual grounding sidecar contract
+
+### Design Reading Guide
+
+因此阅读本文时应当这样理解：
+
+- 讲 interface layering 的段落是当前仍然成立的设计原则
+- 讲 Android runtime / API / WebUI 的段落是未来实现目标
+- 讲“已支持什么”的地方，如果没有显式标注 current，就默认是 target state
 
 ## Agent Recommendation
 

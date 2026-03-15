@@ -1,8 +1,26 @@
+<!-- DOC-TODO-START -->
+## 当前 TODO
+- [ ] P1: 为 browser computer 增加 generic pointer / keyboard injection surface，并明确它只作为 `CDP` 失效时的视觉兜底面。
+- [ ] P2: 为 browser monitor / automation session 补充 ticket/token 鉴权，收紧当前默认无鉴权的最小实现。
+<!-- DOC-TODO-END -->
+
 # Browser Computer
 
 ## What It Is
 
 browser computer 是一个长期存在、由 computerd 管理的有状态浏览器环境。
+
+它的定位是：
+
+- 一个 managed browser workspace
+- 一个可被人类 monitor 的图形环境
+- 一个可被 agent 通过 specialized browser protocol attach 的自动化对象
+
+它不是：
+
+- server-side browser DSL 翻译层
+- 纯 GUI click bot
+- 只允许 screenshot + click 的 agent 沙盒
 
 它不是“启动浏览器并打开某个 URL 的一次性命令”，而是一个可以跨 agent 生命周期持续存在的 browser workspace：
 
@@ -60,6 +78,8 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 
 ## Supported Capabilities
 
+下面的 `Supported Capabilities` 指当前仓库已实现能力，而不是目标形态。
+
 ### Lifecycle
 
 - create
@@ -81,6 +101,14 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - CDP websocket attach
 - 适合给 Playwright 直接连接
 
+这是 browser computer 当前最重要的 specialized surface。
+
+推荐优先级是：
+
+1. `CDP`
+2. 必要时 monitor / screenshot
+3. 将来如果补 generic input，再作为视觉兜底面
+
 Playwright 接入细节见：
 
 - [docs/playwright-browser-computer.md](/Users/timzhong/computerd/docs/playwright-browser-computer.md)
@@ -96,6 +124,34 @@ Playwright 接入细节见：
 - fullscreen screenshot
 - PNG base64 payload
 - HTTP `audio/ogg` live audio stream
+
+## Interaction Model
+
+browser computer 的 agent-facing 模型应拆成三层：
+
+- display observation
+  - monitor
+  - screenshot
+  - audio
+- specialized browser surface
+  - `CDP`
+- optional future generic input
+  - pointer
+  - keyboard
+
+当前仓库里真正已经稳定暴露的是：
+
+- display observation
+- `CDP`
+
+当前还没有暴露：
+
+- browser generic input injection API
+
+这意味着 browser computer 现在的推荐路径仍然应该是：
+
+- 优先 `CDP`
+- 不鼓励把 browser computer 用成“只能截图再点鼠标”的系统
 
 ## WebUI
 
@@ -154,6 +210,8 @@ CLI 当前支持：
 - 当前 monitor / automation 默认无鉴权
 - 当前音频输出格式固定为 `audio/ogg`
 - 当前未内建 selector/tab/page 级 browser actions
+- 当前未暴露 generic pointer / keyboard injection API
+- 当前未暴露 perception / visual grounding sidecar contract
 - 当前 stop/start 不保证浏览器窗口和标签页恢复
 
 ## Operational Notes
