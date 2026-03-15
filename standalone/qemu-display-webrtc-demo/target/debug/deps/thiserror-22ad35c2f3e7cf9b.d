@@ -1,0 +1,14 @@
+/Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/deps/thiserror-22ad35c2f3e7cf9b.d: /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/build/thiserror-6aeb804c40e651aa/out/private.rs
+
+/Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/deps/libthiserror-22ad35c2f3e7cf9b.rlib: /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/build/thiserror-6aeb804c40e651aa/out/private.rs
+
+/Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/deps/libthiserror-22ad35c2f3e7cf9b.rmeta: /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/build/thiserror-6aeb804c40e651aa/out/private.rs
+
+/Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs:
+/Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs:
+/Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs:
+/Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs:
+/Users/timzhong/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs:
+/Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/build/thiserror-6aeb804c40e651aa/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/timzhong/computerd/standalone/qemu-display-webrtc-demo/target/debug/build/thiserror-6aeb804c40e651aa/out
