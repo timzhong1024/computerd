@@ -787,8 +787,7 @@ export function createComputerCapabilities(
 ) {
   const isBroken = state === "broken";
   const isMonitorCapable =
-    profile === "browser" ||
-    (profile === "vm" && access?.display?.mode === "vnc");
+    profile === "browser" || (profile === "vm" && access?.display?.mode === "vnc");
 
   return {
     canInspect: true,
