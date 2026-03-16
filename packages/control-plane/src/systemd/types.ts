@@ -7,10 +7,13 @@ import type {
   ComputerConsoleSession,
   ComputerExecSession,
   ComputerDetail,
+  DisplayAction,
   ComputerLifecycle,
   ComputerMonitorSession,
   ComputerProfile,
   ComputerResources,
+  RunDisplayActionsObserve,
+  RunDisplayActionsResult,
   ComputerScreenshot,
   ComputerSnapshot,
   ComputerStorage,
@@ -36,6 +39,12 @@ import type { PersistedNetworkRecord } from "../networks";
 
 export interface PersistedBrowserComputerRuntime extends CreateBrowserRuntime {
   runtimeUser: string;
+  provider?: "systemd" | "container";
+  containerId?: string;
+  containerName?: string;
+  hostVncPort?: number;
+  hostDevtoolsPort?: number;
+  controlSocketPath?: string;
 }
 
 export interface PersistedComputerBase {
@@ -119,6 +128,11 @@ export interface VmConsoleRuntimeSpec {
 }
 
 export abstract class ComputerRuntimePort {
+  abstract createBrowserComputer(
+    input: CreateBrowserComputerInput,
+    unitName: string,
+    network: PersistedNetworkRecord,
+  ): Promise<PersistedBrowserComputer["runtime"]>;
   abstract createContainerComputer(
     input: CreateContainerComputerInput,
     unitName: string,
@@ -130,6 +144,7 @@ export abstract class ComputerRuntimePort {
     network: PersistedNetworkRecord,
   ): Promise<PersistedVmComputer["runtime"]>;
   abstract deleteBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
+  abstract deleteBrowserComputer(computer: PersistedBrowserComputer): Promise<void>;
   abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;
   abstract deleteVmComputer(computer: PersistedVmComputer): Promise<void>;
   abstract ensureBrowserRuntimeIdentity(computer: PersistedBrowserComputer): Promise<void>;
@@ -146,12 +161,18 @@ export abstract class ComputerRuntimePort {
   abstract createScreenshot(
     computer: PersistedBrowserComputer | PersistedVmComputer,
   ): Promise<ComputerScreenshot>;
+  abstract runDisplayActions(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    ops: DisplayAction[],
+    observe: RunDisplayActionsObserve,
+  ): Promise<RunDisplayActionsResult>;
   abstract createVmSnapshot(
     computer: PersistedVmComputer,
     input: CreateComputerSnapshotInput,
   ): Promise<ComputerSnapshot>;
   abstract deletePersistentUnit(unitName: string): Promise<void>;
   abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
+  abstract getBrowserRuntimeState(computer: PersistedBrowserComputer): Promise<UnitRuntimeState | null>;
   abstract getContainerRuntimeState(
     computer: PersistedContainerComputer,
   ): Promise<UnitRuntimeState | null>;
@@ -170,9 +191,12 @@ export abstract class ComputerRuntimePort {
   abstract restartContainerComputer(
     computer: PersistedContainerComputer,
   ): Promise<UnitRuntimeState>;
+  abstract restartBrowserComputer(computer: PersistedBrowserComputer): Promise<UnitRuntimeState>;
   abstract startUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract startBrowserComputer(computer: PersistedBrowserComputer): Promise<UnitRuntimeState>;
   abstract startContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
   abstract stopUnit(unitName: string): Promise<UnitRuntimeState>;
+  abstract stopBrowserComputer(computer: PersistedBrowserComputer): Promise<UnitRuntimeState>;
   abstract stopContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
   abstract restoreVmComputer(
     computer: PersistedVmComputer,

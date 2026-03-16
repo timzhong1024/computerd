@@ -90,6 +90,91 @@ export const computerScreenshotSchema = z.discriminatedUnion("format", [
   }),
 ]);
 
+export const displayMouseButtonSchema = z.enum(["left", "middle", "right"]);
+
+const displayActionBaseSchema = z.object({
+  type: z.string().min(1),
+});
+
+export const displayActionSchema = z.discriminatedUnion("type", [
+  displayActionBaseSchema.extend({
+    type: z.literal("mouse.move"),
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("mouse.down"),
+    button: displayMouseButtonSchema,
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("mouse.up"),
+    button: displayMouseButtonSchema,
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("mouse.scroll"),
+    deltaX: z.number().int(),
+    deltaY: z.number().int(),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("key.down"),
+    key: z.string().min(1),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("key.up"),
+    key: z.string().min(1),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("key.press"),
+    key: z.string().min(1),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("text.insert"),
+    text: z.string(),
+  }),
+  displayActionBaseSchema.extend({
+    type: z.literal("wait"),
+    ms: z.number().int().nonnegative(),
+  }),
+]);
+
+export const runDisplayActionsObserveSchema = z
+  .object({
+    screenshot: z.boolean().default(true),
+  })
+  .default({
+    screenshot: true,
+  });
+
+export const runDisplayActionsInputSchema = z.object({
+  computerName: z.string().min(1),
+  ops: z.array(displayActionSchema).min(1),
+  observe: runDisplayActionsObserveSchema.optional().default({
+    screenshot: true,
+  }),
+});
+
+export const displayActionFailureCodeSchema = z.enum([
+  "coordinate-out-of-bounds",
+  "transport-error",
+  "capture-error",
+  "unsupported-operation",
+]);
+
+export const displayActionFailureSchema = z.object({
+  code: displayActionFailureCodeSchema,
+  message: z.string().min(1),
+});
+
+export const runDisplayActionsResultSchema = z.object({
+  computerName: z.string().min(1),
+  completedOpCount: z.number().int().nonnegative(),
+  stoppedAtOpIndex: z.number().int().nonnegative().optional(),
+  failure: displayActionFailureSchema.optional(),
+  viewport: browserViewportSchema,
+  screenshot: computerScreenshotSchema.optional(),
+  capturedAt: z.string().datetime(),
+});
+
 export const computerSnapshotSchema = z.object({
   name: z.string().min(1),
   createdAt: z.string().datetime(),
@@ -662,6 +747,10 @@ export type ComputerSnapshot = z.infer<typeof computerSnapshotSchema>;
 export type ComputerState = z.infer<typeof computerStateSchema>;
 export type ComputerStorage = z.infer<typeof computerStorageSchema>;
 export type ComputerSummary = z.infer<typeof computerSummarySchema>;
+export type DisplayAction = z.infer<typeof displayActionSchema>;
+export type DisplayActionFailure = z.infer<typeof displayActionFailureSchema>;
+export type DisplayActionFailureCode = z.infer<typeof displayActionFailureCodeSchema>;
+export type DisplayMouseButton = z.infer<typeof displayMouseButtonSchema>;
 export type ContainerImagePullInput = z.infer<typeof pullContainerImageInputSchema>;
 export type ImportVmImageInput = z.infer<typeof importVmImageInputSchema>;
 export type CreateBrowserRuntime = z.infer<typeof createBrowserRuntimeSchema>;
@@ -690,6 +779,9 @@ export type NetworkKind = z.infer<typeof networkKindSchema>;
 export type NetworkStatus = z.infer<typeof networkStatusSchema>;
 export type NetworkSummary = z.infer<typeof networkSummarySchema>;
 export type CreateNetworkInput = z.infer<typeof createNetworkInputSchema>;
+export type RunDisplayActionsInput = z.infer<typeof runDisplayActionsInputSchema>;
+export type RunDisplayActionsObserve = z.infer<typeof runDisplayActionsObserveSchema>;
+export type RunDisplayActionsResult = z.infer<typeof runDisplayActionsResultSchema>;
 export type VmComputerDetail = z.infer<typeof vmComputerDetailSchema>;
 export type VmCloudInit = z.infer<typeof vmCloudInitSchema>;
 export type VmRuntimeSource = z.infer<typeof vmRuntimeSourceSchema>;
@@ -748,6 +840,14 @@ export function parseComputerScreenshot(value: unknown) {
 
 export function parseComputerSnapshot(value: unknown) {
   return computerSnapshotSchema.parse(value);
+}
+
+export function parseRunDisplayActionsInput(value: unknown) {
+  return runDisplayActionsInputSchema.parse(value);
+}
+
+export function parseRunDisplayActionsResult(value: unknown) {
+  return runDisplayActionsResultSchema.parse(value);
 }
 
 export function parseComputerSnapshots(value: unknown) {

@@ -10,8 +10,12 @@ import type {
   ComputerScreenshot,
   ComputerSnapshot,
   CreateComputerSnapshotInput,
+  DisplayAction,
+  RunDisplayActionsObserve,
+  RunDisplayActionsResult,
   RestoreComputerInput,
 } from "@computerd/core";
+import { executeDisplayActionsOverVnc } from "../display-actions";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
 import { createPipeWireRuntimeEnvironment, DefaultPipeWireHostManager } from "./pipewire-host";
@@ -68,6 +72,11 @@ export abstract class SystemdRuntime {
   abstract createScreenshot(
     computer: PersistedBrowserComputer | PersistedVmComputer,
   ): Promise<ComputerScreenshot>;
+  abstract runDisplayActions(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    ops: DisplayAction[],
+    observe: RunDisplayActionsObserve,
+  ): Promise<RunDisplayActionsResult>;
   abstract deletePersistentUnit(unitName: string): Promise<void>;
   abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
   abstract getHostUnit(unitName: string): Promise<HostUnitDetail | null>;
@@ -317,6 +326,27 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
       height: spec.viewport.height,
       dataBase64: stdout.trim(),
     } satisfies Awaited<ReturnType<SystemdRuntime["createScreenshot"]>>;
+  }
+
+  async runDisplayActions(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    ops: DisplayAction[],
+    observe: RunDisplayActionsObserve,
+  ) {
+    const spec =
+      computer.profile === "browser"
+        ? this.browserRuntimePaths.specForComputer(computer)
+        : this.vmRuntimePaths.specForComputer(computer);
+
+    return await executeDisplayActionsOverVnc({
+      computerName: computer.name,
+      host: "127.0.0.1",
+      port: spec.vncPort,
+      viewport: spec.viewport,
+      ops,
+      observe,
+      captureScreenshot: async () => await this.createScreenshot(computer),
+    });
   }
 
   private async createVmScreenshot(computer: PersistedVmComputer) {

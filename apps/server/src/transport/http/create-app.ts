@@ -33,6 +33,7 @@ import {
   parseCreateNetworkInput,
   parsePullContainerImageInput,
   parseRestoreComputerInput,
+  parseRunDisplayActionsInput,
   parseUpdateBrowserViewportInput,
 } from "@computerd/core";
 import {
@@ -445,6 +446,24 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
               parseUpdateBrowserViewportInput(body),
             ),
           ),
+        );
+        return;
+      }
+
+      const displayActionsMatch = /^\/api\/computers\/(?<name>[^/]+)\/display-actions$/.exec(
+        url.pathname,
+      );
+      if (request.method === "POST" && displayActionsMatch?.groups?.name) {
+        const name = decodeURIComponent(displayActionsMatch.groups.name);
+        const body = await readJsonBody(request);
+        const input = parseRunDisplayActionsInput({
+          computerName: name,
+          ...body,
+        });
+        sendJson(
+          response,
+          200,
+          await appControlPlane.runDisplayActions(name, input),
         );
         return;
       }

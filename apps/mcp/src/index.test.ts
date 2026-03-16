@@ -206,6 +206,12 @@ test("registers computer and host inspect tools", async () => {
       startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
       stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
       restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+      runDisplayActions: vi.fn().mockResolvedValue({
+        computerName: "research-browser",
+        completedOpCount: 2,
+        viewport: { width: 1440, height: 900 },
+        capturedAt: "2026-03-17T08:00:00.000Z",
+      }),
       updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
       listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
       getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
@@ -245,6 +251,7 @@ test("registers computer and host inspect tools", async () => {
     "list_networks",
     "pull_container_image",
     "restart_computer",
+    "run_display_actions",
     "set_browser_viewport",
     "start_computer",
     "stop_computer",
@@ -253,6 +260,12 @@ test("registers computer and host inspect tools", async () => {
 
 test("invokes handlers and returns JSON payloads", async () => {
   const getComputer = vi.fn().mockResolvedValue(createComputerDetail());
+  const runDisplayActions = vi.fn().mockResolvedValue({
+    computerName: "research-browser",
+    completedOpCount: 2,
+    viewport: { width: 1440, height: 900 },
+    capturedAt: "2026-03-17T08:00:00.000Z",
+  });
   const server = createComputerdMcpServer(
     createMockControlPlane({
       deleteContainerImage: vi.fn().mockResolvedValue(undefined),
@@ -303,6 +316,7 @@ test("invokes handlers and returns JSON payloads", async () => {
       startComputer: vi.fn().mockResolvedValue(createComputerDetail()),
       stopComputer: vi.fn().mockResolvedValue(createComputerDetail()),
       restartComputer: vi.fn().mockResolvedValue(createComputerDetail()),
+      runDisplayActions,
       updateBrowserViewport: vi.fn().mockResolvedValue(createComputerDetail("research-browser")),
       listHostUnits: vi.fn().mockResolvedValue([] as HostUnitSummary[]),
       getHostUnit: vi.fn().mockResolvedValue(createHostUnitDetail()),
@@ -334,6 +348,35 @@ test("invokes handlers and returns JSON payloads", async () => {
 
   await expect(JSON.parse(content[0].text)).toMatchObject({
     name: "lab-host",
+  });
+
+  const actionResult = await client.callTool({
+    name: "run_display_actions",
+    arguments: {
+      name: "research-browser",
+      ops: [
+        { type: "mouse.move", x: 100, y: 100 },
+        { type: "key.press", key: "Enter" },
+      ],
+    },
+  });
+  const actionContent = actionResult.content as Array<{ type: string; text?: string }>;
+
+  expect(runDisplayActions).toHaveBeenCalledWith("research-browser", {
+    ops: [
+      { type: "mouse.move", x: 100, y: 100 },
+      { type: "key.press", key: "Enter" },
+    ],
+    observe: {
+      screenshot: true,
+    },
+  });
+  if (actionContent[0]?.type !== "text" || typeof actionContent[0].text !== "string") {
+    throw new TypeError("Expected a text MCP response");
+  }
+  await expect(JSON.parse(actionContent[0].text)).toMatchObject({
+    computerName: "research-browser",
+    completedOpCount: 2,
   });
 });
 

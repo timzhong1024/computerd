@@ -201,6 +201,47 @@ describe("createComputerdClient", () => {
     });
   });
 
+  test("runs display action batches through the HTTP api", async () => {
+    const client = createComputerdClient({
+      baseUrl: "http://computerd.test",
+      fetch: vi.fn(async () =>
+        createJsonResponse({
+          computerName: "research-browser",
+          completedOpCount: 2,
+          viewport: {
+            width: 1440,
+            height: 900,
+          },
+          screenshot: {
+            computerName: "research-browser",
+            format: "png",
+            mimeType: "image/png",
+            capturedAt: "2026-03-17T08:00:00.000Z",
+            width: 1440,
+            height: 900,
+            dataBase64: Buffer.from("png").toString("base64"),
+          },
+          capturedAt: "2026-03-17T08:00:00.000Z",
+        }),
+      ) as typeof globalThis.fetch,
+    });
+
+    await expect(
+      client.runDisplayActions("research-browser", {
+        ops: [
+          { type: "mouse.move", x: 320, y: 240 },
+          { type: "key.press", key: "Enter" },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      computerName: "research-browser",
+      completedOpCount: 2,
+      screenshot: {
+        format: "png",
+      },
+    });
+  });
+
   test("lists, creates, restores, and deletes computer snapshots", async () => {
     const fetch = vi
       .fn()

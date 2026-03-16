@@ -1,12 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import type { ComputerSnapshot, HostUnitDetail } from "@computerd/core";
+import type {
+  ComputerSnapshot,
+  DisplayAction,
+  HostUnitDetail,
+  RunDisplayActionsObserve,
+  RunDisplayActionsResult,
+} from "@computerd/core";
 import { createBrowserRuntimePaths, withBrowserViewport } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
 import { createVmRuntimePaths, withPersistedVmRuntime } from "./systemd/vm-runtime";
 import {
   ComputerNotFoundError,
   ComputerRuntimePort,
+  UnsupportedComputerFeatureError,
   slugify,
   type PersistedBrowserComputer,
   type PersistedComputer,
@@ -30,6 +37,56 @@ interface DevelopmentComputerRuntimeOptions {
 export class DevelopmentComputerRuntime extends ComputerRuntimePort {
   constructor(private readonly options: DevelopmentComputerRuntimeOptions) {
     super();
+  }
+
+  async createBrowserComputer(
+    input: Parameters<ComputerRuntimePort["createBrowserComputer"]>[0],
+    unitName: string,
+    _network: Parameters<ComputerRuntimePort["createBrowserComputer"]>[2],
+  ): Promise<PersistedBrowserComputer["runtime"]> {
+    const slug = slugify(input.name);
+    const runtimeUser = `container-${slug}`;
+    const computer = {
+      name: input.name,
+      unitName,
+      description: input.description,
+      createdAt: new Date().toISOString(),
+      lastActionAt: new Date().toISOString(),
+      profile: "browser" as const,
+      access: input.access ?? { display: { mode: "virtual-display" as const }, logs: true },
+      resources: {
+        cpuWeight: input.resources?.cpuWeight,
+        memoryMaxMiB: input.resources?.memoryMaxMiB,
+      },
+      storage: input.storage ?? { rootMode: "persistent" as const },
+      networkId: input.networkId ?? "network-host",
+      lifecycle: input.lifecycle ?? {},
+      runtime: {
+        ...input.runtime,
+        provider: "container" as const,
+        runtimeUser,
+      },
+    };
+    const spec = this.options.browserRuntimePaths.specForComputer(computer);
+    this.options.runtimeStates.set(unitName, {
+      unitName,
+      description: input.description,
+      unitType: "container",
+      loadState: "loaded",
+      activeState: "inactive",
+      subState: "created",
+      workingDirectory: spec.stateDirectory,
+    });
+    return {
+      ...input.runtime,
+      provider: "container" as const,
+      runtimeUser,
+      containerId: `browser-${slug}`,
+      containerName: `computerd-browser-${slug}`,
+      hostVncPort: spec.vncPort,
+      hostDevtoolsPort: spec.devtoolsPort,
+      controlSocketPath: spec.controlSocketPath,
+    };
   }
 
   async createContainerComputer(
@@ -70,6 +127,10 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
 
   async deleteBrowserRuntimeIdentity() {}
 
+  async deleteBrowserComputer(computer: PersistedBrowserComputer) {
+    this.options.runtimeStates.delete(computer.unitName);
+  }
+
   async deleteContainerComputer(computer: PersistedContainerComputer) {
     this.options.containerStates.delete(computer.runtime.containerId);
   }
@@ -99,20 +160,14 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     } satisfies Awaited<ReturnType<ComputerRuntimePort["createAutomationSession"]>>;
   }
 
-  async createAudioSession(computer: PersistedBrowserComputer) {
-    return {
-      computerName: computer.name,
-      protocol: "http-audio-stream",
-      connect: {
-        mode: "relative-websocket-path",
-        url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
-      },
-      authorization: {
-        mode: "none",
-      },
-      mimeType: "audio/ogg",
-      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-    } satisfies Awaited<ReturnType<ComputerRuntimePort["createAudioSession"]>>;
+  async createAudioSession(
+    computer: PersistedBrowserComputer,
+  ): Promise<Awaited<ReturnType<ComputerRuntimePort["createAudioSession"]>>> {
+    return await Promise.reject(
+      new UnsupportedComputerFeatureError(
+        `Computer "${computer.name}" does not support audio sessions.`,
+      ),
+    );
   }
 
   async createMonitorSession(computer: PersistedBrowserComputer | PersistedVmComputer) {
@@ -203,6 +258,26 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     } satisfies Awaited<ReturnType<ComputerRuntimePort["createScreenshot"]>>;
   }
 
+  async runDisplayActions(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    ops: DisplayAction[],
+    observe: RunDisplayActionsObserve,
+  ): Promise<RunDisplayActionsResult> {
+    const screenshot = observe.screenshot ? await this.createScreenshot(computer) : undefined;
+    const viewport =
+      computer.profile === "browser"
+        ? this.options.browserRuntimePaths.specForComputer(computer).viewport
+        : this.options.vmRuntimePaths.specForComputer(computer).viewport;
+
+    return {
+      computerName: computer.name,
+      completedOpCount: ops.length,
+      viewport,
+      screenshot,
+      capturedAt: screenshot?.capturedAt ?? new Date().toISOString(),
+    };
+  }
+
   async createVmSnapshot(
     computer: PersistedVmComputer,
     input: Parameters<ComputerRuntimePort["createVmSnapshot"]>[1],
@@ -247,6 +322,10 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     );
   }
 
+  async getBrowserRuntimeState(computer: PersistedBrowserComputer) {
+    return this.options.runtimeStates.get(computer.unitName) ?? null;
+  }
+
   async getContainerRuntimeState(computer: PersistedContainerComputer) {
     return this.options.containerStates.get(computer.runtime.containerId) ?? null;
   }
@@ -281,35 +360,14 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     };
   }
 
-  async openAudioStream(computer: PersistedBrowserComputer) {
-    return {
-      computerName: computer.name,
-      command: "ffmpeg",
-      args: [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "lavfi",
-        "-i",
-        "anullsrc=channel_layout=stereo:sample_rate=48000",
-        "-c:a",
-        "libopus",
-        "-b:a",
-        "128k",
-        "-f",
-        "ogg",
-        "pipe:1",
-      ],
-      env: {
-        PIPEWIRE_PROPS: JSON.stringify({
-          "application.name": "computerd-audio-capture",
-          "computerd.computer.name": computer.name,
-        }),
-      },
-      targetSelector: `computerd.computer.name=${computer.name}`,
-      release() {},
-    };
+  async openAudioStream(
+    computer: PersistedBrowserComputer,
+  ): Promise<Awaited<ReturnType<ComputerRuntimePort["openAudioStream"]>>> {
+    return await Promise.reject(
+      new UnsupportedComputerFeatureError(
+        `Computer "${computer.name}" does not support audio streams.`,
+      ),
+    );
   }
 
   async openMonitorAttach(computer: PersistedBrowserComputer | PersistedVmComputer) {
@@ -350,6 +408,13 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     return state;
   }
 
+  async restartBrowserComputer(computer: PersistedBrowserComputer) {
+    const state = this.requireRuntimeState(computer.unitName);
+    state.activeState = "active";
+    state.subState = "running";
+    return state;
+  }
+
   async startUnit(unitName: string) {
     const state = this.requireRuntimeState(unitName);
     state.activeState = "active";
@@ -375,6 +440,25 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     return state;
   }
 
+  async startBrowserComputer(computer: PersistedBrowserComputer) {
+    const state =
+      this.options.runtimeStates.get(computer.unitName) ??
+      ({
+        unitName: computer.unitName,
+        description: computer.description,
+        unitType: "container",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "created",
+      } satisfies UnitRuntimeState);
+    state.activeState = "active";
+    state.subState = "running";
+    this.options.runtimeStates.set(computer.unitName, state);
+    const spec = this.options.browserRuntimePaths.specForComputer(computer);
+    await mkdir(spec.runtimeDirectory, { recursive: true });
+    return state;
+  }
+
   async stopUnit(unitName: string) {
     const state = this.requireRuntimeState(unitName);
     state.activeState = "inactive";
@@ -396,6 +480,13 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     const state = this.requireContainerState(computer);
     state.activeState = "inactive";
     state.subState = "exited";
+    return state;
+  }
+
+  async stopBrowserComputer(computer: PersistedBrowserComputer) {
+    const state = this.requireRuntimeState(computer.unitName);
+    state.activeState = "inactive";
+    state.subState = "dead";
     return state;
   }
 

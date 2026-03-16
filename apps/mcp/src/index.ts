@@ -6,9 +6,11 @@ import {
   computerResourcesSchema,
   computerStorageSchema,
   createNetworkInputSchema,
+  displayActionSchema,
   parseImportVmImageInput,
   parsePullContainerImageInput,
   parseCreateComputerInput,
+  runDisplayActionsObserveSchema,
 } from "@computerd/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -272,6 +274,26 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
     },
     async ({ name, width, height }) =>
       createJsonToolResult(await controlPlane.updateBrowserViewport(name, { width, height })),
+  );
+
+  server.registerTool(
+    "run_display_actions",
+    {
+      description:
+        "Execute a batch of generic display actions against a browser or VM computer and optionally return a final screenshot.",
+      inputSchema: {
+        name: z.string().min(1),
+        ops: z.array(displayActionSchema).min(1),
+        observe: runDisplayActionsObserveSchema.optional(),
+      },
+    },
+    async ({ name, ops, observe }) =>
+      createJsonToolResult(
+        await controlPlane.runDisplayActions(name, {
+          ops,
+          observe: observe ?? { screenshot: true },
+        }),
+      ),
   );
 
   server.registerTool(

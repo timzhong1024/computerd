@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type {
   ComputerAudioSession,
   ComputerDetail,
+  DisplayAction,
   CreateNetworkInput,
   ComputerSummary,
   CreateComputerInput,
@@ -10,6 +11,8 @@ import type {
   HostUnitSummary,
   NetworkDetail,
   NetworkSummary,
+  RunDisplayActionsObserve,
+  RunDisplayActionsResult,
 } from "@computerd/core";
 import {
   ComputerConflictError,
@@ -163,7 +166,7 @@ export abstract class BaseControlPlane {
 
     const network = await this.resolveComputerNetwork(input.networkId);
     this.assertSupportedNetworkAttachment(input, network);
-    if (input.profile === "container" || input.profile === "vm") {
+    if (input.profile === "browser" || input.profile === "container" || input.profile === "vm") {
       await this.networkProvider.ensureNetworkRuntime(network);
     }
 
@@ -179,7 +182,10 @@ export abstract class BaseControlPlane {
     if (record.profile === "browser") {
       await this.runtime.ensureBrowserRuntimeIdentity(record);
     }
-    if (record.profile !== "container") {
+    if (
+      record.profile !== "container" &&
+      !(record.profile === "browser" && record.runtime.provider === "container")
+    ) {
       await this.runtime.createPersistentUnit(record);
     }
     await this.metadataStore.putComputer(record);
@@ -264,6 +270,19 @@ export abstract class BaseControlPlane {
     return await this.runtime.createScreenshot(screenshotRecord);
   }
 
+  async runDisplayActions(
+    name: string,
+    input: {
+      ops: DisplayAction[];
+      observe: RunDisplayActionsObserve;
+    },
+  ): Promise<RunDisplayActionsResult> {
+    const record = await this.requireComputer(name);
+    const displayRecord = requireMonitorCapableRecord(record);
+    await this.requireMonitorRunning(displayRecord, "display actions");
+    return await this.runtime.runDisplayActions(displayRecord, input.ops, input.observe);
+  }
+
   async createConsoleSession(name: string) {
     const record = requireConsoleCapableRecord(await this.requireComputer(name));
     if (!supportsConsoleSessions(record)) {
@@ -321,7 +340,9 @@ export abstract class BaseControlPlane {
       await this.getPersistedComputerRuntimeState(record),
       "Delete is not supported for broken computers.",
     );
-    if (record.profile === "container") {
+    if (record.profile === "browser") {
+      await this.runtime.deleteBrowserComputer(record);
+    } else if (record.profile === "container") {
       await this.runtime.deleteContainerComputer(record);
     } else if (record.profile === "vm") {
       await this.runtime.deletePersistentUnit(record.unitName);
@@ -366,8 +387,7 @@ export abstract class BaseControlPlane {
     }
     if (record.profile === "browser") {
       await this.runtime.prepareBrowserRuntime(record);
-      await this.runtime.createPersistentUnit(record);
-      await this.runtime.startUnit(record.unitName);
+      await this.runtime.startBrowserComputer(record);
     } else if (record.profile === "vm") {
       await this.runtime.prepareVmRuntime(record);
       await this.runtime.startUnit(record.unitName);
@@ -394,7 +414,9 @@ export abstract class BaseControlPlane {
       await this.getPersistedComputerRuntimeState(record),
       "Stop is not supported for broken computers.",
     );
-    if (record.profile === "container") {
+    if (record.profile === "browser") {
+      await this.runtime.stopBrowserComputer(record);
+    } else if (record.profile === "container") {
       await this.runtime.stopContainerComputer(record);
     } else {
       await this.runtime.stopUnit(record.unitName);
@@ -421,8 +443,7 @@ export abstract class BaseControlPlane {
     }
     if (record.profile === "browser") {
       await this.runtime.prepareBrowserRuntime(record);
-      await this.runtime.createPersistentUnit(record);
-      await this.runtime.restartUnit(record.unitName);
+      await this.runtime.restartBrowserComputer(record);
     } else if (record.profile === "vm") {
       await this.runtime.prepareVmRuntime(record);
       await this.runtime.restartUnit(record.unitName);
@@ -469,7 +490,7 @@ export abstract class BaseControlPlane {
     const browserRecord = requireBrowserRecord(record);
     this.throwIfBroken(
       browserRecord,
-      await this.runtime.getRuntimeState(browserRecord.unitName),
+      await this.getPersistedComputerRuntimeState(browserRecord),
       "Viewport updates are not supported for broken computers.",
     );
     const updated = withBrowserViewport(browserRecord, input);
@@ -618,7 +639,7 @@ export abstract class BaseControlPlane {
   }
 
   protected async requireBrowserRunning(record: PersistedBrowserComputer, capability: string) {
-    const runtimeState = await this.runtime.getRuntimeState(record.unitName);
+    const runtimeState = await this.getPersistedComputerRuntimeState(record);
     this.throwIfBroken(
       record,
       runtimeState,
@@ -635,7 +656,10 @@ export abstract class BaseControlPlane {
     record: PersistedBrowserComputer | PersistedVmComputer,
     capability: string,
   ) {
-    const runtimeState = await this.runtime.getRuntimeState(record.unitName);
+    const runtimeState =
+      record.profile === "browser"
+        ? await this.getPersistedComputerRuntimeState(record)
+        : await this.runtime.getRuntimeState(record.unitName);
     this.throwIfBroken(
       record,
       runtimeState,
@@ -696,7 +720,7 @@ export abstract class BaseControlPlane {
     input: CreateComputerInput,
     network: PersistedNetworkRecord,
   ) {
-    if ((input.profile === "host" || input.profile === "browser") && network.kind !== "host") {
+    if (input.profile === "host" && network.kind !== "host") {
       throw new UnsupportedComputerFeatureError(
         `Computer "${input.name}" cannot use isolated network "${network.name}" yet.`,
       );

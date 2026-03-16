@@ -115,6 +115,27 @@ test("serves computer and host unit APIs", async () => {
               },
             }
           : await controlPlane.createMonitorSession(name),
+      runDisplayActions: async (name, input) => ({
+        computerName: name,
+        completedOpCount: input.ops.length,
+        viewport: {
+          width: 1440,
+          height: 900,
+        },
+        screenshot:
+          input.observe.screenshot === false
+            ? undefined
+            : {
+                computerName: name,
+                format: "png",
+                mimeType: "image/png",
+                capturedAt: "2026-03-17T08:00:00.000Z",
+                width: 1440,
+                height: 900,
+                dataBase64: Buffer.from(`screenshot:${name}`).toString("base64"),
+              },
+        capturedAt: "2026-03-17T08:00:00.000Z",
+      }),
     },
   });
 
@@ -486,6 +507,36 @@ test("serves computer and host unit APIs", async () => {
     connect: {
       mode: "relative-websocket-path",
       url: "/api/computers/research-browser/monitor/ws",
+    },
+  });
+
+  const displayActionsResponse = await fetch(
+    `${baseUrl}/api/computers/research-browser/display-actions`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ops: [
+          { type: "mouse.move", x: 640, y: 360 },
+          { type: "mouse.down", button: "left" },
+          { type: "mouse.up", button: "left" },
+        ],
+      }),
+    },
+  );
+  expect(displayActionsResponse.status).toBe(200);
+  await expect(displayActionsResponse.json()).resolves.toMatchObject({
+    computerName: "research-browser",
+    completedOpCount: 3,
+    viewport: {
+      width: 1440,
+      height: 900,
+    },
+    screenshot: {
+      format: "png",
+      computerName: "research-browser",
     },
   });
 

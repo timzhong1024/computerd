@@ -155,7 +155,7 @@ test("lists host network, creates isolated networks, and rejects deleting attach
   );
 });
 
-test("rejects isolated networks for host and browser computers", async () => {
+test("rejects isolated networks for host computers and allows browser computers", async () => {
   const controlPlane = new DevelopmentControlPlane();
   const network = await controlPlane.createNetwork({
     name: "isolated-lab",
@@ -183,7 +183,14 @@ test("rejects isolated networks for host and browser computers", async () => {
         persistentProfile: true,
       },
     }),
-  ).rejects.toBeInstanceOf(UnsupportedComputerFeatureError);
+  ).resolves.toMatchObject({
+    name: "browser-isolated",
+    profile: "browser",
+    network: expect.objectContaining({
+      id: network.id,
+      kind: "isolated",
+    }),
+  });
 });
 
 test("creates and manages a browser computer with persisted metadata", async () => {
@@ -297,6 +304,9 @@ test("prepares vm runtime before start and restart", async () => {
 
   const calls: string[] = [];
   const runtime = createDelegatingRuntime({
+    async createBrowserComputer() {
+      throw new Error("not implemented");
+    },
     async createContainerComputer() {
       throw new Error("not implemented");
     },
@@ -316,6 +326,7 @@ test("prepares vm runtime before start and restart", async () => {
       throw new Error("not implemented");
     },
     async deleteBrowserRuntimeIdentity() {},
+    async deleteBrowserComputer() {},
     async deleteContainerComputer() {},
     async deleteVmComputer() {},
     async ensureBrowserRuntimeIdentity() {},
@@ -338,8 +349,14 @@ test("prepares vm runtime before start and restart", async () => {
     async createScreenshot() {
       throw new Error("not implemented");
     },
+    async runDisplayActions() {
+      throw new Error("not implemented");
+    },
     async deletePersistentUnit() {
       throw new Error("not implemented");
+    },
+    async getBrowserRuntimeState() {
+      return null;
     },
     async getContainerRuntimeState() {
       return null;
@@ -381,6 +398,9 @@ test("prepares vm runtime before start and restart", async () => {
     async restartContainerComputer() {
       throw new Error("not implemented");
     },
+    async restartBrowserComputer() {
+      throw new Error("not implemented");
+    },
     async startUnit(unitName) {
       calls.push(`start:${unitName}`);
       return {
@@ -394,7 +414,13 @@ test("prepares vm runtime before start and restart", async () => {
     async startContainerComputer() {
       throw new Error("not implemented");
     },
+    async startBrowserComputer() {
+      throw new Error("not implemented");
+    },
     async stopUnit() {
+      throw new Error("not implemented");
+    },
+    async stopBrowserComputer() {
       throw new Error("not implemented");
     },
     async stopContainerComputer() {
@@ -1082,7 +1108,9 @@ test("creates browser automation, monitor, screenshot, and console sessions from
 
   await controlPlane.startComputer("research-browser");
   const monitorSession = await controlPlane.createMonitorSession("research-browser");
-  const audioSession = await controlPlane.createAudioSession("research-browser");
+  await expect(controlPlane.createAudioSession("research-browser")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
   const automationSession = await controlPlane.createAutomationSession("research-browser");
   const screenshot = await controlPlane.createScreenshot("research-browser");
   await controlPlane.startComputer("starter-host");
@@ -1105,15 +1133,6 @@ test("creates browser automation, monitor, screenshot, and console sessions from
       url: "/api/computers/research-browser/automation/ws",
     },
   });
-  expect(audioSession).toMatchObject({
-    computerName: "research-browser",
-    protocol: "http-audio-stream",
-    connect: {
-      mode: "relative-websocket-path",
-      url: "/api/computers/research-browser/audio",
-    },
-    mimeType: "audio/ogg",
-  });
   expect(screenshot).toMatchObject({
     computerName: "research-browser",
     format: "png",
@@ -1129,6 +1148,50 @@ test("creates browser automation, monitor, screenshot, and console sessions from
   });
 });
 
+test("runs batched display actions for browser computers", async () => {
+  const metadataStore = createMemoryMetadataStore();
+  const runtime = createMemoryRuntime("/tmp/computerd-display-actions");
+  const browserRecord = createBrowserComputerRecord();
+  await metadataStore.putComputer(browserRecord);
+  await runtime.createPersistentUnit(browserRecord);
+
+  const controlPlane = new SystemdControlPlane(
+    {
+      COMPUTERD_METADATA_DIR: "/tmp/computerd-test-metadata",
+      COMPUTERD_UNIT_DIR: "/tmp/computerd-test-units",
+      COMPUTERD_TERMINAL_RUNTIME_DIR: "/tmp/computerd-test-terminals",
+    },
+    { metadataStore, runtime },
+  );
+
+  await controlPlane.startComputer("research-browser");
+  const result = await controlPlane.runDisplayActions("research-browser", {
+    ops: [
+      { type: "mouse.move", x: 200, y: 120 },
+      { type: "mouse.down", button: "left" },
+      { type: "mouse.up", button: "left" },
+      { type: "text.insert", text: "hello" },
+      { type: "key.press", key: "Enter" },
+    ],
+    observe: {
+      screenshot: true,
+    },
+  });
+
+  expect(result).toMatchObject({
+    computerName: "research-browser",
+    completedOpCount: 5,
+    viewport: {
+      width: 1440,
+      height: 900,
+    },
+    screenshot: {
+      computerName: "research-browser",
+      format: "png",
+    },
+  });
+});
+
 test("waits for host console runtime readiness during start", async () => {
   const metadataStore = createMemoryMetadataStore();
   const terminalRecord = createHostComputerRecord();
@@ -1137,6 +1200,9 @@ test("waits for host console runtime readiness during start", async () => {
   await cleanupSocket(runtimeDirectory, terminalRecord.name);
 
   const runtime = createDelegatingRuntime({
+    async createBrowserComputer() {
+      throw new Error("not implemented");
+    },
     async createContainerComputer() {
       throw new Error("not implemented");
     },
@@ -1156,6 +1222,7 @@ test("waits for host console runtime readiness during start", async () => {
       throw new Error("not implemented");
     },
     async deleteBrowserRuntimeIdentity() {},
+    async deleteBrowserComputer() {},
     async deleteContainerComputer() {},
     async deleteVmComputer() {},
     async ensureBrowserRuntimeIdentity() {},
@@ -1175,18 +1242,9 @@ test("waits for host console runtime readiness during start", async () => {
       };
     },
     async createAudioSession(computer) {
-      return {
-        computerName: computer.name,
-        protocol: "http-audio-stream",
-        connect: {
-          mode: "relative-websocket-path",
-          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
-        },
-        authorization: {
-          mode: "none",
-        },
-        mimeType: "audio/ogg",
-      };
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${computer.name}" does not support audio sessions.`,
+      );
     },
     async createMonitorSession(computer) {
       return {
@@ -1235,7 +1293,23 @@ test("waits for host console runtime readiness during start", async () => {
         dataBase64: Buffer.from("screenshot").toString("base64"),
       };
     },
+    async runDisplayActions(computer, ops, observe) {
+      const screenshot =
+        observe.screenshot === false
+          ? undefined
+          : await this.createScreenshot(computer);
+      return {
+        computerName: computer.name,
+        completedOpCount: ops.length,
+        viewport: { width: 1440, height: 900 },
+        screenshot,
+        capturedAt: screenshot?.capturedAt ?? new Date().toISOString(),
+      };
+    },
     async deletePersistentUnit() {},
+    async getBrowserRuntimeState() {
+      return runtimeState;
+    },
     async getContainerRuntimeState() {
       return null;
     },
@@ -1278,6 +1352,9 @@ test("waits for host console runtime readiness during start", async () => {
     async restartContainerComputer() {
       return runtimeState;
     },
+    async restartBrowserComputer() {
+      return runtimeState;
+    },
     async startUnit() {
       setTimeout(() => {
         void ensureSocket(runtimeDirectory, terminalRecord.name);
@@ -1288,7 +1365,13 @@ test("waits for host console runtime readiness during start", async () => {
     async startContainerComputer() {
       return runtimeState;
     },
+    async startBrowserComputer() {
+      return runtimeState;
+    },
     async stopUnit() {
+      return runtimeState;
+    },
+    async stopBrowserComputer() {
       return runtimeState;
     },
     async stopContainerComputer() {
@@ -1487,7 +1570,13 @@ function createBrowserComputerRecord(): PersistedComputer {
     runtime: {
       browser: "chromium",
       persistentProfile: true,
+      provider: "container",
       runtimeUser: "computerd-b-research-browser",
+      containerId: "browser-computerd-research-browser.service",
+      containerName: "computerd-research-browser.service",
+      hostVncPort: 5900,
+      hostDevtoolsPort: 9222,
+      controlSocketPath: "/tmp/computerd-test-terminals/research-browser/control.sock",
     },
   };
 }
@@ -1612,6 +1701,10 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     super();
   }
 
+  createBrowserComputer(...args: Parameters<ComputerRuntimePort["createBrowserComputer"]>) {
+    return this.methods.createBrowserComputer(...args);
+  }
+
   createContainerComputer(...args: Parameters<ComputerRuntimePort["createContainerComputer"]>) {
     return this.methods.createContainerComputer(...args);
   }
@@ -1624,6 +1717,10 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     ...args: Parameters<ComputerRuntimePort["deleteBrowserRuntimeIdentity"]>
   ) {
     return this.methods.deleteBrowserRuntimeIdentity(...args);
+  }
+
+  deleteBrowserComputer(...args: Parameters<ComputerRuntimePort["deleteBrowserComputer"]>) {
+    return this.methods.deleteBrowserComputer(...args);
   }
 
   deleteContainerComputer(...args: Parameters<ComputerRuntimePort["deleteContainerComputer"]>) {
@@ -1668,6 +1765,10 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.createScreenshot(...args);
   }
 
+  runDisplayActions(...args: Parameters<ComputerRuntimePort["runDisplayActions"]>) {
+    return this.methods.runDisplayActions(...args);
+  }
+
   createVmSnapshot(...args: Parameters<ComputerRuntimePort["createVmSnapshot"]>) {
     return this.methods.createVmSnapshot(...args);
   }
@@ -1678,6 +1779,10 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
 
   deleteVmSnapshot(...args: Parameters<ComputerRuntimePort["deleteVmSnapshot"]>) {
     return this.methods.deleteVmSnapshot(...args);
+  }
+
+  getBrowserRuntimeState(...args: Parameters<ComputerRuntimePort["getBrowserRuntimeState"]>) {
+    return this.methods.getBrowserRuntimeState(...args);
   }
 
   getContainerRuntimeState(...args: Parameters<ComputerRuntimePort["getContainerRuntimeState"]>) {
@@ -1720,8 +1825,16 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.restartContainerComputer(...args);
   }
 
+  restartBrowserComputer(...args: Parameters<ComputerRuntimePort["restartBrowserComputer"]>) {
+    return this.methods.restartBrowserComputer(...args);
+  }
+
   startUnit(...args: Parameters<ComputerRuntimePort["startUnit"]>) {
     return this.methods.startUnit(...args);
+  }
+
+  startBrowserComputer(...args: Parameters<ComputerRuntimePort["startBrowserComputer"]>) {
+    return this.methods.startBrowserComputer(...args);
   }
 
   startContainerComputer(...args: Parameters<ComputerRuntimePort["startContainerComputer"]>) {
@@ -1730,6 +1843,10 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
 
   stopUnit(...args: Parameters<ComputerRuntimePort["stopUnit"]>) {
     return this.methods.stopUnit(...args);
+  }
+
+  stopBrowserComputer(...args: Parameters<ComputerRuntimePort["stopBrowserComputer"]>) {
+    return this.methods.stopBrowserComputer(...args);
   }
 
   stopContainerComputer(...args: Parameters<ComputerRuntimePort["stopContainerComputer"]>) {
@@ -1758,6 +1875,27 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   >();
 
   return createDelegatingRuntime({
+    async createBrowserComputer(input, unitName) {
+      states.set(unitName, {
+        unitName,
+        description: input.description,
+        unitType: "container",
+        loadState: "loaded",
+        activeState: "inactive",
+        subState: "created",
+        workingDirectory: runtimeDirectory,
+      });
+      return {
+        ...input.runtime,
+        provider: "container" as const,
+        runtimeUser: `container-${input.name}`,
+        containerId: `browser-${unitName}`,
+        containerName: unitName,
+        hostVncPort: 5900,
+        hostDevtoolsPort: 9222,
+        controlSocketPath: join(runtimeDirectory, input.name, "control.sock"),
+      };
+    },
     async createContainerComputer(input, unitName) {
       return {
         ...input.runtime,
@@ -1779,6 +1917,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       };
     },
     async deleteBrowserRuntimeIdentity() {},
+    async deleteBrowserComputer(computer) {
+      states.delete(computer.unitName);
+    },
     async deleteContainerComputer(computer) {
       states.delete(computer.unitName);
     },
@@ -1804,18 +1945,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       };
     },
     async createAudioSession(computer) {
-      return {
-        computerName: computer.name,
-        protocol: "http-audio-stream",
-        connect: {
-          mode: "relative-websocket-path",
-          url: `/api/computers/${encodeURIComponent(computer.name)}/audio`,
-        },
-        authorization: {
-          mode: "none",
-        },
-        mimeType: "audio/ogg",
-      };
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${computer.name}" does not support audio sessions.`,
+      );
     },
     async createMonitorSession(computer) {
       return {
@@ -1894,6 +2026,20 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         dataBase64: Buffer.from(`screenshot:${computer.name}`).toString("base64"),
       };
     },
+    async runDisplayActions(computer, ops, observe) {
+      const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
+      const screenshot =
+        observe.screenshot === false
+          ? undefined
+          : await this.createScreenshot(computer);
+      return {
+        computerName: computer.name,
+        completedOpCount: ops.length,
+        viewport,
+        screenshot,
+        capturedAt: screenshot?.capturedAt ?? new Date().toISOString(),
+      };
+    },
     async listVmSnapshots(computer) {
       return vmSnapshots.get(computer.name) ?? [];
     },
@@ -1928,6 +2074,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
       states.delete(unitName);
     },
+    async getBrowserRuntimeState(computer) {
+      return states.get(computer.unitName) ?? null;
+    },
     async getContainerRuntimeState(computer) {
       return states.get(computer.unitName) ?? null;
     },
@@ -1948,13 +2097,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       };
     },
     async openAudioStream(computer) {
-      return {
-        computerName: computer.name,
-        command: "ffmpeg",
-        args: ["-f", "ogg", "pipe:1"],
-        targetSelector: `computerd.computer.name=${computer.name}`,
-        release() {},
-      };
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${computer.name}" does not support audio streams.`,
+      );
     },
     async openMonitorAttach(computer) {
       return {
@@ -1979,6 +2124,12 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.subState = "running";
       return state;
     },
+    async restartBrowserComputer(computer) {
+      const state = requireState(states, computer.unitName);
+      state.activeState = "active";
+      state.subState = "running";
+      return state;
+    },
     async startUnit(unitName) {
       const state = requireState(states, unitName);
       if (state.execStart !== "/usr/bin/bash -lc") {
@@ -1994,6 +2145,12 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       state.subState = "running";
       return state;
     },
+    async startBrowserComputer(computer) {
+      const state = requireState(states, computer.unitName);
+      state.activeState = "active";
+      state.subState = "running";
+      return state;
+    },
     async stopUnit(unitName) {
       const state = requireState(states, unitName);
       await cleanupSocket(runtimeDirectory, unitNameToComputerName(unitName));
@@ -2002,6 +2159,12 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       return state;
     },
     async stopContainerComputer(computer) {
+      const state = requireState(states, computer.unitName);
+      state.activeState = "inactive";
+      state.subState = "dead";
+      return state;
+    },
+    async stopBrowserComputer(computer) {
       const state = requireState(states, computer.unitName);
       state.activeState = "inactive";
       state.subState = "dead";

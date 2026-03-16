@@ -32,6 +32,10 @@
 
 因此，这里把显示器相关设计单独抽出来。
 
+如果要专门看“通用输入动作该如何建模”，见：
+
+- [docs/input-action-design.md](/Users/timzhong/computerd/docs/input-action-design.md)
+
 ## Core Principle
 
 display interface 解决的是：

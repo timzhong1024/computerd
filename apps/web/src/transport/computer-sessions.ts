@@ -6,6 +6,7 @@ import {
   parseComputerExecSession,
   parseComputerMonitorSession,
   parseComputerScreenshot,
+  parseRunDisplayActionsResult,
   type ComputerAutomationSession,
   type ComputerAudioSession,
   type ComputerDetail,
@@ -13,6 +14,9 @@ import {
   type ComputerConsoleSession,
   type ComputerMonitorSession,
   type ComputerScreenshot,
+  type DisplayAction,
+  type RunDisplayActionsObserve,
+  type RunDisplayActionsResult,
 } from "@computerd/core";
 import { postJson } from "./http";
 
@@ -61,6 +65,17 @@ export async function createScreenshot(name: string): Promise<ComputerScreenshot
     `/api/computers/${encodeURIComponent(name)}/screenshots`,
     undefined,
     parseComputerScreenshot,
+  );
+}
+
+export async function runDisplayActions(
+  name: string,
+  input: { ops: DisplayAction[]; observe?: RunDisplayActionsObserve },
+): Promise<RunDisplayActionsResult> {
+  return await postJson(
+    `/api/computers/${encodeURIComponent(name)}/display-actions`,
+    input,
+    parseRunDisplayActionsResult,
   );
 }
 

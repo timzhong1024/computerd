@@ -15,6 +15,8 @@ import {
   parseCreateNetworkInput,
   parseHostUnitDetail,
   parseImportVmImageInput,
+  parseRunDisplayActionsInput,
+  parseRunDisplayActionsResult,
   parseRestoreComputerInput,
   parseUpdateBrowserViewportInput,
 } from "./index";
@@ -668,6 +670,105 @@ test("parses computer screenshots", () => {
   ).toMatchObject({
     format: "jpeg",
     mimeType: "image/jpeg",
+  });
+});
+
+test("parses display action execution input", () => {
+  expect(
+    parseRunDisplayActionsInput({
+      computerName: "research-browser",
+      ops: [
+        {
+          type: "mouse.move",
+          x: 320,
+          y: 240,
+        },
+        {
+          type: "mouse.down",
+          button: "left",
+        },
+        {
+          type: "wait",
+          ms: 150,
+        },
+        {
+          type: "text.insert",
+          text: "hello",
+        },
+      ],
+    }),
+  ).toMatchObject({
+    computerName: "research-browser",
+    observe: {
+      screenshot: true,
+    },
+  });
+});
+
+test("rejects invalid display action execution input", () => {
+  expect(() =>
+    parseRunDisplayActionsInput({
+      computerName: "research-browser",
+      ops: [
+        {
+          type: "mouse.down",
+          button: "primary",
+        },
+      ],
+    }),
+  ).toThrow(/left|middle|right/i);
+
+  expect(() =>
+    parseRunDisplayActionsInput({
+      computerName: "research-browser",
+      ops: [
+        {
+          type: "key.press",
+          key: "",
+        },
+      ],
+    }),
+  ).toThrow(/>=1 characters/i);
+
+  expect(() =>
+    parseRunDisplayActionsInput({
+      computerName: "research-browser",
+      ops: [
+        {
+          type: "wait",
+          ms: -1,
+        },
+      ],
+    }),
+  ).toThrow(/>=0/i);
+});
+
+test("parses display action execution results", () => {
+  expect(
+    parseRunDisplayActionsResult({
+      computerName: "research-browser",
+      completedOpCount: 3,
+      viewport: {
+        width: 1440,
+        height: 900,
+      },
+      screenshot: {
+        computerName: "research-browser",
+        format: "png",
+        mimeType: "image/png",
+        capturedAt: "2026-03-17T08:00:00.000Z",
+        width: 1440,
+        height: 900,
+        dataBase64: "c2NyZWVuc2hvdA==",
+      },
+      capturedAt: "2026-03-17T08:00:01.000Z",
+    }),
+  ).toMatchObject({
+    completedOpCount: 3,
+    viewport: {
+      width: 1440,
+      height: 900,
+    },
   });
 });
 

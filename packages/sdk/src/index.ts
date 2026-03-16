@@ -6,13 +6,17 @@ import {
   parseComputerDetail,
   parseComputerMonitorSession,
   parseComputerScreenshot,
+  parseRunDisplayActionsResult,
   type BrowserComputerDetail,
   type ComputerAutomationSession,
   type ComputerDetail,
+  type DisplayAction,
   type ComputerMonitorSession,
   type ComputerScreenshot,
   type ComputerSnapshot,
   type ComputerSessionConnect,
+  type RunDisplayActionsObserve,
+  type RunDisplayActionsResult,
 } from "@computerd/core";
 
 export interface ComputerdClientOptions {
@@ -148,6 +152,16 @@ export function createComputerdClient({
         `/api/computers/${encodeURIComponent(name)}/screenshots`,
         undefined,
         parseComputerScreenshot,
+      );
+    },
+    async runDisplayActions(
+      name: string,
+      input: { ops: DisplayAction[]; observe?: RunDisplayActionsObserve },
+    ): Promise<RunDisplayActionsResult> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/display-actions`,
+        input,
+        parseRunDisplayActionsResult,
       );
     },
     async updateBrowserViewport(
