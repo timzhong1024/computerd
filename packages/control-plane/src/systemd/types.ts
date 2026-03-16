@@ -172,7 +172,9 @@ export abstract class ComputerRuntimePort {
   ): Promise<ComputerSnapshot>;
   abstract deletePersistentUnit(unitName: string): Promise<void>;
   abstract deleteVmSnapshot(computer: PersistedVmComputer, snapshotName: string): Promise<void>;
-  abstract getBrowserRuntimeState(computer: PersistedBrowserComputer): Promise<UnitRuntimeState | null>;
+  abstract getBrowserRuntimeState(
+    computer: PersistedBrowserComputer,
+  ): Promise<UnitRuntimeState | null>;
   abstract getContainerRuntimeState(
     computer: PersistedContainerComputer,
   ): Promise<UnitRuntimeState | null>;

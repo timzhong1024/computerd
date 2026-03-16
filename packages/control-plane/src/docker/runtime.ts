@@ -51,7 +51,9 @@ export abstract class DockerRuntime {
     computer: PersistedBrowserComputer,
   ): Promise<ComputerAutomationSession>;
   abstract createAudioSession(computer: PersistedBrowserComputer): Promise<ComputerAudioSession>;
-  abstract createMonitorSession(computer: PersistedBrowserComputer): Promise<ComputerMonitorSession>;
+  abstract createMonitorSession(
+    computer: PersistedBrowserComputer,
+  ): Promise<ComputerMonitorSession>;
   abstract createScreenshot(computer: PersistedBrowserComputer): Promise<ComputerScreenshot>;
   abstract runDisplayActions(
     computer: PersistedBrowserComputer,
@@ -60,7 +62,9 @@ export abstract class DockerRuntime {
   ): Promise<RunDisplayActionsResult>;
   abstract deleteBrowserComputer(computer: PersistedBrowserComputer): Promise<void>;
   abstract deleteContainerComputer(computer: PersistedContainerComputer): Promise<void>;
-  abstract getBrowserRuntimeState(computer: PersistedBrowserComputer): Promise<UnitRuntimeState | null>;
+  abstract getBrowserRuntimeState(
+    computer: PersistedBrowserComputer,
+  ): Promise<UnitRuntimeState | null>;
   abstract getContainerRuntimeState(
     computer: PersistedContainerComputer,
   ): Promise<UnitRuntimeState | null>;
@@ -233,9 +237,7 @@ export class DefaultDockerRuntime extends DockerRuntime {
     };
   }
 
-  async createAudioSession(
-    computer: PersistedBrowserComputer,
-  ): Promise<ComputerAudioSession> {
+  async createAudioSession(computer: PersistedBrowserComputer): Promise<ComputerAudioSession> {
     return await Promise.reject(
       new UnsupportedComputerFeatureError(
         `Computer "${computer.name}" does not support audio sessions.`,
@@ -243,9 +245,7 @@ export class DefaultDockerRuntime extends DockerRuntime {
     );
   }
 
-  async createMonitorSession(
-    computer: PersistedBrowserComputer,
-  ): Promise<ComputerMonitorSession> {
+  async createMonitorSession(computer: PersistedBrowserComputer): Promise<ComputerMonitorSession> {
     const spec = this.requireBrowserSpec(computer);
     return {
       computerName: computer.name,
@@ -301,7 +301,9 @@ export class DefaultDockerRuntime extends DockerRuntime {
       return null;
     }
     try {
-      const inspection = await this.dockerClient.getContainer(computer.runtime.containerId).inspect();
+      const inspection = await this.dockerClient
+        .getContainer(computer.runtime.containerId)
+        .inspect();
       return toBrowserUnitRuntimeState(computer, inspection);
     } catch (error: unknown) {
       if (isMissingContainerError(error)) {
@@ -340,9 +342,7 @@ export class DefaultDockerRuntime extends DockerRuntime {
     };
   }
 
-  async openAudioStream(
-    computer: PersistedBrowserComputer,
-  ): Promise<BrowserAudioStreamLease> {
+  async openAudioStream(computer: PersistedBrowserComputer): Promise<BrowserAudioStreamLease> {
     return await Promise.reject(
       new UnsupportedComputerFeatureError(
         `Computer "${computer.name}" does not support audio streams.`,
@@ -402,11 +402,14 @@ export class DefaultDockerRuntime extends DockerRuntime {
 
   async stopBrowserComputer(computer: PersistedBrowserComputer) {
     const containerId = requireString(computer.runtime.containerId, "browser container id");
-    await this.dockerClient.getContainer(containerId).stop().catch((error: unknown) => {
-      if (!looksLikeAlreadyStoppedError(error) && !isMissingContainerError(error)) {
-        throw error;
-      }
-    });
+    await this.dockerClient
+      .getContainer(containerId)
+      .stop()
+      .catch((error: unknown) => {
+        if (!looksLikeAlreadyStoppedError(error) && !isMissingContainerError(error)) {
+          throw error;
+        }
+      });
     return (
       (await this.getBrowserRuntimeState(computer)) ?? {
         ...missingBrowserState(computer),
@@ -497,13 +500,12 @@ function createBrowserRuntimeRecord(
     createdAt: timestamp,
     lastActionAt: timestamp,
     profile: "browser",
-    access:
-      input.access ?? {
-        display: {
-          mode: "virtual-display",
-        },
-        logs: true,
+    access: input.access ?? {
+      display: {
+        mode: "virtual-display",
       },
+      logs: true,
+    },
     resources: {
       cpuWeight: input.resources?.cpuWeight,
       memoryMaxMiB: input.resources?.memoryMaxMiB,

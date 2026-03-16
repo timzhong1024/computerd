@@ -348,7 +348,9 @@ class SocketReader {
         reject,
       };
       this.flush();
-      this.socket.once("error", (error) => reject(error instanceof Error ? error : new Error(String(error))));
+      this.socket.once("error", (error) =>
+        reject(error instanceof Error ? error : new Error(String(error))),
+      );
       this.socket.once("close", () => {
         if (this.pending !== undefined) {
           reject(new Error("VNC socket closed before the requested bytes were read."));

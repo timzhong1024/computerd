@@ -1295,9 +1295,7 @@ test("waits for host console runtime readiness during start", async () => {
     },
     async runDisplayActions(computer, ops, observe) {
       const screenshot =
-        observe.screenshot === false
-          ? undefined
-          : await this.createScreenshot(computer);
+        observe.screenshot === false ? undefined : await this.createScreenshot(computer);
       return {
         computerName: computer.name,
         completedOpCount: ops.length,
@@ -2029,9 +2027,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async runDisplayActions(computer, ops, observe) {
       const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
       const screenshot =
-        observe.screenshot === false
-          ? undefined
-          : await this.createScreenshot(computer);
+        observe.screenshot === false ? undefined : await this.createScreenshot(computer);
       return {
         computerName: computer.name,
         completedOpCount: ops.length,

@@ -460,11 +460,7 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
           computerName: name,
           ...body,
         });
-        sendJson(
-          response,
-          200,
-          await appControlPlane.runDisplayActions(name, input),
-        );
+        sendJson(response, 200, await appControlPlane.runDisplayActions(name, input));
         return;
       }
 
