@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - ".github/workflows/publish-gateway-image.yml"
-      - "packages/control-plane/gateway-runtime/**"
+      - "containers/gateway-runtime/**"
 
 env:
   IMAGE_NAME: timzhong/computerd-gateway
@@ -46,8 +46,8 @@ jobs:
       - name: Build and push gateway image
         uses: docker/build-push-action@v6
         with:
-          context: packages/control-plane/gateway-runtime
-          file: packages/control-plane/gateway-runtime/Dockerfile
+          context: containers/gateway-runtime
+          file: containers/gateway-runtime/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
