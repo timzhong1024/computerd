@@ -101,21 +101,29 @@ test("serves computer and host unit APIs", async () => {
         targetSelector: `computerd.computer.name=${name}`,
         release() {},
       }),
-      createAudioSession: async (name) =>
-        name === "research-browser"
-          ? {
-              computerName: name,
-              protocol: "http-audio-stream",
-              connect: {
-                mode: "relative-websocket-path",
-                url: `/api/computers/${encodeURIComponent(name)}/audio`,
-              },
-              authorization: {
-                mode: "none",
-              },
-              mimeType: "audio/ogg",
-            }
-          : await controlPlane.createAudioSession(name),
+      createAudioSession: async (name) => {
+        if (name !== "research-browser") {
+          return await controlPlane.createAudioSession(name);
+        }
+
+        const computer = await controlPlane.getComputer(name);
+        if (computer.state !== "running") {
+          return await controlPlane.createAudioSession(name);
+        }
+
+        return {
+          computerName: name,
+          protocol: "http-audio-stream",
+          connect: {
+            mode: "relative-websocket-path",
+            url: `/api/computers/${encodeURIComponent(name)}/audio`,
+          },
+          authorization: {
+            mode: "none",
+          },
+          mimeType: "audio/ogg",
+        };
+      },
       createMonitorSession: async (name) =>
         name === "research-browser"
           ? {
