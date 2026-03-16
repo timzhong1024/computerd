@@ -1,8 +1,16 @@
+<!-- DOC-TODO-START -->
+
+## 当前 TODO
+
+- [ ] P1: 为 `browser` profile 收敛稳定的 isolated runtime substrate，并明确与 `container` / `vm` 的长期分工。
+- [ ] P2: 明确 `container exec` 是否升级为稳定的 agent-facing contract，或继续保持 operator-only 语义。
+<!-- DOC-TODO-END -->
+
 # Computer Profiles
 
 ## Summary
 
-当前 computerd 管理三类 computer：
+当前 computerd 管理四类 computer：
 
 - `host`
 - `browser`
@@ -44,6 +52,31 @@ computerd 当前不会自动 repair / recover broken computer，也不提供 for
 `host` computer 的主要交互面是 console。
 
 如果启用了 console access，computerd 会把它作为主交互 shell surface 暴露出来。
+
+`host` profile 仍然有明确存在价值，但它的定位应当被收窄理解为“受管的宿主环境入口”，而不是默认的通用 runtime substrate。
+
+它最适合的场景是：
+
+- 需要直接复用宿主硬件或设备
+  - 例如 GPU、`/dev/kvm`、USB、声卡、摄像头
+- 需要直接复用宿主长期环境
+  - 例如现有工作区、宿主文件系统、SSH key、系统级 toolchain、已有 daemon/socket
+- 需要执行宿主级运维或排障动作
+  - 例如 systemd、bridge/network、驱动、QEMU 宿主侧问题
+
+换句话说，`host` computer 的价值不在于“再提供一个弱隔离环境”，而在于：
+
+- 把宿主长期环境纳入统一 computer control plane
+- 让 agent/operator 通过一致的 lifecycle / console / inspect contract 访问宿主
+- 为必须发生在宿主上的任务保留正式入口
+
+如果任务本身不要求直接使用宿主环境，通常更应优先选择：
+
+- `container`
+- `browser`
+- `vm`
+
+因为这些 profile 更容易提供更清晰的隔离边界、网络语义和可迁移性。
 
 ### Container
 
