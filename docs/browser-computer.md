@@ -78,6 +78,55 @@ browser runtime 由 systemd primary unit 承载，内部当前采用 virtual X11
 - 底层媒体 graph 仍由 PipeWire 驱动
 - 当前不假设 Chromium 已经稳定支持“完全不经 `pipewire-pulse` 的原生 PipeWire 音频输出”
 
+## Runtime Stability Note
+
+当前 browser runtime 方案应视为“可工作的最小实现”，不应误认为已经收敛为长期稳定 substrate。
+
+原因是：
+
+- 它依赖宿主用户态图形栈组合：
+  - `Xvfb`
+  - `x11vnc`
+  - Chromium
+  - PipeWire user session
+- 它更像“在宿主上托管一个图形浏览器工作负载”，而不是“边界清晰的 browser computer substrate”
+- 这条路径短期有利于快速验证，但长期可能在以下方面持续暴露复杂度：
+  - 图形管线维护
+  - 编码与流式观察演进
+  - 输入路径一致性
+  - GPU / 高性能图形能力接入
+  - 多 profile 之间的 substrate 分裂
+
+因此，当前实现的正式判断应当是：
+
+- browser profile 仍然成立
+- 当前 browser runtime substrate 还不稳定
+- 它有较高概率需要在未来继续重构
+
+## Possible Future Convergence
+
+如果 browser computer 后续无法稳定收敛出一套独立、低复杂度、可长期维护的图形 substrate，那么有必要考虑把 browser runtime 向 VM substrate 收敛，以降低项目整体复杂度。
+
+这里的“向 VM substrate 收敛”具体指：
+
+- 复用更统一的 display / input backend
+- 复用更统一的 monitor / audio / future encoded-stream pipeline
+- 减少 `browser` 与 `vm` 在“带屏幕 computer”实现上的分叉
+
+这样做的潜在收益是：
+
+- 减少当前 `x11vnc` 与 `QEMU VNC` 两套屏幕 substrate 并存带来的维护成本
+- 为 future 高性能图形路径预留更自然的演进空间
+- 让 generic input / monitor / screenshot contract 更容易在带屏幕 profile 之间统一
+
+但这不等于现在就将 browser profile 退化为 vm profile。
+
+更准确的结论是：
+
+- `browser` 作为 product profile 仍然有独立价值
+- 但它的底层 runtime substrate 未来可能需要并入 VM-style backend
+- 如果独立 browser substrate 的维护成本持续高于收益，应优先降低系统复杂度，而不是坚持保留两套图形 substrate
+
 ## Supported Capabilities
 
 下面的 `Supported Capabilities` 指当前仓库已实现能力，而不是目标形态。

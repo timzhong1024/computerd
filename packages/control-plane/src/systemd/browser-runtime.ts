@@ -38,6 +38,7 @@ export function createBrowserRuntimePaths({
           "client.conf.d",
         ),
         profileDirectory: join(stateDirectory, "profile"),
+        controlSocketPath: join(runtimeDirectory, "control.sock"),
         runtimeUser: computer.runtime.runtimeUser,
         audioNodeName: `computerd-browser-${slug}`,
         audioSinkName: "auto_null",
@@ -57,6 +58,7 @@ export function toBrowserRuntimeDetail(
   options: BrowserRuntimePathsOptions,
 ): BrowserRuntime {
   const spec = createBrowserRuntimePaths(options).specForComputer(computer);
+  const audioAvailable = computer.runtime.provider !== "container";
 
   return {
     browser: computer.runtime.browser,
@@ -76,7 +78,7 @@ export function toBrowserRuntimeDetail(
     audio: {
       protocol: "pipewire",
       isolation: "host-pipewire-user",
-      available: true,
+      available: audioAvailable,
     },
     screenshot: {
       format: "png",

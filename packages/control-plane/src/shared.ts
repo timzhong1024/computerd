@@ -4,8 +4,11 @@ import {
   type ComputerAutomationSession,
   type ComputerConsoleSession,
   type ComputerDetail,
+  type DisplayAction,
   type ComputerExecSession,
   type ComputerMonitorSession,
+  type RunDisplayActionsObserve,
+  type RunDisplayActionsResult,
   type ComputerScreenshot,
   type ComputerSnapshot,
   type ComputerSummary,
@@ -26,7 +29,6 @@ import {
 } from "./networks";
 import {
   createBrowserRuntimePaths,
-  createBrowserRuntimeUser,
   toBrowserRuntimeDetail,
   withBrowserViewport,
 } from "./systemd/browser-runtime";
@@ -219,14 +221,15 @@ export async function createPersistedComputer(
     };
   }
 
-  return {
-    ...common,
-    profile: "browser",
-    runtime: {
-      ...input.runtime,
-      runtimeUser: createBrowserRuntimeUser(input.name),
-    },
-  };
+  if (input.profile === "browser") {
+    return {
+      ...common,
+      profile: "browser",
+      runtime: await runtime.createBrowserComputer(input, common.unitName, network),
+    };
+  }
+
+  throw new UnsupportedComputerFeatureError(`Unsupported computer profile: ${String(input)}`);
 }
 
 export function mapComputerState(runtimeState: UnitRuntimeState | null) {
@@ -340,6 +343,9 @@ export async function getPersistedComputerRuntimeState(
   record: PersistedComputer,
   runtime: ComputerRuntimePort,
 ) {
+  if (record.profile === "browser" && record.runtime.provider === "container") {
+    return await runtime.getBrowserRuntimeState(record);
+  }
   if (record.profile === "container") {
     return await runtime.getContainerRuntimeState(record);
   }
@@ -559,6 +565,11 @@ export function toComputerSummary(
   state: ComputerSummary["state"],
   network: NetworkSummary,
 ): ComputerSummary {
+  const capabilities = createComputerCapabilities(record.profile, state, record.access);
+  if (record.profile === "browser" && record.runtime.provider === "container") {
+    capabilities.audioAvailable = false;
+  }
+
   return {
     name: record.name,
     unitName: record.unitName,
@@ -567,7 +578,7 @@ export function toComputerSummary(
     description: record.description,
     createdAt: record.createdAt,
     access: record.access,
-    capabilities: createComputerCapabilities(record.profile, state, record.access),
+    capabilities,
     network,
   };
 }
@@ -582,6 +593,7 @@ export type {
   ComputerAutomationSession,
   ComputerMetadataStore,
   ComputerMonitorSession,
+  DisplayAction,
   ComputerScreenshot,
   ComputerSnapshot,
   ConsoleAttachLease,
@@ -591,6 +603,8 @@ export type {
   PersistedContainerComputer,
   PersistedHostComputer,
   PersistedVmComputer,
+  RunDisplayActionsObserve,
+  RunDisplayActionsResult,
   RestoreComputerInput,
   UnitRuntimeState,
   UpdateBrowserViewportInput,

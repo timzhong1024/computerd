@@ -45,6 +45,7 @@ export class SystemdControlPlane extends BaseControlPlane {
       options.runtime ??
       createRuntimePort({
         dockerSocketPath: environment.COMPUTERD_DOCKER_SOCKET ?? "/var/run/docker.sock",
+        environment,
         systemdRuntime: new DefaultSystemdRuntime({
           unitFileStoreOptions: {
             directory: environment.COMPUTERD_UNIT_DIR ?? "/etc/systemd/system",
@@ -91,12 +92,19 @@ export class SystemdControlPlane extends BaseControlPlane {
 
 function createRuntimePort({
   dockerSocketPath,
+  environment,
   systemdRuntime,
 }: {
   dockerSocketPath: string;
+  environment: NodeJS.ProcessEnv;
   systemdRuntime: SystemdRuntime;
 }): ComputerRuntimePort {
-  const dockerRuntime = new DefaultDockerRuntime(new Docker({ socketPath: dockerSocketPath }));
-
+  const dockerRuntime = new DefaultDockerRuntime(new Docker({ socketPath: dockerSocketPath }), {
+    browserImage: environment.COMPUTERD_BROWSER_IMAGE ?? "computerd/browser-runtime:latest",
+    browserRuntimeDirectory:
+      environment.COMPUTERD_BROWSER_RUNTIME_DIR ?? "/run/computerd/computers",
+    browserStateDirectory:
+      environment.COMPUTERD_BROWSER_STATE_DIR ?? "/var/lib/computerd/computers",
+  });
   return new CompositeComputerRuntime(systemdRuntime, dockerRuntime);
 }

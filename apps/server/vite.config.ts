@@ -22,7 +22,9 @@ export default defineConfig({
       external: [
         ...builtinModules,
         ...builtinModules.map((moduleName) => `node:${moduleName}`),
+        "@lydell/node-pty",
         "dockerode",
+        "usocket",
       ],
       output: {
         entryFileNames: "server.js",
