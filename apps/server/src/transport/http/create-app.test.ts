@@ -107,7 +107,7 @@ test("serves computer and host unit APIs", async () => {
               computerName: name,
               protocol: "http-audio-stream",
               connect: {
-                mode: "relative-path",
+                mode: "relative-websocket-path",
                 url: `/api/computers/${encodeURIComponent(name)}/audio`,
               },
               authorization: {
