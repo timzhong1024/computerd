@@ -1,16 +1,31 @@
+<!-- DOC-TODO-START -->
+
+## 当前 TODO
+
+- [ ] 暂无开放待办。
+<!-- DOC-TODO-END -->
+
 # Browser Computer Status
 
 ## Summary
+
+本文记录 browser computer vertical slice 落地时的阶段性状态。
+
+其中一部分实现细节已经过时，特别是：
+
+- browser 当前正式实现已经收敛为 container-backed runtime
+- browser audio 当前不再作为稳定能力开放
+
+当前正式规格以 [docs/browser-computer.md](/Users/timzhong/computerd/docs/browser-computer.md) 为准。
 
 `browser computer` 已经从“schema 存在但 runtime 不支持”的 profile，落成了一个真实可用的 managed `computer`。
 
 当前仓库中，browser computer 具备这些基本能力：
 
 - 可创建 / 启动 / 停止 / 重启
-- 由 systemd 管理 primary unit
+- 由受管 container runtime 承载
 - 拥有 computerd 隔离的数据目录和运行时目录
 - 可创建 monitor session，并通过 WebUI/noVNC 打开远程浏览器画面
-- 可创建 audio session，并在 monitor 页面播放 browser computer 音频
 - 可创建 automation session，并暴露底层 CDP websocket attach 入口
 - 可获取全屏 screenshot
 - 可通过 WebUI popup 打开独立 browser stage 页面
@@ -29,21 +44,17 @@
 
 - 首版只支持 `chromium`
 - browser runtime 建立在 virtual X11 substrate 上
-- 当前 primary unit 内会拉起：
+- 当前 browser container 内会拉起：
   - `Xvfb`
   - `chromium`
   - `x11vnc`
-  - `pipewire`
-  - `wireplumber`
-  - `pipewire-pulse`
 - browser profile 数据放在 computerd 管理目录下
-- browser runtime 以专用 Linux 用户运行
+- browser runtime 当前使用 container-backed persisted runtime record
 - stop/start 保留 profile 数据，但不承诺恢复 tabs/windows
 
 ### Access model
 
 - monitor: noVNC over websocket bridge
-- audio: HTTP `audio/ogg` stream
 - automation: CDP websocket attach
 - screenshot: fullscreen PNG capture
 
@@ -59,13 +70,11 @@
 下面这些能力已经完成并验证过：
 
 - browser create/start/stop/restart
-- systemd unit 渲染与真实运行
+- browser container create/start/stop/restart
 - browser monitor session create
-- browser audio session create
 - browser automation session create
 - fullscreen screenshot create
 - WebUI noVNC popup 建连并显示真实 Chromium 画面
-- WebUI monitor 页面可并行播放浏览器音频
 - CDP websocket attach
 - stop/start 后 profile 目录持久化
 
@@ -74,8 +83,6 @@
 - browser engine: `chromium`
 - profile persistence: `true`
 - display protocol: virtual X11
-- audio runtime: PipeWire user session
-- Chromium audio backend: `pipewire-pulse` on top of PipeWire
 - monitor auth: `none`
 - automation auth: `none`
 - screenshot type: fullscreen only
@@ -88,8 +95,7 @@
 - screenshot 只支持整屏，不支持 page/selector 级截图
 - 没有内建 tab/page/action 级 browser tool schema
 - Playwright/agent 侧应直接走 CDP attach，而不是依赖 computerd 自己转译高阶动作
-- 音频输出目前固定为 `audio/ogg`
-- Chromium 当前稳定音频路径依赖 `pipewire-pulse`，尚未验证纯原生 PipeWire 输出链路
+- browser audio 当前未作为稳定能力开放
 
 ## Next Work
 

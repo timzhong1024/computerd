@@ -2,8 +2,8 @@
 
 ## 当前 TODO
 
-- [ ] P1: 定义并落地 profile-independent 的 generic input injection contract，先覆盖 pointer / keyboard，再决定各 profile 的暴露范围。
-- [ ] P2: 设计 optional perception sidecar contract，明确其作为增强面而不是 core control contract 前置依赖。
+- [ ] P1: 决定是否继续沿用 `display-actions` 作为公共命名，还是提升为更明确的 generic input contract，并把 browser / vm / future android 的暴露范围写成统一 capability 规则。
+- [ ] P2: 在现有 pointer / keyboard v1 之上补齐 touch-oriented contract 与 optional perception sidecar 边界，但不要让它们阻塞 core control surface。
 <!-- DOC-TODO-END -->
 
 # Display Interface Model
@@ -12,7 +12,18 @@
 
 本文定义 computerd 中与“显示器/屏幕”相关的通用接口模型。
 
-除非明确说明，下面描述的是推荐接口边界与目标方向，不表示当前仓库已经全部实现。
+当前仓库已经落地了第一版 screen generic input contract：
+
+- `packages/core` 定义了 `DisplayAction` schema
+- `packages/control-plane` 可对 browser / vm computer 执行批量 display actions
+- HTTP 暴露 `POST /api/computers/:name/display-actions`
+- MCP 暴露 `run_display_actions`
+
+但它还只是 v1：
+
+- 目前只覆盖 pointer / keyboard 相关基础原语与 `wait`
+- 实际 profile 暴露范围当前只有 browser / vm
+- touch、device key、perception sidecar 仍未进入稳定 contract
 
 它不只服务 `android computer`，也服务：
 
@@ -128,33 +139,34 @@ display interface 的最小组成建议是：
 
 `input injection` 的语义是：
 
-- 点击 / touch
-- swipe / drag
+- pointer / mouse input
 - keyboard input
-- 特定设备按键
+- 未来的 touch / device-key input
 
 display interface 关心的是“通用输入注入”，不关心更高层对象语义。
 
-从更抽象的接口角度看，它更适合被收敛成这几类原语：
+当前仓库里已经落地的 agent-facing contract 名称是 `display-actions`。它在抽象上仍属于 generic input injection，只是命名还偏 display-oriented。
+
+第一版已实现的原语是：
 
 - pointer
-  - move
-  - down
-  - up
-  - click
-  - scroll
-  - drag
+  - `mouse.move`
+  - `mouse.down`
+  - `mouse.up`
+  - `mouse.scroll`
 - keyboard
-  - down
-  - up
-  - type
-  - hotkey
-- touch
-  - tap
-  - down
-  - move
-  - up
-  - swipe
+  - `key.down`
+  - `key.up`
+  - `key.press`
+  - `text.insert`
+- timing
+  - `wait`
+
+还没有进入稳定 schema 的包括：
+
+- `click` / `drag` / `hotkey` 这类宏动作
+- `touch` / `device_key`
+- 相对指针、focus、IME、high-res scroll 等可选能力
 
 这层的目标不是“替 VLM 猜目标元素”，而是“给 agent 一套足够抽象、足够通用、可覆盖任意 GUI 的输入方式”。
 
@@ -272,16 +284,20 @@ specialized surface 的意义在于：
 - browser computer screenshot
 - browser computer audio stream
 - browser computer specialized surface: `CDP` attach
+- browser / vm generic display action execution
+- shared `DisplayAction` schema in `packages/core`
+- HTTP `POST /api/computers/:name/display-actions`
+- MCP `run_display_actions`
 - vm computer monitor session
 - vm computer screenshot
 - host/container console surface
 
 ### Not Implemented Yet
 
-- 通用 `input injection` API
-- browser generic pointer / keyboard injection contract
-- vm generic pointer / keyboard injection contract
 - touch-oriented display contract
+- Android-oriented device key / text contract
+- click / drag / hotkey 等 higher-level macro contract
+- richer pointer metadata contract（例如 relative mode / focus / scale mapping）
 - perception / OCR / visual grounding sidecar contract
 - 视频帧流级的 stable observation contract
 - 把 audio 抽象成 profile-independent display observation surface
@@ -293,17 +309,21 @@ specialized surface 的意义在于：
 - display observation 的一部分
 - console interface
 - browser specialized surface
+- screen-oriented generic input v1
 
 当前还没有：
 
-- display execution 的通用输入层
+- 覆盖 touch / android 的完整 generic input
+- 明确的 profile capability matrix
+- perception sidecar contract
 
 因此下一阶段更合理的工作顺序应当是：
 
-1. 先补齐 generic input contract
-2. 再决定哪些 profile 暴露 pointer / keyboard / touch
-3. perception sidecar 保持 optional，不阻塞 core contract
-4. browser 继续坚持 `CDP` first，而不是退回 server-side 高阶 browser DSL
+1. 明确 `display-actions` 是否就是长期 generic input 命名。
+2. 把 browser / vm / future android 的 capability 暴露规则写清楚。
+3. 在不破坏 v1 schema 的前提下扩展 touch / device-key。
+4. perception sidecar 保持 optional，不阻塞 core contract。
+5. browser 继续坚持 `CDP` first，而不是退回 server-side 高阶 browser DSL。
 
 ## Current Relevance To Android
 

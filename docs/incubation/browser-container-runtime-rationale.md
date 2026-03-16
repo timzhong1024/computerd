@@ -2,19 +2,19 @@
 
 ## Status
 
-本文记录一个方向性判断：
+本文记录已经被采纳的一次架构判断：
 
 - `browser computer` 继续保留为产品 profile
-- `browser` 的底层 runtime 值得从当前 host-based systemd unit，演进到 container-backed runtime
+- `browser` 的底层 runtime 从 host-based systemd unit 演进到 container-backed runtime
 
-它不是正式规格；正式定义仍以：
+它不是正式规格；当前正式定义仍以：
 
 - [docs/browser-computer.md](/Users/timzhong/computerd/docs/browser-computer.md)
 - [docs/computer-networks.md](/Users/timzhong/computerd/docs/computer-networks.md)
 
 为准。
 
-## Starting Point
+## Original Starting Point
 
 当前 browser runtime 的真实形态并不是“宿主上一个普通浏览器进程”，而是由 computerd 托管的一整套专用运行环境：
 
@@ -210,11 +210,11 @@ container-backed runtime 更容易扩展，而不需要继续加厚 host-side ru
 
 ## Decision
 
-结论不是“browser 就是 container”。
+最终结论不是“browser 就是 container”。
 
 结论是：
 
 - `browser` 在产品上仍然是 browser computer
-- `browser` 在技术实现上已经足够 container-like，值得迁移到 container-backed runtime
+- `browser` 在技术实现上已经足够 container-like，因此迁移到了 container-backed runtime
 
 如果继续停留在 host-based browser runtime 上补 isolated networking，团队很可能会在 systemd + shell + host netns 上重复制造一个不完整的容器子系统。

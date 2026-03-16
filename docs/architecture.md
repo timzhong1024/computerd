@@ -190,10 +190,10 @@ flowchart TD
    [packages/control-plane/src/systemd/runtime.ts](/Users/timzhong/computerd/packages/control-plane/src/systemd/runtime.ts)
 
    职责：
-   - 处理 host/browser/vm 这三类 systemd-backed runtime
+   - 处理 host/vm 这两类 systemd-backed runtime
    - 通过 dbus + unit file store 操作 systemd
-   - 管理 browser runtime 目录、vm runtime 目录
-   - 创建 monitor/automation/audio attach lease
+   - 管理 vm runtime 目录
+   - 创建 VM monitor attach lease
    - 管理 VM snapshot 与 cloud-init
 
 2. `DefaultDockerRuntime`
@@ -201,10 +201,11 @@ flowchart TD
    [packages/control-plane/src/docker/runtime.ts](/Users/timzhong/computerd/packages/control-plane/src/docker/runtime.ts)
 
    职责：
-   - 处理 `container` profile
+   - 处理 `container` 与 container-backed `browser` profile
    - 通过 `dockerode` 创建、启动、停止、删除容器
-   - 管理 container runtime state
+   - 管理 browser/container runtime state
    - 处理 container auto-pull
+   - 暴露 browser monitor / automation / screenshot attach
 
 3. `DevelopmentComputerRuntime`
    定义位置：
@@ -356,6 +357,8 @@ flowchart TD
 - browser runtime path derivation
 - persisted browser runtime detail conversion
 - viewport mutation helpers
+
+虽然文件路径目前仍在 `systemd/` 目录下，但它承载的是 browser runtime 通用 helper，而不是“browser 仍由 systemd runtime 驱动”的语义。
 
 ### VM runtime helpers
 

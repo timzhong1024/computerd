@@ -2,8 +2,7 @@
 
 ## 当前 TODO
 
-- [ ] P1: 为 `browser` profile 收敛稳定的 isolated runtime substrate，并明确与 `container` / `vm` 的长期分工。
-- [ ] P2: 明确 `container exec` 是否升级为稳定的 agent-facing contract，或继续保持 operator-only 语义。
+- [ ] P1: 明确 `container exec` 是否升级为稳定的 agent-facing contract，或继续保持 operator-only 语义。
 <!-- DOC-TODO-END -->
 
 # Computer Profiles

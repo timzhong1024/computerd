@@ -2,8 +2,7 @@
 
 ## 当前 TODO
 
-- [ ] P1: 在 `packages/core` 中定义 screen-oriented generic input contract，先覆盖 `pointer` / `keyboard`，再决定各 profile 的暴露范围。
-- [ ] P2: 在 server 和 control plane 中落地 `console signal` 与 `touch` 输入面，并明确它们各自的 profile 适用范围。
+- [ ] P2: 在现有 browser / vm pointer+keyboard 基础上补齐 `touch` 和 `console signal`，并决定 `text` / `device_key` 是否作为 mobile-first 独立动作族暴露。
 <!-- DOC-TODO-END -->
 
 # Input Action Design
@@ -12,7 +11,22 @@
 
 本文聚焦 computerd 的输入动作设计。
 
-除非明确说明，下面描述的是推荐接口边界与目标方向，不表示当前仓库已经全部实现。
+当前仓库已经有一版输入契约落地：
+
+- `packages/core` 提供 `DisplayAction`、`runDisplayActionsInput`、`runDisplayActionsResult`
+- control plane 能对 running browser / vm computer 执行批量 display actions
+- HTTP 与 MCP 都已经暴露同一套 schema
+
+但这套实现仍是 v1，不等于整篇文档里的目标都已完成：
+
+- 已做的是 screen-oriented pointer / keyboard 基础集合
+- 未做的是 touch、console signal、mobile-first device key，以及更完整的 capability 元数据
+
+当前应把它视为正式成立的 v1 结论，而不是“还没开始”的方向性讨论：
+
+- `DisplayAction` / `display-actions` 已经是仓库里的 generic screen input contract
+- 它当前的正式暴露范围是 browser / vm
+- 后续工作重点是扩动作族和补 capability metadata，而不是重新发明第一版命名
 
 它回答的核心问题是：
 
@@ -34,7 +48,7 @@
 
 - human-facing attach surface 基本可用
 - browser-specialized automation surface 已有
-- profile-independent 的 generic actuation contract 还没有真正落地
+- profile-independent 的 generic actuation contract 已经有第一版，但还没完全收敛成统一叙述
 
 因此，需要单独把 input action 抽出来，避免把 human transport、specialized automation、generic input 混为一谈。
 
@@ -45,7 +59,18 @@
 | `monitor/ws`    | VNC upstream passthrough             | monitor attach transport       | 人类客户端为主 | 否                               |
 | `console/ws`    | `input(data)` + `resize(cols, rows)` | terminal byte stream + control | 人类和 agent   | 部分是，但只覆盖 console         |
 | `automation/ws` | CDP passthrough                      | browser specialized surface    | agent 为主     | 否，它是 browser 专用协议        |
+| `display-actions` | HTTP + MCP + core schema batch ops | screen generic input v1        | agent 为主     | 是，但当前只覆盖 browser / vm 的 pointer+keyboard |
 | `screenshot`    | 静态观测                             | observation                    | 人类和 agent   | 否                               |
+
+这里的正式结论应当固定为：
+
+- `display-actions` 是当前统一的 generic screen input contract 名称
+- `DisplayAction` 是这套 contract 的 core schema
+- profile capability matrix 当前是：
+  - browser: pointer / keyboard v1
+  - vm: pointer / keyboard v1
+  - host: 不适用
+  - container: 不适用
 
 相关实现参考：
 
@@ -61,9 +86,17 @@
 
 | Action family | 最小动作                                   | 作用                     | 当前状态 |
 | ------------- | ------------------------------------------ | ------------------------ | -------- |
-| `pointer`     | `move` `down` `up` `click` `scroll` `drag` | 覆盖鼠标型 GUI 操作      | 未做     |
-| `keyboard`    | `down` `up` `press` `hotkey` `type`        | 覆盖文本输入和快捷键     | 未做     |
+| `pointer`     | `move` `down` `up` `scroll`                | 覆盖鼠标型 GUI 基础操作  | 已做     |
+| `keyboard`    | `down` `up` `press` `text.insert`          | 覆盖文本输入和控制键     | 已做     |
 | `touch`       | `tap` `down` `move` `up` `swipe`           | 覆盖触屏设备和移动端 GUI | 未做     |
+
+当前 schema 对应的具体动作名是：
+
+- pointer: `mouse.move` `mouse.down` `mouse.up` `mouse.scroll`
+- keyboard: `key.down` `key.up` `key.press` `text.insert`
+- timing: `wait`
+
+也就是说，仓库已经不再处于“完全没有 generic screen input”的状态；更准确的说法是“v1 已做，但只覆盖一小组稳定原语”。
 
 ### Required Metadata
 
@@ -71,8 +104,8 @@
 
 | 元数据                             | 作用                                    | 当前状态                   |
 | ---------------------------------- | --------------------------------------- | -------------------------- |
-| `width` / `height`                 | 定义坐标空间                            | 部分 observation 已有      |
-| `viewport`                         | 定义当前可见区域                        | browser monitor 已部分具备 |
+| `width` / `height`                 | 定义坐标空间                            | 已通过 `viewport` 返回结果 |
+| `viewport`                         | 定义当前可见区域                        | 已做                       |
 | `devicePixelRatio` / `scaleFactor` | 解决截图坐标与执行坐标映射问题          | 未形成稳定通用 contract    |
 | focus / active target              | 保证键盘输入落到正确对象                | 未做                       |
 | input mode                         | 区分 absolute / relative pointer 等模式 | 未做                       |
@@ -376,8 +409,9 @@ RFB 的 pointer 模型同样非常收敛。
 因此，如果从当前仓库现实出发，第一版 screen input contract 更适合这样分层：
 
 1. 底层 capability 对齐 RFB 可稳定表达的集合。
-2. computerd 在其上定义 `click`、`drag`、`hotkey`、`type(text)` 这类 agent-friendly macro。
-3. future profile 再逐步补 `touch`、`gesture`、`relative pointer` 等非 RFB 能力。
+2. computerd v1 已在其上定义 `key.press`、`text.insert`、`wait` 这类 agent-friendly 动作。
+3. `click`、`drag`、`hotkey` 仍未进入统一 schema。
+4. future profile 再逐步补 `touch`、`gesture`、`relative pointer` 等非 RFB 能力。
 
 ## Console Computer Input Actions
 
@@ -426,18 +460,18 @@ RFB 的 pointer 模型同样非常收敛。
 | human-facing `monitor/ws`           | 已有     |
 | human-facing `console/ws`           | 已有     |
 | browser specialized `automation/ws` | 已有     |
-| generic screen `pointer` contract   | 未做     |
-| generic screen `keyboard` contract  | 未做     |
+| generic screen `pointer` contract   | 已做（browser / vm） |
+| generic screen `keyboard` contract  | 已做（browser / vm） |
 | generic screen `touch` contract     | 未做     |
 | generic console `signal` contract   | 未做     |
-| 统一的 input action schema          | 未做     |
+| 统一的 input action schema          | 已做（`DisplayAction` / `display-actions` v1） |
 
 因此，当前更准确的判断是：
 
 - observation 已有一部分
 - human attach transport 基本具备
 - browser specialized automation 已有
-- generic input action 还处于很早期阶段
+- generic input action v1 已正式落地，但范围仍很窄
 
 ## Design Implications
 
@@ -447,15 +481,15 @@ RFB 的 pointer 模型同样非常收敛。
 2. `CDP` 这类 specialized surface 应继续保留，并优先于 generic GUI input。
 3. generic input action 应单独建模为 computerd 的基础 actuation layer。
 4. perception / visual grounding 应保持 optional，不进入 core input contract。
+5. 当前 `display-actions` 已经是这层 actuation 的事实入口，剩下的问题主要是命名收敛与能力扩展，而不是从零开始。
 
 ## Recommended Next Step
 
 更合理的推进顺序是：
 
-1. 先在 `packages/core` 中定义 generic `input action` schema。
-2. 第一阶段先覆盖 `pointer` 和 `keyboard`。
-3. 第二阶段补 `touch` 和 `console signal`。
-4. 最后再决定各个 computer profile 暴露哪些动作面。
+1. 第二阶段补 `touch` 和 `console signal`。
+2. 把 browser / vm / future android 的 capability metadata 写成更清晰的稳定矩阵。
+3. 最后决定 mobile-first 的 `text` / `device_key` 是否作为独立动作族稳定暴露。
 
 ## External References
 
