@@ -101,6 +101,21 @@ test("serves computer and host unit APIs", async () => {
         targetSelector: `computerd.computer.name=${name}`,
         release() {},
       }),
+      createAudioSession: async (name) =>
+        name === "research-browser"
+          ? {
+              computerName: name,
+              protocol: "http-audio-stream",
+              connect: {
+                mode: "relative-path",
+                url: `/api/computers/${encodeURIComponent(name)}/audio`,
+              },
+              authorization: {
+                mode: "none",
+              },
+              mimeType: "audio/ogg",
+            }
+          : await controlPlane.createAudioSession(name),
       createMonitorSession: async (name) =>
         name === "research-browser"
           ? {
