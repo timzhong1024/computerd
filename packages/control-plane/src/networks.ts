@@ -5,6 +5,11 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import Docker from "dockerode";
 import type { CreateNetworkInput, NetworkDetail, NetworkSummary } from "@computerd/core";
+import {
+  ensureGatewayRuntimeArtifacts,
+  type GatewayRuntimeArtifacts,
+  type GatewayRuntimeConfig,
+} from "./gateway-runtime";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_HOST_NETWORK_ID = "network-host";
@@ -12,7 +17,7 @@ const DEFAULT_HOST_NETWORK_NAME = "Host network";
 const DEFAULT_HOST_BRIDGE = "br0";
 const DEFAULT_HOST_BRIDGE_ADDRESS = "192.168.250.1/24";
 const DEFAULT_HOST_NETWORK_CIDR = "192.168.250.0/24";
-const DEFAULT_GATEWAY_IMAGE = "alpine:3.20";
+const DEFAULT_GATEWAY_IMAGE = "computerd/gateway-runtime:latest";
 const LEGACY_ISOLATED_NETWORK_ID = "network-legacy-isolated";
 const QEMU_BRIDGE_CONFIG_PATH = "/etc/qemu/bridge.conf";
 
@@ -50,17 +55,15 @@ interface PersistedNetworkGatewayConfig {
 }
 
 interface PersistedNetworkGatewayRuntime {
+  configVersion: number;
   image: string;
   containerName: string;
   insideAddress: string;
-  hostBridgeAddress: string;
   transitCidr: string;
   transitHostAddress: string;
   transitGatewayAddress: string;
   hostVethName: string;
   gatewayVethName: string;
-  routingMark: number;
-  routingTable: number;
 }
 
 interface PersistedIsolatedNetworkRecord {
@@ -177,10 +180,13 @@ export class SystemNetworkProvider extends NetworkProvider {
       await this.ensureNetworkRuntime(record);
       return record;
     } catch (error) {
-      await stopDnsmasq(record, this.options.runtimeDirectory).catch(() => undefined);
       await deleteGatewayHostRuntime(record, this.options.environment).catch(() => undefined);
       await deleteGatewayContainer(this.dockerClient, record).catch(() => undefined);
       await deleteDockerNetwork(this.dockerClient, record.dockerNetworkName).catch(() => undefined);
+      await rm(join(this.options.runtimeDirectory, record.id), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
       config.networks = config.networks.filter((entry) => entry.id !== record.id);
       await writeNetworkConfig(this.options.configPath, config);
       throw error;
@@ -204,7 +210,10 @@ export class SystemNetworkProvider extends NetworkProvider {
     );
     await deleteGatewayHostRuntime(normalized, this.options.environment);
     await deleteGatewayContainer(this.dockerClient, normalized);
-    await stopDnsmasq(normalized, this.options.runtimeDirectory);
+    await rm(join(this.options.runtimeDirectory, normalized.id), {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
     await deleteDockerNetwork(this.dockerClient, normalized.dockerNetworkName);
     config.networks = config.networks.filter((entry) => entry.id !== id);
     await writeNetworkConfig(this.options.configPath, config);
@@ -216,21 +225,21 @@ export class SystemNetworkProvider extends NetworkProvider {
     }
 
     await mkdir(this.options.runtimeDirectory, { recursive: true });
+    const artifacts = await ensureGatewayRuntimeArtifacts(
+      this.options.runtimeDirectory,
+      network.id,
+      buildGatewayRuntimeConfig(network),
+    );
     await ensureDockerBridgeNetwork(
       this.dockerClient,
       network,
-      network.gatewayRuntime.hostBridgeAddress,
+      hostBridgeAddressForCidr(network.cidr),
     );
     await ensureQemuBridgeAllowed(network.bridgeName);
-    await ensureGatewayContainer(this.dockerClient, network);
+    await ensureGatewayContainer(this.dockerClient, network, artifacts);
     await ensureGatewayTransitLink(this.dockerClient, network);
     const uplinkInterface = await resolveHostUplinkInterface(this.options.environment);
     await ensureGatewayHostRuntime(network, uplinkInterface);
-    await startDnsmasq(
-      network,
-      network.gatewayRuntime.insideAddress,
-      this.options.runtimeDirectory,
-    );
   }
 
   async toNetworkSummary(network: PersistedNetworkRecord, attachedComputerCount: number) {
@@ -256,7 +265,17 @@ export class SystemNetworkProvider extends NetworkProvider {
   }
 
   async toNetworkDetail(network: PersistedNetworkRecord, attachedComputerCount: number) {
-    return await this.toNetworkSummary(network, attachedComputerCount);
+    const summary = await this.toNetworkSummary(network, attachedComputerCount);
+    if (network.kind === "host") {
+      return summary;
+    }
+    return {
+      ...summary,
+      gateway: {
+        ...summary.gateway,
+        runtime: await gatewayRuntimeDetail(this.dockerClient, network),
+      },
+    };
   }
 }
 
@@ -344,7 +363,21 @@ export class DevelopmentNetworkProvider extends NetworkProvider {
   }
 
   async toNetworkDetail(network: PersistedNetworkRecord, attachedComputerCount: number) {
-    return await this.toNetworkSummary(network, attachedComputerCount);
+    const summary = await this.toNetworkSummary(network, attachedComputerCount);
+    if (network.kind === "host") {
+      return summary;
+    }
+    return {
+      ...summary,
+      gateway: {
+        ...summary.gateway,
+        runtime: {
+          mode: "managed-container" as const,
+          containerState: "running" as const,
+          configVersion: network.gatewayRuntime.configVersion,
+        },
+      },
+    };
   }
 }
 
@@ -393,25 +426,31 @@ async function inspectNetworkStatus(
   const dockerExists = await hasDockerNetwork(docker, network.dockerNetworkName);
   const gatewayContainerHealthy = await hasHealthyGatewayContainer(docker, network);
   const transitHealthy = hasLink(network.gatewayRuntime.hostVethName);
-  const dnsmasqHealthy = await hasHealthyDnsmasq(network, runtimeDirectory);
+  const gatewayHealth = await readGatewayHealth(runtimeDirectory, network.id);
   const egressHealthy =
     transitHealthy &&
     gatewayContainerHealthy &&
     (await resolveHostUplinkInterface(environment)
       .then((uplink) => hasLink(uplink))
       .catch(() => false));
-  const dhcpState = dnsmasqHealthy ? "healthy" : bridgeExists ? "degraded" : "broken";
-  const dnsState = dnsStateForProvider(network, dnsmasqHealthy, bridgeExists);
+  const dhcpState = gatewayHealth?.dhcpState ?? (bridgeExists ? "degraded" : "broken");
+  const dnsState = dnsStateForProvider(
+    network,
+    gatewayHealth?.dnsState === "healthy",
+    bridgeExists,
+    gatewayHealth?.dnsState,
+  );
   const natState =
-    bridgeExists && dockerExists && egressHealthy
+    gatewayHealth?.natState === "healthy" && bridgeExists && dockerExists && egressHealthy
       ? "healthy"
-      : bridgeExists && (dockerExists || egressHealthy)
+      : bridgeExists && (dockerExists || egressHealthy || gatewayHealth?.natState === "degraded")
         ? "degraded"
         : "broken";
   const programmableGatewayState = programmableGatewayStateForProvider(
     network,
     bridgeExists,
     gatewayContainerHealthy,
+    gatewayHealth?.programmableGatewayState,
   );
   const overallState = reduceGatewayOverallState([
     dhcpState,
@@ -548,21 +587,39 @@ async function hasDockerNetwork(docker: Docker, networkName: string) {
   return networks.some((entry) => entry.Name === networkName);
 }
 
-async function ensureGatewayContainer(docker: Docker, network: PersistedIsolatedNetworkRecord) {
+async function ensureGatewayContainer(
+  docker: Docker,
+  network: PersistedIsolatedNetworkRecord,
+  artifacts: GatewayRuntimeArtifacts,
+) {
   const existing = await findContainerByName(docker, network.gatewayRuntime.containerName);
   const container =
     existing ??
     (await createContainerWithAutoPull(docker, network.gatewayRuntime.image, {
       name: network.gatewayRuntime.containerName,
       Image: network.gatewayRuntime.image,
-      Cmd: ["/bin/sh", "-lc", "trap exit TERM INT; while :; do sleep 3600; done"],
+      Cmd: ["node", "/opt/computerd/gateway-runtime/entrypoint.mjs"],
       Labels: {
         "computerd.managed": "true",
         "computerd.network.gateway": "true",
         "computerd.network.id": network.id,
       },
       HostConfig: {
+        Binds: [
+          `${artifacts.configPath}:/etc/computerd/gateway.json:ro`,
+          `${artifacts.directory}:/var/run/computerd-gateway`,
+        ],
         CapAdd: ["NET_ADMIN", "NET_RAW", "NET_BIND_SERVICE"],
+        Devices:
+          network.gateway.programmableGateway.provider === null
+            ? undefined
+            : [
+                {
+                  PathOnHost: "/dev/net/tun",
+                  PathInContainer: "/dev/net/tun",
+                  CgroupPermissions: "rwm",
+                },
+              ],
         Sysctls: {
           "net.ipv4.ip_forward": "1",
         },
@@ -724,86 +781,21 @@ async function ensureGatewayTransitLink(docker: Docker, network: PersistedIsolat
     "dev",
     network.gatewayRuntime.gatewayVethName,
   ]);
-  ensureGatewayNamespaceRuntime(network, pid);
-}
-
-function ensureGatewayNamespaceRuntime(network: PersistedIsolatedNetworkRecord, pid: number) {
-  ensureNamespacedIptablesRule(
-    pid,
-    ["-C", "FORWARD", "-i", "eth0", "-o", network.gatewayRuntime.gatewayVethName, "-j", "ACCEPT"],
-    ["-A", "FORWARD", "-i", "eth0", "-o", network.gatewayRuntime.gatewayVethName, "-j", "ACCEPT"],
-  );
-  ensureNamespacedIptablesRule(
-    pid,
-    [
-      "-C",
-      "FORWARD",
-      "-i",
-      network.gatewayRuntime.gatewayVethName,
-      "-o",
-      "eth0",
-      "-m",
-      "conntrack",
-      "--ctstate",
-      "RELATED,ESTABLISHED",
-      "-j",
-      "ACCEPT",
-    ],
-    [
-      "-A",
-      "FORWARD",
-      "-i",
-      network.gatewayRuntime.gatewayVethName,
-      "-o",
-      "eth0",
-      "-m",
-      "conntrack",
-      "--ctstate",
-      "RELATED,ESTABLISHED",
-      "-j",
-      "ACCEPT",
-    ],
-  );
-  ensureNamespacedIptablesRule(
-    pid,
-    [
-      "-t",
-      "nat",
-      "-C",
-      "POSTROUTING",
-      "-s",
-      network.cidr,
-      "-o",
-      network.gatewayRuntime.gatewayVethName,
-      "-j",
-      "MASQUERADE",
-    ],
-    [
-      "-t",
-      "nat",
-      "-A",
-      "POSTROUTING",
-      "-s",
-      network.cidr,
-      "-o",
-      network.gatewayRuntime.gatewayVethName,
-      "-j",
-      "MASQUERADE",
-    ],
-  );
 }
 
 async function ensureGatewayHostRuntime(
   network: PersistedIsolatedNetworkRecord,
   uplinkInterface: string,
 ) {
+  const routingMark = routingMarkForNetwork(network.id);
+  const routingTable = routingTableForNetwork(network.id);
   execCommand("/usr/sbin/sysctl", ["-w", "net.ipv4.ip_forward=1"]);
-  ensureIpRule(network.gatewayRuntime.routingMark, network.gatewayRuntime.routingTable);
+  ensureIpRule(routingMark, routingTable);
   execCommand("/usr/sbin/ip", [
     "route",
     "replace",
     "table",
-    `${network.gatewayRuntime.routingTable}`,
+    `${routingTable}`,
     network.cidr,
     "dev",
     network.bridgeName,
@@ -812,7 +804,7 @@ async function ensureGatewayHostRuntime(
     "route",
     "replace",
     "table",
-    `${network.gatewayRuntime.routingTable}`,
+    `${routingTable}`,
     "default",
     "via",
     network.gatewayRuntime.insideAddress,
@@ -832,7 +824,7 @@ async function ensureGatewayHostRuntime(
       "-j",
       "MARK",
       "--set-mark",
-      `${network.gatewayRuntime.routingMark}`,
+      `${routingMark}`,
     ],
     [
       "-t",
@@ -846,7 +838,7 @@ async function ensureGatewayHostRuntime(
       "-j",
       "MARK",
       "--set-mark",
-      `${network.gatewayRuntime.routingMark}`,
+      `${routingMark}`,
     ],
   );
   ensureIptablesRule(
@@ -937,13 +929,11 @@ async function deleteGatewayHostRuntime(
   network: PersistedIsolatedNetworkRecord,
   environment: NodeJS.ProcessEnv,
 ) {
+  const routingMark = routingMarkForNetwork(network.id);
+  const routingTable = routingTableForNetwork(network.id);
   execCommand("/usr/sbin/ip", ["link", "del", network.gatewayRuntime.hostVethName], true);
-  deleteIpRule(network.gatewayRuntime.routingMark, network.gatewayRuntime.routingTable);
-  execCommand(
-    "/usr/sbin/ip",
-    ["route", "flush", "table", `${network.gatewayRuntime.routingTable}`],
-    true,
-  );
+  deleteIpRule(routingMark, routingTable);
+  execCommand("/usr/sbin/ip", ["route", "flush", "table", `${routingTable}`], true);
   execCommand(
     "/usr/sbin/iptables",
     [
@@ -958,11 +948,10 @@ async function deleteGatewayHostRuntime(
       "-j",
       "MARK",
       "--set-mark",
-      `${network.gatewayRuntime.routingMark}`,
+      `${routingMark}`,
     ],
     true,
   );
-
   const uplinkInterface = await resolveHostUplinkInterface(environment).catch(() => null);
   if (!uplinkInterface) {
     return;
@@ -1020,69 +1009,6 @@ async function deleteGatewayHostRuntime(
     ],
     true,
   );
-}
-
-async function startDnsmasq(
-  network: PersistedIsolatedNetworkRecord,
-  gateway: string,
-  runtimeDirectory: string,
-) {
-  const spec = dnsmasqSpec(network, runtimeDirectory);
-  const healthy = await hasHealthyDnsmasq(network, runtimeDirectory);
-  if (healthy) {
-    return;
-  }
-  const range = dhcpRange(network.cidr);
-  await mkdir(spec.directory, { recursive: true });
-  await rm(spec.pidFile, { force: true }).catch(() => undefined);
-  await execFileAsync("dnsmasq", [
-    "--conf-file=",
-    `--interface=${network.bridgeName}`,
-    "--bind-interfaces",
-    "--except-interface=lo",
-    `--dhcp-range=${range.start},${range.end},12h`,
-    `--dhcp-option=option:router,${gateway}`,
-    `--dhcp-option=option:dns-server,${network.gatewayRuntime.hostBridgeAddress}`,
-    `--pid-file=${spec.pidFile}`,
-    `--dhcp-leasefile=${spec.leaseFile}`,
-  ]);
-}
-
-async function stopDnsmasq(network: PersistedIsolatedNetworkRecord, runtimeDirectory: string) {
-  const spec = dnsmasqSpec(network, runtimeDirectory);
-  try {
-    const pid = Number.parseInt((await readFile(spec.pidFile, "utf8")).trim(), 10);
-    if (Number.isFinite(pid)) {
-      process.kill(pid, "SIGTERM");
-    }
-  } catch {}
-  await rm(spec.directory, { recursive: true, force: true });
-}
-
-async function hasHealthyDnsmasq(
-  network: PersistedIsolatedNetworkRecord,
-  runtimeDirectory: string,
-) {
-  const spec = dnsmasqSpec(network, runtimeDirectory);
-  try {
-    const pid = Number.parseInt((await readFile(spec.pidFile, "utf8")).trim(), 10);
-    if (!Number.isFinite(pid)) {
-      return false;
-    }
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function dnsmasqSpec(network: PersistedIsolatedNetworkRecord, runtimeDirectory: string) {
-  const directory = join(runtimeDirectory, network.id);
-  return {
-    directory,
-    pidFile: join(directory, "dnsmasq.pid"),
-    leaseFile: join(directory, "dnsmasq.leases"),
-  };
 }
 
 function hasLink(name: string) {
@@ -1160,26 +1086,36 @@ function createPersistedGatewayRuntime(
   environment: NodeJS.ProcessEnv,
   gatewayImage: string | undefined,
 ): PersistedNetworkGatewayRuntime {
-  const { networkAddress, broadcastAddress } = parseCidr(network.cidr);
+  const { networkAddress } = parseCidr(network.cidr);
   const insideAddress = intToIpv4(networkAddress + 1);
-  const hostBridgeAddress = intToIpv4(broadcastAddress - 1);
   const transitSeed = stableHashNumber(`${network.id}:transit`);
   const transitBase = ipv4ToInt(
     `100.${64 + ((transitSeed >>> 16) & 0x3f)}.${(transitSeed >>> 8) & 0xff}.0`,
   );
   return {
+    configVersion: 1,
     image: gatewayImage ?? environment.COMPUTERD_NETWORK_GATEWAY_IMAGE ?? DEFAULT_GATEWAY_IMAGE,
     containerName: `computerd-gateway-${network.id}`,
     insideAddress,
-    hostBridgeAddress,
     transitCidr: `${intToIpv4(transitBase)}/30`,
     transitHostAddress: intToIpv4(transitBase + 1),
     transitGatewayAddress: intToIpv4(transitBase + 2),
     hostVethName: `ctgw${stableHashHex(`${network.id}:host`).slice(0, 8)}`,
     gatewayVethName: `gw${stableHashHex(`${network.id}:peer`).slice(0, 8)}`,
-    routingMark: 0x1000 + (stableHashNumber(`${network.id}:mark`) % 0x0fff),
-    routingTable: 20_000 + (stableHashNumber(`${network.id}:table`) % 10_000),
   };
+}
+
+function hostBridgeAddressForCidr(cidr: string) {
+  const { broadcastAddress } = parseCidr(cidr);
+  return intToIpv4(broadcastAddress - 1);
+}
+
+function routingMarkForNetwork(networkId: string) {
+  return 0x1000 + (stableHashNumber(`${networkId}:mark`) % 0x0fff);
+}
+
+function routingTableForNetwork(networkId: string) {
+  return 20_000 + (stableHashNumber(`${networkId}:table`) % 10_000);
 }
 
 function normalizeGatewayRuntime(
@@ -1190,6 +1126,10 @@ function normalizeGatewayRuntime(
   const defaults = createPersistedGatewayRuntime(network, environment, gatewayImage);
   const candidate = network.gatewayRuntime as Partial<PersistedNetworkGatewayRuntime> | undefined;
   return {
+    configVersion:
+      typeof candidate?.configVersion === "number" && Number.isInteger(candidate.configVersion)
+        ? candidate.configVersion
+        : defaults.configVersion,
     image:
       typeof candidate?.image === "string" && candidate.image.length > 0
         ? candidate.image
@@ -1202,10 +1142,6 @@ function normalizeGatewayRuntime(
       typeof candidate?.insideAddress === "string" && candidate.insideAddress.length > 0
         ? candidate.insideAddress
         : defaults.insideAddress,
-    hostBridgeAddress:
-      typeof candidate?.hostBridgeAddress === "string" && candidate.hostBridgeAddress.length > 0
-        ? candidate.hostBridgeAddress
-        : defaults.hostBridgeAddress,
     transitCidr:
       typeof candidate?.transitCidr === "string" && candidate.transitCidr.length > 0
         ? candidate.transitCidr
@@ -1227,14 +1163,6 @@ function normalizeGatewayRuntime(
       typeof candidate?.gatewayVethName === "string" && candidate.gatewayVethName.length > 0
         ? candidate.gatewayVethName
         : defaults.gatewayVethName,
-    routingMark:
-      typeof candidate?.routingMark === "number" && Number.isInteger(candidate.routingMark)
-        ? candidate.routingMark
-        : defaults.routingMark,
-    routingTable:
-      typeof candidate?.routingTable === "number" && Number.isInteger(candidate.routingTable)
-        ? candidate.routingTable
-        : defaults.routingTable,
   };
 }
 
@@ -1398,26 +1326,31 @@ function dnsStateForProvider(
   network: PersistedNetworkRecord,
   dnsHealthy: boolean,
   bridgeExists: boolean,
+  runtimeState?: "healthy" | "degraded" | "broken" | "unsupported",
 ): "healthy" | "degraded" | "broken" | "unsupported" {
   if (network.kind === "host") {
     return "unsupported";
   }
   if (network.gateway.dns.provider === "dnsmasq") {
-    return dnsHealthy ? "healthy" : bridgeExists ? "degraded" : "broken";
+    return runtimeState ?? (dnsHealthy ? "healthy" : bridgeExists ? "degraded" : "broken");
   }
-  return bridgeExists ? "unsupported" : "broken";
+  return runtimeState ?? (bridgeExists ? "unsupported" : "broken");
 }
 
 function programmableGatewayStateForProvider(
   network: PersistedNetworkRecord,
   bridgeExists: boolean,
   gatewayRuntimeHealthy: boolean,
+  runtimeState?: "healthy" | "degraded" | "broken" | "unsupported",
 ): "healthy" | "degraded" | "broken" | "unsupported" {
   if (network.kind === "host") {
     return "unsupported";
   }
   if (network.gateway.programmableGateway.provider === null) {
     return "unsupported";
+  }
+  if (runtimeState) {
+    return runtimeState;
   }
   if (!bridgeExists) {
     return "broken";
@@ -1471,6 +1404,71 @@ function createGatewayDetail(
   };
 }
 
+function buildGatewayRuntimeConfig(network: PersistedIsolatedNetworkRecord): GatewayRuntimeConfig {
+  const range = dhcpRange(network.cidr);
+  return {
+    version: network.gatewayRuntime.configVersion,
+    network: {
+      id: network.id,
+    },
+    lan: {
+      interface: "eth0",
+      cidr: network.cidr,
+      gatewayAddress: network.gatewayRuntime.insideAddress,
+    },
+    wan: {
+      interface: network.gatewayRuntime.gatewayVethName,
+      transitCidr: network.gatewayRuntime.transitCidr,
+      address: network.gatewayRuntime.transitGatewayAddress,
+      nextHop: network.gatewayRuntime.transitHostAddress,
+    },
+    dhcp: {
+      provider: network.gateway.dhcp.provider,
+      range,
+      router: network.gatewayRuntime.insideAddress,
+      dnsServers: [network.gatewayRuntime.insideAddress],
+    },
+    dns: {
+      provider: network.gateway.dns.provider,
+    },
+    programmableGateway: {
+      provider: network.gateway.programmableGateway.provider,
+    },
+  };
+}
+
+async function readGatewayHealth(runtimeDirectory: string, networkId: string) {
+  try {
+    const raw = await readFile(join(runtimeDirectory, networkId, "health.json"), "utf8");
+    const parsed = JSON.parse(raw) as {
+      dhcpState?: "healthy" | "degraded" | "broken" | "unsupported";
+      dnsState?: "healthy" | "degraded" | "broken" | "unsupported";
+      natState?: "healthy" | "degraded" | "broken" | "unsupported";
+      programmableGatewayState?: "healthy" | "degraded" | "broken" | "unsupported";
+    };
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function gatewayRuntimeDetail(docker: Docker, network: PersistedIsolatedNetworkRecord) {
+  const container = await findContainerByName(docker, network.gatewayRuntime.containerName);
+  if (!container) {
+    return {
+      mode: "managed-container" as const,
+      containerState: "missing" as const,
+      configVersion: network.gatewayRuntime.configVersion,
+    };
+  }
+  const inspection = await container.inspect();
+  return {
+    mode: "managed-container" as const,
+    containerState: inspection.State?.Running ? ("running" as const) : ("stopped" as const),
+    configVersion: network.gatewayRuntime.configVersion,
+  };
+}
+
 async function resolveHostUplinkInterface(environment: NodeJS.ProcessEnv) {
   if (environment.COMPUTERD_NETWORK_UPLINK_INTERFACE) {
     return environment.COMPUTERD_NETWORK_UPLINK_INTERFACE;
@@ -1507,16 +1505,6 @@ function ensureIptablesRule(checkArgs: string[], addArgs: string[]) {
     });
   } catch {
     execCommand("/usr/sbin/iptables", addArgs);
-  }
-}
-
-function ensureNamespacedIptablesRule(pid: number, checkArgs: string[], addArgs: string[]) {
-  try {
-    execFileSync("/usr/bin/nsenter", ["-t", `${pid}`, "-n", "/usr/sbin/iptables", ...checkArgs], {
-      stdio: "ignore",
-    });
-  } catch {
-    execCommand("/usr/bin/nsenter", ["-t", `${pid}`, "-n", "/usr/sbin/iptables", ...addArgs]);
   }
 }
 

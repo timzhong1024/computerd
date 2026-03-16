@@ -163,6 +163,12 @@ export const networkGatewayHealthSchema = z.object({
   natState: networkComponentStateSchema,
 });
 
+export const networkGatewayRuntimeSchema = z.object({
+  mode: z.literal("managed-container"),
+  containerState: z.enum(["running", "stopped", "missing"]),
+  configVersion: z.number().int().positive(),
+});
+
 export const networkGatewaySchema = z.object({
   dhcp: networkGatewayComponentSchema,
   dns: networkGatewayComponentSchema,
@@ -186,7 +192,11 @@ export const networkSummarySchema = z.object({
   deletable: z.boolean(),
 });
 
-export const networkDetailSchema = networkSummarySchema;
+export const networkDetailSchema = networkSummarySchema.extend({
+  gateway: networkGatewaySchema.extend({
+    runtime: networkGatewayRuntimeSchema.optional(),
+  }),
+});
 
 function isValidIpv4Cidr(value: string) {
   const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(value.trim());
