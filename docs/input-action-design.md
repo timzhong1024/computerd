@@ -54,13 +54,13 @@
 
 ## Current Protocol State
 
-| Surface         | 当前实现                             | 本质                           | 面向谁         | 是否是通用 input action contract |
-| --------------- | ------------------------------------ | ------------------------------ | -------------- | -------------------------------- |
-| `monitor/ws`    | VNC upstream passthrough             | monitor attach transport       | 人类客户端为主 | 否                               |
-| `console/ws`    | `input(data)` + `resize(cols, rows)` | terminal byte stream + control | 人类和 agent   | 部分是，但只覆盖 console         |
-| `automation/ws` | CDP passthrough                      | browser specialized surface    | agent 为主     | 否，它是 browser 专用协议        |
-| `display-actions` | HTTP + MCP + core schema batch ops | screen generic input v1        | agent 为主     | 是，但当前只覆盖 browser / vm 的 pointer+keyboard |
-| `screenshot`    | 静态观测                             | observation                    | 人类和 agent   | 否                               |
+| Surface           | 当前实现                             | 本质                           | 面向谁         | 是否是通用 input action contract                  |
+| ----------------- | ------------------------------------ | ------------------------------ | -------------- | ------------------------------------------------- |
+| `monitor/ws`      | VNC upstream passthrough             | monitor attach transport       | 人类客户端为主 | 否                                                |
+| `console/ws`      | `input(data)` + `resize(cols, rows)` | terminal byte stream + control | 人类和 agent   | 部分是，但只覆盖 console                          |
+| `automation/ws`   | CDP passthrough                      | browser specialized surface    | agent 为主     | 否，它是 browser 专用协议                         |
+| `display-actions` | HTTP + MCP + core schema batch ops   | screen generic input v1        | agent 为主     | 是，但当前只覆盖 browser / vm 的 pointer+keyboard |
+| `screenshot`      | 静态观测                             | observation                    | 人类和 agent   | 否                                                |
 
 这里的正式结论应当固定为：
 
@@ -84,11 +84,11 @@
 
 ### Minimal Action Families
 
-| Action family | 最小动作                                   | 作用                     | 当前状态 |
-| ------------- | ------------------------------------------ | ------------------------ | -------- |
-| `pointer`     | `move` `down` `up` `scroll`                | 覆盖鼠标型 GUI 基础操作  | 已做     |
-| `keyboard`    | `down` `up` `press` `text.insert`          | 覆盖文本输入和控制键     | 已做     |
-| `touch`       | `tap` `down` `move` `up` `swipe`           | 覆盖触屏设备和移动端 GUI | 未做     |
+| Action family | 最小动作                          | 作用                     | 当前状态 |
+| ------------- | --------------------------------- | ------------------------ | -------- |
+| `pointer`     | `move` `down` `up` `scroll`       | 覆盖鼠标型 GUI 基础操作  | 已做     |
+| `keyboard`    | `down` `up` `press` `text.insert` | 覆盖文本输入和控制键     | 已做     |
+| `touch`       | `tap` `down` `move` `up` `swipe`  | 覆盖触屏设备和移动端 GUI | 未做     |
 
 当前 schema 对应的具体动作名是：
 
@@ -455,15 +455,15 @@ RFB 的 pointer 模型同样非常收敛。
 
 下面这张表只描述当前仓库状态，不描述目标方向。
 
-| 项目                                | 当前状态 |
-| ----------------------------------- | -------- |
-| human-facing `monitor/ws`           | 已有     |
-| human-facing `console/ws`           | 已有     |
-| browser specialized `automation/ws` | 已有     |
-| generic screen `pointer` contract   | 已做（browser / vm） |
-| generic screen `keyboard` contract  | 已做（browser / vm） |
-| generic screen `touch` contract     | 未做     |
-| generic console `signal` contract   | 未做     |
+| 项目                                | 当前状态                                       |
+| ----------------------------------- | ---------------------------------------------- |
+| human-facing `monitor/ws`           | 已有                                           |
+| human-facing `console/ws`           | 已有                                           |
+| browser specialized `automation/ws` | 已有                                           |
+| generic screen `pointer` contract   | 已做（browser / vm）                           |
+| generic screen `keyboard` contract  | 已做（browser / vm）                           |
+| generic screen `touch` contract     | 未做                                           |
+| generic console `signal` contract   | 未做                                           |
 | 统一的 input action schema          | 已做（`DisplayAction` / `display-actions` v1） |
 
 因此，当前更准确的判断是：
