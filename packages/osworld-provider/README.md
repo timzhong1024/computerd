@@ -18,25 +18,25 @@ It returns one of two results:
 
 ## Mapping Table
 
-| computer_13 action | Expected fields | computerd translation | Notes |
-| --- | --- | --- | --- |
-| `MOVE_TO` | `x`, `y` | `mouse.move` | Direct mapping |
-| `CLICK` | `x`, `y`, optional `button` | `mouse.move` + `mouse.down` + `mouse.up` | Defaults to left button |
-| `LEFT_CLICK` | `x`, `y` | same as `CLICK(left)` | Alias |
-| `RIGHT_CLICK` | `x`, `y` | `mouse.move` + `mouse.down(right)` + `mouse.up(right)` | Alias |
-| `DOUBLE_CLICK` | `x`, `y` | click + `wait(75ms)` + click | Synthesized in adapter |
-| `MOUSE_DOWN` | optional `x`, `y`, optional `button` | optional `mouse.move` + `mouse.down` | Defaults to left button |
-| `MOUSE_UP` | optional `x`, `y`, optional `button` | optional `mouse.move` + `mouse.up` | Defaults to left button |
-| `DRAG_TO` | `start_x`, `start_y`, `end_x`, `end_y` | `move(start)` + `down(left)` + interpolated `move` steps + `up(left)` | Path interpolation uses 20px steps |
-| `SCROLL` | `deltaX`/`deltaY`, or `dx`/`dy`, or `clicks` | `mouse.scroll` | `clicks` maps to `deltaY` |
-| `TYPING` | `text`, `content`, or `value` | `text.insert` | Uses guest text insertion, not per-key typing |
-| `PRESS` | `key` | `key.press` | Key aliases normalized |
-| `KEY_DOWN` | `key` | `key.down` | Key aliases normalized |
-| `KEY_UP` | `key` | `key.up` | Key aliases normalized |
-| `HOTKEY` | `keys`, or `key` like `ctrl+c` | ordered `key.down` then reverse `key.up` | Adapter expands combo |
-| `WAIT` | `ms`, or `seconds`, or `duration`, or `time` | `wait` | Seconds-like fields are converted to ms |
-| `DONE` | optional `message`, `reason`, or `text` | control result | Not sent to `/display-actions` |
-| `FAIL` | optional `message`, `reason`, or `text` | control result | Not sent to `/display-actions` |
+| computer_13 action | Expected fields                              | computerd translation                                                 | Notes                                         |
+| ------------------ | -------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| `MOVE_TO`          | `x`, `y`                                     | `mouse.move`                                                          | Direct mapping                                |
+| `CLICK`            | `x`, `y`, optional `button`                  | `mouse.move` + `mouse.down` + `mouse.up`                              | Defaults to left button                       |
+| `LEFT_CLICK`       | `x`, `y`                                     | same as `CLICK(left)`                                                 | Alias                                         |
+| `RIGHT_CLICK`      | `x`, `y`                                     | `mouse.move` + `mouse.down(right)` + `mouse.up(right)`                | Alias                                         |
+| `DOUBLE_CLICK`     | `x`, `y`                                     | click + `wait(75ms)` + click                                          | Synthesized in adapter                        |
+| `MOUSE_DOWN`       | optional `x`, `y`, optional `button`         | optional `mouse.move` + `mouse.down`                                  | Defaults to left button                       |
+| `MOUSE_UP`         | optional `x`, `y`, optional `button`         | optional `mouse.move` + `mouse.up`                                    | Defaults to left button                       |
+| `DRAG_TO`          | `start_x`, `start_y`, `end_x`, `end_y`       | `move(start)` + `down(left)` + interpolated `move` steps + `up(left)` | Path interpolation uses 20px steps            |
+| `SCROLL`           | `deltaX`/`deltaY`, or `dx`/`dy`, or `clicks` | `mouse.scroll`                                                        | `clicks` maps to `deltaY`                     |
+| `TYPING`           | `text`, `content`, or `value`                | `text.insert`                                                         | Uses guest text insertion, not per-key typing |
+| `PRESS`            | `key`                                        | `key.press`                                                           | Key aliases normalized                        |
+| `KEY_DOWN`         | `key`                                        | `key.down`                                                            | Key aliases normalized                        |
+| `KEY_UP`           | `key`                                        | `key.up`                                                              | Key aliases normalized                        |
+| `HOTKEY`           | `keys`, or `key` like `ctrl+c`               | ordered `key.down` then reverse `key.up`                              | Adapter expands combo                         |
+| `WAIT`             | `ms`, or `seconds`, or `duration`, or `time` | `wait`                                                                | Seconds-like fields are converted to ms       |
+| `DONE`             | optional `message`, `reason`, or `text`      | control result                                                        | Not sent to `/display-actions`                |
+| `FAIL`             | optional `message`, `reason`, or `text`      | control result                                                        | Not sent to `/display-actions`                |
 
 ## Coordinate and Key Rules
 

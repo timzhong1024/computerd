@@ -2088,10 +2088,13 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         },
         viewport: {
           width:
-            displayViewports.get(computer.unitName)?.width ?? (computer.runtime.viewport?.width ?? 1440),
+            displayViewports.get(computer.unitName)?.width ??
+            computer.runtime.viewport?.width ??
+            1440,
           height:
             displayViewports.get(computer.unitName)?.height ??
-            (computer.runtime.viewport?.height ?? 900),
+            computer.runtime.viewport?.height ??
+            900,
         },
       };
     },
@@ -2102,7 +2105,10 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
           computer.runtime.viewport ?? { width: 1440, height: 900 },
         );
       } else if (computer.profile === "vm") {
-        displayViewports.set(computer.unitName, computer.runtime.viewport ?? { width: 1440, height: 900 });
+        displayViewports.set(
+          computer.unitName,
+          computer.runtime.viewport ?? { width: 1440, height: 900 },
+        );
         vmGuestFiles.set(computer.name, new Map());
       }
 
@@ -2322,7 +2328,9 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       const files = vmGuestFiles.get(computer.name);
       const file = files?.get(input.path);
       if (!file) {
-        throw new Error(`Guest file "${input.path}" was not found for computer "${computer.name}".`);
+        throw new Error(
+          `Guest file "${input.path}" was not found for computer "${computer.name}".`,
+        );
       }
 
       const maxBytes = input.maxBytes ?? file.length;

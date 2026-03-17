@@ -445,10 +445,7 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
           response,
           200,
           parseComputerDetail(
-            await appControlPlane.resizeDisplay(
-              name,
-              parseResizeDisplayInput(body),
-            ),
+            await appControlPlane.resizeDisplay(name, parseResizeDisplayInput(body)),
           ),
         );
         return;
@@ -470,8 +467,9 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
         return;
       }
 
-      const vmGuestFileReadMatch =
-        /^\/api\/computers\/(?<name>[^/]+)\/guest-files\/read$/.exec(url.pathname);
+      const vmGuestFileReadMatch = /^\/api\/computers\/(?<name>[^/]+)\/guest-files\/read$/.exec(
+        url.pathname,
+      );
       if (request.method === "POST" && vmGuestFileReadMatch?.groups?.name) {
         const name = decodeURIComponent(vmGuestFileReadMatch.groups.name);
         const body = await readJsonBody(request);
@@ -485,8 +483,9 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
         return;
       }
 
-      const vmGuestFileWriteMatch =
-        /^\/api\/computers\/(?<name>[^/]+)\/guest-files\/write$/.exec(url.pathname);
+      const vmGuestFileWriteMatch = /^\/api\/computers\/(?<name>[^/]+)\/guest-files\/write$/.exec(
+        url.pathname,
+      );
       if (request.method === "POST" && vmGuestFileWriteMatch?.groups?.name) {
         const name = decodeURIComponent(vmGuestFileWriteMatch.groups.name);
         const body = await readJsonBody(request);

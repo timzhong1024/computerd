@@ -219,24 +219,15 @@ export class CompositeComputerRuntime extends ComputerRuntimePort {
       : this.systemdRuntime.resizeDisplay(computer, viewport);
   }
 
-  runVmGuestCommand(
-    computer: PersistedVmComputer,
-    input: VmGuestCommandInput,
-  ) {
+  runVmGuestCommand(computer: PersistedVmComputer, input: VmGuestCommandInput) {
     return this.systemdRuntime.runVmGuestCommand(computer, input);
   }
 
-  readVmGuestFile(
-    computer: PersistedVmComputer,
-    input: VmGuestFileReadInput,
-  ) {
+  readVmGuestFile(computer: PersistedVmComputer, input: VmGuestFileReadInput) {
     return this.systemdRuntime.readVmGuestFile(computer, input);
   }
 
-  writeVmGuestFile(
-    computer: PersistedVmComputer,
-    input: VmGuestFileWriteInput,
-  ) {
+  writeVmGuestFile(computer: PersistedVmComputer, input: VmGuestFileWriteInput) {
     return this.systemdRuntime.writeVmGuestFile(computer, input);
   }
 }

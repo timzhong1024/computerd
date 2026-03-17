@@ -183,14 +183,20 @@ export function createComputerdClient({
         parseComputerDetail,
       );
     },
-    async runVmGuestCommand(name: string, input: VmGuestCommandInput): Promise<VmGuestCommandResult> {
+    async runVmGuestCommand(
+      name: string,
+      input: VmGuestCommandInput,
+    ): Promise<VmGuestCommandResult> {
       return await postJson(
         `/api/computers/${encodeURIComponent(name)}/guest-command`,
         input,
         parseVmGuestCommandResult,
       );
     },
-    async readVmGuestFile(name: string, input: VmGuestFileReadInput): Promise<VmGuestFileReadResult> {
+    async readVmGuestFile(
+      name: string,
+      input: VmGuestFileReadInput,
+    ): Promise<VmGuestFileReadResult> {
       return await postJson(
         `/api/computers/${encodeURIComponent(name)}/guest-files/read`,
         input,

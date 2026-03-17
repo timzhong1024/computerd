@@ -216,7 +216,12 @@ export const vmGuestCommandResultSchema = z.object({
 
 export const vmGuestFileReadInputSchema = z.object({
   path: z.string().min(1),
-  maxBytes: z.number().int().positive().max(16 * 1024 * 1024).optional(),
+  maxBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(16 * 1024 * 1024)
+    .optional(),
 });
 
 export const vmGuestFileReadResultSchema = z.object({
