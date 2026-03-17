@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomInt } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
+import { normalize } from "node:path";
 
 const defaults = {
   remoteHost: process.env.COMPUTERD_REMOTE_HOST,
@@ -26,6 +27,7 @@ const vmBridge = args.vmBridge ?? defaults.vmBridge;
 const vmName = args.vmName ?? `vm-smoke-${Date.now().toString(36)}`;
 const vmIp = args.vmIp ?? `192.168.250.${randomInt(180, 240)}`;
 const vmPrefixLength = args.vmPrefixLength ?? 24;
+const vmImageId = `filesystem-vm:${createHash("sha256").update(normalize(vmBaseImage)).digest("hex").slice(0, 16)}`;
 const remoteServerPidFile = `/tmp/computerd-vm-remote-smoke-${remotePort}.pid`;
 const remoteServerLogFile = `/tmp/computerd-vm-remote-smoke-${remotePort}.log`;
 
@@ -48,15 +50,15 @@ const vmPayload = {
   },
   storage: { rootMode: "persistent" },
   network: { mode: "host" },
-  runtime: {
-    hypervisor: "qemu",
-    source: {
-      kind: "qcow2",
-      baseImagePath: vmBaseImage,
-      cloudInit: {
-        enabled: true,
-        user: defaults.vmUser,
-        password: defaults.vmPassword,
+    runtime: {
+      hypervisor: "qemu",
+      source: {
+        kind: "qcow2",
+        imageId: vmImageId,
+        cloudInit: {
+          enabled: true,
+          user: defaults.vmUser,
+          password: defaults.vmPassword,
       },
     },
     nics: [
@@ -71,6 +73,7 @@ const vmPayload = {
 
 console.log(`[vm-remote-smoke] target: ${remoteHost}:${remoteRepo}`);
 console.log(`[vm-remote-smoke] vm: ${vmName} @ ${vmIp}/${vmPrefixLength}`);
+console.log(`[vm-remote-smoke] imageId: ${vmImageId}`);
 
 try {
   await syncWorkspace(remoteHost, remoteRepo);

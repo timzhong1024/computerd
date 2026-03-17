@@ -18,6 +18,7 @@ import {
   type CreateHostComputerInput,
   type CreateVmComputerInput,
   type HostUnitDetail,
+  type ManagedComputer,
   type NetworkSummary,
   type RestoreComputerInput,
   type ResizeDisplayInput,
@@ -383,6 +384,49 @@ export function toUnitName(name: string) {
 
 export function toContainerUnitName(name: string) {
   return `docker:${slugify(name)}`;
+}
+
+export function toGatewayComputerName(networkId: string) {
+  return `gateway-${networkId}`;
+}
+
+export function createGatewayManagedComputerRecord(
+  network: PersistedNetworkRecord,
+): PersistedContainerComputer & { managed: ManagedComputer } {
+  if (network.kind !== "isolated") {
+    throw new UnsupportedComputerFeatureError(
+      `Network "${network.id}" does not have a managed gateway computer.`,
+    );
+  }
+
+  return {
+    name: toGatewayComputerName(network.id),
+    unitName: `docker:${network.gatewayRuntime.containerName}`,
+    profile: "container",
+    description: `Managed gateway runtime for network "${network.name}".`,
+    createdAt: network.createdAt,
+    lastActionAt: network.createdAt,
+    access: {
+      logs: true,
+    },
+    resources: {},
+    storage: {
+      rootMode: "persistent",
+    },
+    networkId: network.id,
+    lifecycle: {},
+    runtime: {
+      provider: "docker",
+      image: network.gatewayRuntime.image,
+      containerId: network.gatewayRuntime.containerName,
+      containerName: network.gatewayRuntime.containerName,
+    },
+    managed: {
+      kind: "gateway",
+      networkId: network.id,
+      networkName: network.name,
+    },
+  };
 }
 
 export function slugify(value: string) {

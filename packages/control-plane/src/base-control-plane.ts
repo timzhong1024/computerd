@@ -9,6 +9,7 @@ import type {
   CreateComputerSnapshotInput,
   HostUnitDetail,
   HostUnitSummary,
+  ManagedComputer,
   NetworkDetail,
   NetworkSummary,
   ResizeDisplayInput,
@@ -32,6 +33,7 @@ import {
   assertSupportedCreateInput,
   capitalize,
   compareByName,
+  createGatewayManagedComputerRecord,
   createConsoleAttachLease,
   createConsoleSession,
   createContainerExecLease,
@@ -79,6 +81,10 @@ import {
   type PersistedNetworkRecord,
 } from "./networks";
 
+type ManagedGatewayComputerRecord = PersistedContainerComputer & {
+  managed: Extract<ManagedComputer, { kind: "gateway" }>;
+};
+
 export abstract class BaseControlPlane {
   protected readonly environment: NodeJS.ProcessEnv;
   readonly imageProvider: BaseControlPlaneDependencies["imageProvider"];
@@ -104,9 +110,21 @@ export abstract class BaseControlPlane {
   }
 
   async listComputers(): Promise<ComputerSummary[]> {
-    const records = await this.metadataStore.listComputers();
-    const summaries = await Promise.all(records.map((record) => this.toComputerSummary(record)));
-    return summaries.sort(compareByName);
+    const [records, managedGatewayRecords] = await Promise.all([
+      this.metadataStore.listComputers(),
+      this.listManagedGatewayRecords(),
+    ]);
+    const summaries = await Promise.all(
+      [...records, ...managedGatewayRecords].map((record) => this.toComputerSummary(record)),
+    );
+    return summaries.sort((left, right) => {
+      const leftManaged = left.managed?.kind === "gateway";
+      const rightManaged = right.managed?.kind === "gateway";
+      if (leftManaged !== rightManaged) {
+        return leftManaged ? 1 : -1;
+      }
+      return compareByName(left, right);
+    });
   }
 
   async listNetworks(): Promise<NetworkSummary[]> {
@@ -152,7 +170,7 @@ export abstract class BaseControlPlane {
   }
 
   async getComputer(name: string): Promise<ComputerDetail> {
-    const record = await this.requireComputer(name);
+    const record = (await this.getManagedGatewayRecord(name)) ?? (await this.requireComputer(name));
     return await this.toComputerDetail(record);
   }
 
@@ -162,9 +180,16 @@ export abstract class BaseControlPlane {
       await ensureDirectories(this.environment);
     }
 
-    const records = await this.metadataStore.listComputers();
+    const [records, managedGatewayRecords] = await Promise.all([
+      this.metadataStore.listComputers(),
+      this.listManagedGatewayRecords(),
+    ]);
     const unitName = toUnitName(input.name);
-    if (records.some((record) => record.name === input.name || record.unitName === unitName)) {
+    if (
+      [...records, ...managedGatewayRecords].some(
+        (record) => record.name === input.name || record.unitName === unitName,
+      )
+    ) {
       throw new ComputerConflictError(input.name);
     }
     if ((await this.runtime.getRuntimeState(unitName)) !== null) {
@@ -303,9 +328,13 @@ export abstract class BaseControlPlane {
   }
 
   async createExecSession(name: string) {
-    const record = await this.requireComputer(name);
+    const record = (await this.getManagedGatewayRecord(name)) ?? (await this.requireComputer(name));
     const containerRecord = requireContainerRecord(record);
-    await this.requireContainerRunning(containerRecord, "exec sessions");
+    if (this.isManagedGatewayRecord(containerRecord)) {
+      await this.requireManagedGatewayRunning(containerRecord, "exec sessions");
+    } else {
+      await this.requireContainerRunning(containerRecord, "exec sessions");
+    }
     return createExecSession(record.name);
   }
 
@@ -334,13 +363,18 @@ export abstract class BaseControlPlane {
   }
 
   async openExecAttach(name: string): Promise<ConsoleAttachLease> {
-    const record = await this.requireComputer(name);
+    const record = (await this.getManagedGatewayRecord(name)) ?? (await this.requireComputer(name));
     const containerRecord = requireContainerRecord(record);
-    await this.requireContainerRunning(containerRecord, "exec sessions");
+    if (this.isManagedGatewayRecord(containerRecord)) {
+      await this.requireManagedGatewayRunning(containerRecord, "exec sessions");
+    } else {
+      await this.requireContainerRunning(containerRecord, "exec sessions");
+    }
     return this.buildExecAttachLease(containerRecord);
   }
 
   async deleteComputer(name: string) {
+    await this.throwIfManagedGatewayMutation(name, "delete");
     const record = await this.requireComputer(name);
     this.throwIfBroken(
       record,
@@ -381,6 +415,7 @@ export abstract class BaseControlPlane {
   }
 
   async startComputer(name: string): Promise<ComputerDetail> {
+    await this.throwIfManagedGatewayMutation(name, "start");
     const record = await this.requireComputer(name);
     this.throwIfBroken(
       record,
@@ -415,6 +450,7 @@ export abstract class BaseControlPlane {
   }
 
   async stopComputer(name: string): Promise<ComputerDetail> {
+    await this.throwIfManagedGatewayMutation(name, "stop");
     const record = await this.requireComputer(name);
     this.throwIfBroken(
       record,
@@ -437,6 +473,7 @@ export abstract class BaseControlPlane {
   }
 
   async restartComputer(name: string): Promise<ComputerDetail> {
+    await this.throwIfManagedGatewayMutation(name, "restart");
     const record = await this.requireComputer(name);
     this.throwIfBroken(
       record,
@@ -652,24 +689,42 @@ export abstract class BaseControlPlane {
   }
 
   protected async toComputerSummary(record: PersistedComputer): Promise<ComputerSummary> {
-    const state = mapComputerState(await this.getPersistedComputerRuntimeState(record));
+    const state = this.isManagedGatewayRecord(record)
+      ? await this.getManagedGatewayState(record)
+      : mapComputerState(await this.getPersistedComputerRuntimeState(record));
     const network = await this.networkProvider.toNetworkSummary(
       await this.networkProvider.getNetworkRecord(record.networkId),
       1,
     );
-    return toComputerSummary(record, state, network);
+    const summary = toComputerSummary(record, state, network);
+    if (this.isManagedGatewayRecord(record)) {
+      summary.managed = record.managed;
+      summary.capabilities.canStart = false;
+      summary.capabilities.canStop = false;
+      summary.capabilities.canRestart = false;
+    }
+    return summary;
   }
 
   protected async toComputerDetail(record: PersistedComputer): Promise<ComputerDetail> {
-    const runtimeState = await this.getPersistedComputerRuntimeState(record);
+    const runtimeState = this.isManagedGatewayRecord(record)
+      ? await this.getManagedGatewayRuntimeState(record)
+      : await this.getPersistedComputerRuntimeState(record);
     const summary = await this.toComputerSummary(record);
-    return toComputerDetail(
+    const detail = toComputerDetail(
       record,
       runtimeState,
       summary,
       this.browserRuntimePaths,
       this.vmRuntimePaths,
     );
+    if (this.isManagedGatewayRecord(record)) {
+      detail.managed = record.managed;
+      detail.capabilities.canStart = false;
+      detail.capabilities.canStop = false;
+      detail.capabilities.canRestart = false;
+    }
+    return detail;
   }
 
   protected async requireBrowserRunning(record: PersistedBrowserComputer, capability: string) {
@@ -750,6 +805,76 @@ export abstract class BaseControlPlane {
 
   protected async getPersistedComputerRuntimeState(record: PersistedComputer) {
     return await getPersistedComputerRuntimeState(record, this.runtime);
+  }
+
+  protected async listManagedGatewayRecords(): Promise<ManagedGatewayComputerRecord[]> {
+    const networks = await this.networkProvider.listNetworkRecords();
+    return networks
+      .filter((network) => network.kind === "isolated")
+      .map((network) => createGatewayManagedComputerRecord(network));
+  }
+
+  protected async getManagedGatewayRecord(name: string): Promise<ManagedGatewayComputerRecord | null> {
+    const records = await this.listManagedGatewayRecords();
+    return records.find((record) => record.name === name) ?? null;
+  }
+
+  protected isManagedGatewayRecord(
+    record: PersistedComputer | ManagedGatewayComputerRecord,
+  ): record is ManagedGatewayComputerRecord {
+    return "managed" in record && record.managed.kind === "gateway";
+  }
+
+  protected async throwIfManagedGatewayMutation(
+    name: string,
+    action: "delete" | "restart" | "start" | "stop",
+  ) {
+    const record = await this.getManagedGatewayRecord(name);
+    if (record !== null) {
+      throw new UnsupportedComputerFeatureError(
+        `Gateway computer "${name}" is managed through network "${record.managed.networkName}" and does not support ${action}.`,
+      );
+    }
+  }
+
+  protected async getManagedGatewayRuntimeState(record: ManagedGatewayComputerRecord) {
+    return await this.runtime.getContainerRuntimeState(record);
+  }
+
+  protected async getManagedGatewayState(record: ManagedGatewayComputerRecord) {
+    const runtimeState = await this.getManagedGatewayRuntimeState(record);
+    if (runtimeState !== null) {
+      return mapComputerState(runtimeState);
+    }
+
+    const network = await this.networkProvider.getNetworkRecord(record.managed.networkId);
+    const detail = await this.networkProvider.toNetworkDetail(network, 0);
+    if (network.kind !== "isolated" || detail.gateway.runtime === undefined) {
+      return "broken";
+    }
+
+    return detail.gateway.runtime.containerState === "running"
+      ? "running"
+      : detail.gateway.runtime.containerState === "stopped"
+        ? "stopped"
+        : "broken";
+  }
+
+  protected async requireManagedGatewayRunning(
+    record: ManagedGatewayComputerRecord,
+    capability: string,
+  ) {
+    const state = await this.getManagedGatewayState(record);
+    if (state === "broken") {
+      throw new UnsupportedComputerFeatureError(
+        `Opening ${capability} is not supported for broken computers.`,
+      );
+    }
+    if (state !== "running") {
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${record.name}" must be running before opening ${capability}.`,
+      );
+    }
   }
 
   protected throwIfBroken(

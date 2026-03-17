@@ -527,6 +527,39 @@ test("parses broken computer summaries", () => {
   expect(summaries[0]?.state).toBe("broken");
 });
 
+test("parses managed gateway computer summaries", () => {
+  const summaries = parseComputerSummaries([
+    {
+      name: "gateway-network-dev-isolated",
+      unitName: "docker:computerd-gateway-network-dev-isolated",
+      profile: "container",
+      state: "running",
+      createdAt: "2026-03-09T08:00:00.000Z",
+      access: {
+        logs: true,
+      },
+      capabilities: {
+        ...createComputerCapabilities("container", "running"),
+        canStart: false,
+        canStop: false,
+        canRestart: false,
+      },
+      network: createHostNetworkSummary(),
+      managed: {
+        kind: "gateway",
+        networkId: "network-dev-isolated",
+        networkName: "isolated-dev",
+      },
+    },
+  ]);
+
+  expect(summaries[0]?.managed).toEqual({
+    kind: "gateway",
+    networkId: "network-dev-isolated",
+    networkName: "isolated-dev",
+  });
+});
+
 test("parses browser computer details", () => {
   const detail = parseComputerDetail({
     name: "research-browser",

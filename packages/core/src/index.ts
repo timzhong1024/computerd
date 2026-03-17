@@ -16,6 +16,14 @@ export const computerCapabilitiesSchema = z.object({
   audioAvailable: z.boolean(),
 });
 
+export const managedComputerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("gateway"),
+    networkId: z.string().min(1),
+    networkName: z.string().min(1),
+  }),
+]);
+
 export const computerConsoleAccessSchema = z.object({
   mode: z.literal("pty"),
   writable: z.boolean(),
@@ -615,6 +623,7 @@ const computerSummaryBaseSchema = z.object({
   access: computerAccessSchema,
   capabilities: computerCapabilitiesSchema,
   network: networkSummarySchema,
+  managed: managedComputerSchema.optional(),
 });
 
 const computerDetailBaseSchema = computerSummaryBaseSchema.extend({
@@ -780,6 +789,7 @@ export type ComputerAutomationSession = z.infer<typeof computerAutomationSession
 export type ComputerAudioSession = z.infer<typeof computerAudioSessionSchema>;
 export type ComputerAccess = z.infer<typeof computerAccessSchema>;
 export type ComputerCapabilities = z.infer<typeof computerCapabilitiesSchema>;
+export type ManagedComputer = z.infer<typeof managedComputerSchema>;
 export type ComputerConsoleSession = z.infer<typeof computerConsoleSessionSchema>;
 export type ComputerExecSession = z.infer<typeof computerExecSessionSchema>;
 export type ComputerDetail = z.infer<typeof computerDetailSchema>;

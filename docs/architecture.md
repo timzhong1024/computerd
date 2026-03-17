@@ -10,6 +10,7 @@
 
 本文档是“代码导向”的架构说明。更偏产品语义的说明见：
 
+- [product-positioning.md](/Users/timzhong/computerd/docs/product-positioning.md)
 - [computer-profiles.md](/Users/timzhong/computerd/docs/computer-profiles.md)
 - [browser-computer.md](/Users/timzhong/computerd/docs/browser-computer.md)
 - [vm-computer.md](/Users/timzhong/computerd/docs/vm-computer.md)

@@ -22,6 +22,11 @@ interface FakeComputer {
   unitName: string;
   profile: "host" | "browser" | "container" | "vm";
   state: "stopped" | "running" | "broken";
+  managed?: {
+    kind: "gateway";
+    networkId: string;
+    networkName: string;
+  };
   access?: Record<string, unknown>;
   runtime: Record<string, unknown>;
   networkId?: string;
@@ -1071,6 +1076,43 @@ test("renders exec placeholder route", async () => {
   );
 });
 
+test("marks managed gateway computers and hides lifecycle delete actions", async () => {
+  computers.unshift({
+    name: "gateway-network-dev-isolated",
+    unitName: "docker:computerd-gateway-network-dev-isolated",
+    profile: "container",
+    state: "running",
+    managed: {
+      kind: "gateway",
+      networkId: "network-dev-isolated",
+      networkName: "isolated-dev",
+    },
+    runtime: {
+      provider: "docker",
+      image: "computerd/gateway-runtime:latest",
+      containerId: "computerd-gateway-network-dev-isolated",
+      containerName: "computerd-gateway-network-dev-isolated",
+    },
+    networkId: "network-dev-isolated",
+  });
+
+  renderApp("/");
+
+  expect(
+    await screen.findByRole("button", { name: /gateway-network-dev-isolated/i }),
+  ).toHaveTextContent("gateway");
+  fireEvent.click(screen.getByRole("button", { name: /gateway-network-dev-isolated/i }));
+
+  expect(
+    await screen.findByText(/gateway for isolated-dev \(network-dev-isolated\)/i),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId("computer-action-delete")).not.toBeInTheDocument();
+  expect(screen.getByTestId("computer-action-start")).toBeDisabled();
+  expect(screen.getByTestId("computer-action-stop")).toBeDisabled();
+  expect(screen.getByTestId("computer-action-restart")).toBeDisabled();
+  expect(screen.getByTestId("open-exec-link")).toBeInTheDocument();
+});
+
 function renderApp(initialPath: string) {
   const history = createMemoryHistory({
     initialEntries: [initialPath],
@@ -1117,6 +1159,10 @@ function createComputerSummary(computer: FakeComputer) {
             },
             logs: true,
           }
+        : computer.managed?.kind === "gateway"
+          ? {
+              logs: true,
+            }
         : computer.profile === "vm"
           ? {
               console: {
@@ -1144,9 +1190,9 @@ function createComputerSummary(computer: FakeComputer) {
               }),
     capabilities: {
       canInspect: true,
-      canStart: computer.state === "stopped",
-      canStop: computer.state === "running",
-      canRestart: computer.state === "running",
+      canStart: computer.managed?.kind === "gateway" ? false : computer.state === "stopped",
+      canStop: computer.managed?.kind === "gateway" ? false : computer.state === "running",
+      canRestart: computer.managed?.kind === "gateway" ? false : computer.state === "running",
       consoleAvailable:
         computer.profile === "host" ||
         (computer.profile === "vm" &&
@@ -1161,6 +1207,7 @@ function createComputerSummary(computer: FakeComputer) {
       audioAvailable: computer.profile === "browser" && computer.state === "running",
     },
     network,
+    managed: computer.managed,
   };
 }
 

@@ -193,6 +193,43 @@ test("rejects isolated networks for host computers and allows browser computers"
   });
 });
 
+test("surfaces managed gateway runtimes as special container computers", async () => {
+  const controlPlane = new DevelopmentControlPlane();
+
+  const list = await controlPlane.listComputers();
+  expect(list).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "gateway-network-dev-isolated",
+        profile: "container",
+        managed: {
+          kind: "gateway",
+          networkId: "network-dev-isolated",
+          networkName: "isolated-dev",
+        },
+      }),
+    ]),
+  );
+
+  await expect(controlPlane.getComputer("gateway-network-dev-isolated")).resolves.toMatchObject({
+    profile: "container",
+    managed: {
+      kind: "gateway",
+      networkId: "network-dev-isolated",
+      networkName: "isolated-dev",
+    },
+    capabilities: {
+      canStart: false,
+      canStop: false,
+      canRestart: false,
+    },
+  });
+
+  await expect(controlPlane.startComputer("gateway-network-dev-isolated")).rejects.toBeInstanceOf(
+    UnsupportedComputerFeatureError,
+  );
+});
+
 test("creates and manages a browser computer with persisted metadata", async () => {
   const controlPlane = new SystemdControlPlane(
     {

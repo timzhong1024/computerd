@@ -755,6 +755,7 @@ export function HomePage() {
   }
 
   const isSelectedComputerBroken = selectedComputer?.state === "broken";
+  const isSelectedGatewayComputer = selectedComputer?.managed?.kind === "gateway";
   const selectedCreateNetwork = networks.find((network) => network.id === form.networkId) ?? null;
   const createNetworkUnsupported =
     selectedCreateNetwork !== null &&
@@ -1201,7 +1202,12 @@ export function HomePage() {
                   className="item-button"
                   onClick={() => void loadComputer(computer.name)}
                 >
-                  <span>{computer.name}</span>
+                  <span>
+                    {computer.name}
+                    {computer.managed?.kind === "gateway" ? (
+                      <span className="meta"> {" "}gateway</span>
+                    ) : null}
+                  </span>
                   <span className="meta">
                     {computer.profile} · {computer.state}
                   </span>
@@ -1471,13 +1477,20 @@ export function HomePage() {
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Computer detail</p>
-                <h2>{selectedComputer.name}</h2>
+                <h2>
+                  {selectedComputer.name}
+                  {selectedComputer.managed?.kind === "gateway" ? (
+                    <span className="meta"> {" "}gateway</span>
+                  ) : null}
+                </h2>
               </div>
               <div className="actions">
                 <button
                   type="button"
                   data-testid="computer-action-start"
-                  disabled={!selectedComputer.capabilities.canStart || isBusy}
+                  disabled={
+                    isSelectedGatewayComputer || !selectedComputer.capabilities.canStart || isBusy
+                  }
                   onClick={() => void handleComputerAction("start")}
                 >
                   Start
@@ -1485,7 +1498,9 @@ export function HomePage() {
                 <button
                   type="button"
                   data-testid="computer-action-stop"
-                  disabled={!selectedComputer.capabilities.canStop || isBusy}
+                  disabled={
+                    isSelectedGatewayComputer || !selectedComputer.capabilities.canStop || isBusy
+                  }
                   onClick={() => void handleComputerAction("stop")}
                 >
                   Stop
@@ -1493,12 +1508,16 @@ export function HomePage() {
                 <button
                   type="button"
                   data-testid="computer-action-restart"
-                  disabled={!selectedComputer.capabilities.canRestart || isBusy}
+                  disabled={
+                    isSelectedGatewayComputer ||
+                    !selectedComputer.capabilities.canRestart ||
+                    isBusy
+                  }
                   onClick={() => void handleComputerAction("restart")}
                 >
                   Restart
                 </button>
-                {!isSelectedComputerBroken ? (
+                {!isSelectedComputerBroken && !isSelectedGatewayComputer ? (
                   <button
                     type="button"
                     data-testid="computer-action-delete"
@@ -1572,6 +1591,15 @@ export function HomePage() {
                 <dt>Profile</dt>
                 <dd>{selectedComputer.profile}</dd>
               </div>
+              {selectedComputer.managed?.kind === "gateway" ? (
+                <div>
+                  <dt>Managed role</dt>
+                  <dd>
+                    gateway for {selectedComputer.managed.networkName} (
+                    {selectedComputer.managed.networkId})
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt>State</dt>
                 <dd data-testid="computer-state">{selectedComputer.state}</dd>
