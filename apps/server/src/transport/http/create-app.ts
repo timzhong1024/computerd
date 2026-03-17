@@ -439,10 +439,7 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
           response,
           200,
           parseComputerDetail(
-            await appControlPlane.resizeDisplay(
-              name,
-              parseResizeDisplayInput(body),
-            ),
+            await appControlPlane.resizeDisplay(name, parseResizeDisplayInput(body)),
           ),
         );
         return;

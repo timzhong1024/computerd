@@ -240,7 +240,8 @@ export class QemuGuestAgentClient {
           }
 
           const rawLine = buffer.slice(0, newlineIndex).trim();
-          const sliceEnd = buffer[newlineIndex] === "\r" && buffer[newlineIndex + 1] === "\n" ? 2 : 1;
+          const sliceEnd =
+            buffer[newlineIndex] === "\r" && buffer[newlineIndex + 1] === "\n" ? 2 : 1;
           buffer = buffer.slice(newlineIndex + sliceEnd);
           if (rawLine.length === 0) {
             continue;

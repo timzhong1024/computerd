@@ -201,7 +201,6 @@ describe("createComputerdClient", () => {
     });
   });
 
-
   test("runs display action batches through the HTTP api", async () => {
     const client = createComputerdClient({
       baseUrl: "http://computerd.test",

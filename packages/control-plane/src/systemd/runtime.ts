@@ -1120,7 +1120,7 @@ function buildVmResizeCommand(viewport: ResizeDisplayInput) {
   return [
     "set -eu",
     'DISPLAY="${DISPLAY:-:0}"',
-    'target="$(xrandr --query | awk \'/ connected/{print $1; exit}\')"',
+    "target=\"$(xrandr --query | awk '/ connected/{print $1; exit}')\"",
     '[ -n "$target" ]',
     `xrandr --output "$target" --mode ${quoteShell(size)} || xrandr --output "$target" --auto --mode ${quoteShell(size)} || xrandr --size ${quoteShell(size)}`,
   ].join("; ");

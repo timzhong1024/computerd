@@ -2021,10 +2021,13 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         },
         viewport: {
           width:
-            displayViewports.get(computer.unitName)?.width ?? (computer.runtime.viewport?.width ?? 1440),
+            displayViewports.get(computer.unitName)?.width ??
+            computer.runtime.viewport?.width ??
+            1440,
           height:
             displayViewports.get(computer.unitName)?.height ??
-            (computer.runtime.viewport?.height ?? 900),
+            computer.runtime.viewport?.height ??
+            900,
         },
       };
     },
@@ -2035,7 +2038,10 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
           computer.runtime.viewport ?? { width: 1440, height: 900 },
         );
       } else if (computer.profile === "vm") {
-        displayViewports.set(computer.unitName, computer.runtime.viewport ?? { width: 1440, height: 900 });
+        displayViewports.set(
+          computer.unitName,
+          computer.runtime.viewport ?? { width: 1440, height: 900 },
+        );
       }
 
       const state: UnitRuntimeState = {
