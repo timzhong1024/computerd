@@ -201,6 +201,66 @@ describe("createComputerdClient", () => {
     });
   });
 
+  test("runs VM guest commands and file operations through the HTTP api", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          exitCode: 0,
+          stdout: "ready\n",
+          stderr: "",
+          timedOut: false,
+          completedAt: "2026-03-17T08:00:00.000Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          path: "/tmp/result.txt",
+          dataBase64: Buffer.from("payload").toString("base64"),
+          sizeBytes: 7,
+          truncated: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          path: "/tmp/result.txt",
+          sizeBytes: 7,
+        }),
+      );
+
+    const client = createComputerdClient({
+      baseUrl: "http://computerd.test",
+      fetch: fetch as typeof globalThis.fetch,
+    });
+
+    await expect(
+      client.runVmGuestCommand("vm-smoke", {
+        command: "echo ready",
+      }),
+    ).resolves.toMatchObject({
+      exitCode: 0,
+      stdout: "ready\n",
+    });
+
+    await expect(
+      client.readVmGuestFile("vm-smoke", {
+        path: "/tmp/result.txt",
+      }),
+    ).resolves.toMatchObject({
+      sizeBytes: 7,
+      truncated: false,
+    });
+
+    await expect(
+      client.writeVmGuestFile("vm-smoke", {
+        path: "/tmp/result.txt",
+        dataBase64: Buffer.from("payload").toString("base64"),
+      }),
+    ).resolves.toMatchObject({
+      sizeBytes: 7,
+    });
+  });
+
   test("runs display action batches through the HTTP api", async () => {
     const client = createComputerdClient({
       baseUrl: "http://computerd.test",

@@ -657,6 +657,56 @@ test("serves computer and host unit APIs", async () => {
     },
   });
 
+  const guestCommandResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/guest-command`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      command: "echo ready",
+    }),
+  });
+  expect(guestCommandResponse.status).toBe(200);
+  await expect(guestCommandResponse.json()).resolves.toMatchObject({
+    exitCode: 0,
+    stdout: expect.stringContaining("echo ready"),
+  });
+
+  const guestFileWriteResponse = await fetch(
+    `${baseUrl}/api/computers/vm-smoke/guest-files/write`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "/tmp/osworld.txt",
+        dataBase64: Buffer.from("payload").toString("base64"),
+      }),
+    },
+  );
+  expect(guestFileWriteResponse.status).toBe(200);
+  await expect(guestFileWriteResponse.json()).resolves.toMatchObject({
+    path: "/tmp/osworld.txt",
+    sizeBytes: 7,
+  });
+
+  const guestFileReadResponse = await fetch(`${baseUrl}/api/computers/vm-smoke/guest-files/read`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      path: "/tmp/osworld.txt",
+    }),
+  });
+  expect(guestFileReadResponse.status).toBe(200);
+  await expect(guestFileReadResponse.json()).resolves.toMatchObject({
+    path: "/tmp/osworld.txt",
+    sizeBytes: 7,
+    truncated: false,
+  });
+
   const consoleWsResponse = await fetch(`${baseUrl}/api/computers/starter-host/console/ws`);
   expect(consoleWsResponse.status).toBe(426);
 
@@ -769,6 +819,24 @@ test("serves computer and host unit APIs", async () => {
         type: "http_request",
         method: "POST",
         path: "/api/computers/research-browser/resize",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/vm-smoke/guest-command",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/vm-smoke/guest-files/write",
+        statusCode: 200,
+      }),
+      expect.objectContaining({
+        type: "http_request",
+        method: "POST",
+        path: "/api/computers/vm-smoke/guest-files/read",
         statusCode: 200,
       }),
       expect.objectContaining({

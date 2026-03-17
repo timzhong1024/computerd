@@ -4,6 +4,10 @@ coverage/
 playwright-report/
 test-results/
 .vite/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
 *.tsbuildinfo
 apps/*/src/*.d.ts
 packages/*/src/*.d.ts

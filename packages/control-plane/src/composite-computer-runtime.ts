@@ -3,6 +3,9 @@ import type {
   ResizeDisplayInput,
   RestoreComputerInput,
   RunDisplayActionsObserve,
+  VmGuestCommandInput,
+  VmGuestFileReadInput,
+  VmGuestFileWriteInput,
 } from "@computerd/core";
 import type { DockerRuntime } from "./docker/runtime";
 import type { SystemdRuntime } from "./systemd/runtime";
@@ -214,5 +217,26 @@ export class CompositeComputerRuntime extends ComputerRuntimePort {
     return computer.profile === "browser"
       ? this.dockerRuntime.resizeDisplay(computer, viewport)
       : this.systemdRuntime.resizeDisplay(computer, viewport);
+  }
+
+  runVmGuestCommand(
+    computer: PersistedVmComputer,
+    input: VmGuestCommandInput,
+  ) {
+    return this.systemdRuntime.runVmGuestCommand(computer, input);
+  }
+
+  readVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileReadInput,
+  ) {
+    return this.systemdRuntime.readVmGuestFile(computer, input);
+  }
+
+  writeVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileWriteInput,
+  ) {
+    return this.systemdRuntime.writeVmGuestFile(computer, input);
   }
 }

@@ -19,6 +19,10 @@ import {
   parseRunDisplayActionsResult,
   parseResizeDisplayInput,
   parseRestoreComputerInput,
+  parseVmGuestCommandInput,
+  parseVmGuestCommandResult,
+  parseVmGuestFileReadInput,
+  parseVmGuestFileWriteInput,
 } from "./index";
 
 function createHostNetworkSummary(attachedComputerCount = 1) {
@@ -867,6 +871,56 @@ test("parses display resize input", () => {
   ).toEqual({
     width: 1600,
     height: 1000,
+  });
+});
+
+test("parses VM guest command input and result", () => {
+  expect(
+    parseVmGuestCommandInput({
+      command: "echo ready",
+      timeoutMs: 1_000,
+    }),
+  ).toEqual({
+    command: "echo ready",
+    shell: true,
+    timeoutMs: 1_000,
+    captureOutput: true,
+  });
+
+  expect(
+    parseVmGuestCommandResult({
+      exitCode: 0,
+      stdout: "ready\n",
+      stderr: "",
+      timedOut: false,
+      completedAt: "2026-03-17T08:00:00.000Z",
+    }),
+  ).toMatchObject({
+    exitCode: 0,
+    stdout: "ready\n",
+  });
+});
+
+test("parses VM guest file read and write inputs", () => {
+  expect(
+    parseVmGuestFileReadInput({
+      path: "/tmp/test.txt",
+      maxBytes: 1024,
+    }),
+  ).toEqual({
+    path: "/tmp/test.txt",
+    maxBytes: 1024,
+  });
+
+  expect(
+    parseVmGuestFileWriteInput({
+      path: "/tmp/test.txt",
+      dataBase64: Buffer.from("hello").toString("base64"),
+    }),
+  ).toEqual({
+    path: "/tmp/test.txt",
+    dataBase64: Buffer.from("hello").toString("base64"),
+    createParents: false,
   });
 });
 

@@ -33,6 +33,12 @@ import type {
   HostRuntime,
   RestoreComputerInput,
   ResizeDisplayInput,
+  VmGuestCommandInput,
+  VmGuestCommandResult,
+  VmGuestFileReadInput,
+  VmGuestFileReadResult,
+  VmGuestFileWriteInput,
+  VmGuestFileWriteResult,
   VmRuntime,
 } from "@computerd/core";
 import type { PersistedNetworkRecord } from "../networks";
@@ -208,6 +214,18 @@ export abstract class ComputerRuntimePort {
     computer: PersistedBrowserComputer | PersistedVmComputer,
     viewport: ResizeDisplayInput,
   ): Promise<void>;
+  abstract runVmGuestCommand(
+    computer: PersistedVmComputer,
+    input: VmGuestCommandInput,
+  ): Promise<VmGuestCommandResult>;
+  abstract readVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileReadInput,
+  ): Promise<VmGuestFileReadResult>;
+  abstract writeVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileWriteInput,
+  ): Promise<VmGuestFileWriteResult>;
 }
 
 export interface ConsoleAttachLease {
@@ -275,4 +293,10 @@ export type {
   HostRuntime,
   ResizeDisplayInput,
   VmRuntime,
+  VmGuestCommandInput,
+  VmGuestCommandResult,
+  VmGuestFileReadInput,
+  VmGuestFileReadResult,
+  VmGuestFileWriteInput,
+  VmGuestFileWriteResult,
 };

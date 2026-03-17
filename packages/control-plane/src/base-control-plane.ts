@@ -14,6 +14,12 @@ import type {
   ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
+  VmGuestCommandInput,
+  VmGuestCommandResult,
+  VmGuestFileReadInput,
+  VmGuestFileReadResult,
+  VmGuestFileWriteInput,
+  VmGuestFileWriteResult,
 } from "@computerd/core";
 import {
   ComputerConflictError,
@@ -503,6 +509,30 @@ export abstract class BaseControlPlane {
     return await this.toComputerDetail(updated);
   }
 
+  async runVmGuestCommand(name: string, input: VmGuestCommandInput): Promise<VmGuestCommandResult> {
+    const record = await this.requireComputer(name);
+    const vmRecord = requireVmRecord(record);
+    await this.requireVmRunning(vmRecord, "run guest commands");
+    return await this.runtime.runVmGuestCommand(vmRecord, input);
+  }
+
+  async readVmGuestFile(name: string, input: VmGuestFileReadInput): Promise<VmGuestFileReadResult> {
+    const record = await this.requireComputer(name);
+    const vmRecord = requireVmRecord(record);
+    await this.requireVmRunning(vmRecord, "read guest files");
+    return await this.runtime.readVmGuestFile(vmRecord, input);
+  }
+
+  async writeVmGuestFile(
+    name: string,
+    input: VmGuestFileWriteInput,
+  ): Promise<VmGuestFileWriteResult> {
+    const record = await this.requireComputer(name);
+    const vmRecord = requireVmRecord(record);
+    await this.requireVmRunning(vmRecord, "write guest files");
+    return await this.runtime.writeVmGuestFile(vmRecord, input);
+  }
+
   async listHostUnits(): Promise<HostUnitSummary[]> {
     return await this.runtime.listHostUnits();
   }
@@ -700,6 +730,20 @@ export abstract class BaseControlPlane {
     if (mapComputerState(runtimeState) !== "stopped") {
       throw new UnsupportedComputerFeatureError(
         `Computer "${record.name}" must be stopped before ${capability}.`,
+      );
+    }
+  }
+
+  protected async requireVmRunning(record: PersistedVmComputer, capability: string) {
+    const runtimeState = await this.runtime.getRuntimeState(record.unitName);
+    this.throwIfBroken(
+      record,
+      runtimeState,
+      `${capitalize(capability)} is not supported for broken computers.`,
+    );
+    if (mapComputerState(runtimeState) !== "running") {
+      throw new UnsupportedComputerFeatureError(
+        `Computer "${record.name}" must be running before ${capability}.`,
       );
     }
   }

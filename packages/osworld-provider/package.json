@@ -1,0 +1,13 @@
+{
+  "name": "@computerd/osworld-provider",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "uv run --python 3.14 python -m compileall src",
+    "dev": "uv run --python 3.14 python -m compileall src",
+    "lock": "uv lock --python 3.14",
+    "test": "uv run --python 3.14 python -m unittest discover -s tests -p 'test*.py'",
+    "test:watch": "uv run --python 3.14 python -m unittest discover -s tests -p 'test*.py'",
+    "typecheck": "uv run --python 3.14 python -m compileall src"
+  }
+}

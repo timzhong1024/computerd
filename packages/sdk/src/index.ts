@@ -8,6 +8,9 @@ import {
   parseComputerScreenshot,
   parseResizeDisplayInput,
   parseRunDisplayActionsResult,
+  parseVmGuestCommandResult,
+  parseVmGuestFileReadResult,
+  parseVmGuestFileWriteResult,
   type BrowserComputerDetail,
   type ComputerAutomationSession,
   type ComputerDetail,
@@ -19,6 +22,12 @@ import {
   type ResizeDisplayInput,
   type RunDisplayActionsObserve,
   type RunDisplayActionsResult,
+  type VmGuestCommandInput,
+  type VmGuestCommandResult,
+  type VmGuestFileReadInput,
+  type VmGuestFileReadResult,
+  type VmGuestFileWriteInput,
+  type VmGuestFileWriteResult,
 } from "@computerd/core";
 
 export interface ComputerdClientOptions {
@@ -172,6 +181,30 @@ export function createComputerdClient({
         `/api/computers/${encodeURIComponent(name)}/resize`,
         viewport,
         parseComputerDetail,
+      );
+    },
+    async runVmGuestCommand(name: string, input: VmGuestCommandInput): Promise<VmGuestCommandResult> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/guest-command`,
+        input,
+        parseVmGuestCommandResult,
+      );
+    },
+    async readVmGuestFile(name: string, input: VmGuestFileReadInput): Promise<VmGuestFileReadResult> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/guest-files/read`,
+        input,
+        parseVmGuestFileReadResult,
+      );
+    },
+    async writeVmGuestFile(
+      name: string,
+      input: VmGuestFileWriteInput,
+    ): Promise<VmGuestFileWriteResult> {
+      return await postJson(
+        `/api/computers/${encodeURIComponent(name)}/guest-files/write`,
+        input,
+        parseVmGuestFileWriteResult,
       );
     },
     resolveWebSocketUrl(input: string | { connect: ComputerSessionConnect }): string {

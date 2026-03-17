@@ -21,6 +21,12 @@ import {
   type NetworkSummary,
   type RestoreComputerInput,
   type ResizeDisplayInput,
+  type VmGuestCommandInput,
+  type VmGuestCommandResult,
+  type VmGuestFileReadInput,
+  type VmGuestFileReadResult,
+  type VmGuestFileWriteInput,
+  type VmGuestFileWriteResult,
 } from "@computerd/core";
 import {
   DEFAULT_HOST_NETWORK_ID,
@@ -609,4 +615,10 @@ export type {
   RestoreComputerInput,
   UnitRuntimeState,
   ResizeDisplayInput,
+  VmGuestCommandInput,
+  VmGuestCommandResult,
+  VmGuestFileReadInput,
+  VmGuestFileReadResult,
+  VmGuestFileWriteInput,
+  VmGuestFileWriteResult,
 };

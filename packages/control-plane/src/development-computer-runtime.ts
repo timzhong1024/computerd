@@ -7,6 +7,9 @@ import type {
   ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
+  VmGuestCommandResult,
+  VmGuestFileReadResult,
+  VmGuestFileWriteResult,
 } from "@computerd/core";
 import { createBrowserRuntimePaths, withBrowserViewport } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
@@ -31,6 +34,7 @@ interface DevelopmentComputerRuntimeOptions {
   hostUnits: HostUnitDetail[];
   records: Map<string, PersistedComputer>;
   runtimeStates: Map<string, UnitRuntimeState>;
+  vmGuestFiles: Map<string, Map<string, Buffer>>;
   vmRuntimePaths: ReturnType<typeof createVmRuntimePaths>;
   vmSnapshots: Map<string, ComputerSnapshot[]>;
 }
@@ -203,6 +207,7 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
       await mkdir(spec.stateDirectory, { recursive: true });
       await mkdir(spec.runtimeDirectory, { recursive: true });
       await writeFile(spec.serialSocketPath, "");
+      await writeFile(spec.guestAgentSocketPath, "");
     }
     const state = {
       unitName: computer.unitName,
@@ -531,6 +536,50 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
 
     const spec = this.options.vmRuntimePaths.specForComputer(withVmViewport(computer, viewport));
     await mkdir(spec.runtimeDirectory, { recursive: true });
+  }
+
+  async runVmGuestCommand(
+    computer: PersistedVmComputer,
+    input: Parameters<ComputerRuntimePort["runVmGuestCommand"]>[1],
+  ): Promise<VmGuestCommandResult> {
+    return {
+      exitCode: 0,
+      stdout: `development:${computer.name}:${input.command}`,
+      stderr: "",
+      timedOut: false,
+      completedAt: new Date().toISOString(),
+    };
+  }
+
+  async readVmGuestFile(
+    computer: PersistedVmComputer,
+    input: Parameters<ComputerRuntimePort["readVmGuestFile"]>[1],
+  ): Promise<VmGuestFileReadResult> {
+    const files = this.options.vmGuestFiles.get(computer.name) ?? new Map<string, Buffer>();
+    this.options.vmGuestFiles.set(computer.name, files);
+    const data = files.get(input.path) ?? Buffer.alloc(0);
+    const maxBytes = input.maxBytes ?? data.length;
+    const sliced = data.subarray(0, maxBytes);
+    return {
+      path: input.path,
+      dataBase64: sliced.toString("base64"),
+      sizeBytes: sliced.length,
+      truncated: sliced.length < data.length,
+    };
+  }
+
+  async writeVmGuestFile(
+    computer: PersistedVmComputer,
+    input: Parameters<ComputerRuntimePort["writeVmGuestFile"]>[1],
+  ): Promise<VmGuestFileWriteResult> {
+    const files = this.options.vmGuestFiles.get(computer.name) ?? new Map<string, Buffer>();
+    this.options.vmGuestFiles.set(computer.name, files);
+    const data = Buffer.from(input.dataBase64, "base64");
+    files.set(input.path, data);
+    return {
+      path: input.path,
+      sizeBytes: data.length,
+    };
   }
 
   private findRecordByUnitName(unitName: string) {

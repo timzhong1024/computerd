@@ -197,6 +197,47 @@ export const computerExecSessionSchema = z.object({
   expiresAt: z.string().datetime().optional(),
 });
 
+export const vmGuestCommandInputSchema = z.object({
+  command: z.string().min(1),
+  shell: z.boolean().optional().default(true),
+  workingDirectory: z.string().optional(),
+  environment: z.record(z.string(), z.string()).optional(),
+  timeoutMs: z.number().int().positive().max(300_000).optional(),
+  captureOutput: z.boolean().optional().default(true),
+});
+
+export const vmGuestCommandResultSchema = z.object({
+  exitCode: z.number().int().nullable(),
+  stdout: z.string(),
+  stderr: z.string(),
+  timedOut: z.boolean(),
+  completedAt: z.string().datetime(),
+});
+
+export const vmGuestFileReadInputSchema = z.object({
+  path: z.string().min(1),
+  maxBytes: z.number().int().positive().max(16 * 1024 * 1024).optional(),
+});
+
+export const vmGuestFileReadResultSchema = z.object({
+  path: z.string().min(1),
+  dataBase64: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+
+export const vmGuestFileWriteInputSchema = z.object({
+  path: z.string().min(1),
+  dataBase64: z.string(),
+  createParents: z.boolean().optional().default(false),
+  mode: z.number().int().min(0).max(0o777).optional(),
+});
+
+export const vmGuestFileWriteResultSchema = z.object({
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+});
+
 export const computerAccessSchema = z.object({
   console: computerConsoleAccessSchema.optional(),
   display: computerDisplayAccessSchema.optional(),
@@ -784,6 +825,12 @@ export type CreateNetworkInput = z.infer<typeof createNetworkInputSchema>;
 export type RunDisplayActionsInput = z.infer<typeof runDisplayActionsInputSchema>;
 export type RunDisplayActionsObserve = z.infer<typeof runDisplayActionsObserveSchema>;
 export type RunDisplayActionsResult = z.infer<typeof runDisplayActionsResultSchema>;
+export type VmGuestCommandInput = z.input<typeof vmGuestCommandInputSchema>;
+export type VmGuestCommandResult = z.infer<typeof vmGuestCommandResultSchema>;
+export type VmGuestFileReadInput = z.input<typeof vmGuestFileReadInputSchema>;
+export type VmGuestFileReadResult = z.infer<typeof vmGuestFileReadResultSchema>;
+export type VmGuestFileWriteInput = z.input<typeof vmGuestFileWriteInputSchema>;
+export type VmGuestFileWriteResult = z.infer<typeof vmGuestFileWriteResultSchema>;
 export type VmComputerDetail = z.infer<typeof vmComputerDetailSchema>;
 export type VmCloudInit = z.infer<typeof vmCloudInitSchema>;
 export type VmRuntimeSource = z.infer<typeof vmRuntimeSourceSchema>;
@@ -869,6 +916,30 @@ export function parseRestoreComputerInput(value: unknown) {
 
 export function parseResizeDisplayInput(value: unknown) {
   return resizeDisplayInputSchema.parse(value);
+}
+
+export function parseVmGuestCommandInput(value: unknown) {
+  return vmGuestCommandInputSchema.parse(value);
+}
+
+export function parseVmGuestCommandResult(value: unknown) {
+  return vmGuestCommandResultSchema.parse(value);
+}
+
+export function parseVmGuestFileReadInput(value: unknown) {
+  return vmGuestFileReadInputSchema.parse(value);
+}
+
+export function parseVmGuestFileReadResult(value: unknown) {
+  return vmGuestFileReadResultSchema.parse(value);
+}
+
+export function parseVmGuestFileWriteInput(value: unknown) {
+  return vmGuestFileWriteInputSchema.parse(value);
+}
+
+export function parseVmGuestFileWriteResult(value: unknown) {
+  return vmGuestFileWriteResultSchema.parse(value);
 }
 
 export function parseHostUnitSummaries(value: unknown) {

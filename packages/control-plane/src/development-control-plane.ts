@@ -196,6 +196,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
     });
     const containerStates = new Map<string, UnitRuntimeState>();
     const vmSnapshots = new Map<string, ComputerSnapshot[]>();
+    const vmGuestFiles = new Map<string, Map<string, Buffer>>();
     const images = new Map<string, ImageDetail>([
       [
         "filesystem-vm:dev-qcow2",
@@ -299,6 +300,7 @@ export class DevelopmentControlPlane extends BaseControlPlane {
       hostUnits,
       records,
       runtimeStates,
+      vmGuestFiles,
       vmRuntimePaths,
       vmSnapshots,
     });

@@ -427,6 +427,15 @@ test("prepares vm runtime before start and restart", async () => {
       throw new Error("not implemented");
     },
     async resizeDisplay() {},
+    async runVmGuestCommand() {
+      throw new Error("not implemented");
+    },
+    async readVmGuestFile() {
+      throw new Error("not implemented");
+    },
+    async writeVmGuestFile() {
+      throw new Error("not implemented");
+    },
   });
 
   const controlPlane = new SystemdControlPlane(
@@ -738,7 +747,7 @@ test("resizes browser display and persists it across detail reads", async () => 
   });
 });
 
-test("resizes vm display and persists it across detail reads", async () => {
+test("runs vm guest tools and persists vm resize state", async () => {
   const controlPlane = new DevelopmentControlPlane();
 
   await controlPlane.createComputer({
@@ -769,6 +778,41 @@ test("resizes vm display and persists it across detail reads", async () => {
   });
 
   await controlPlane.startComputer("guest-tools-vm");
+
+  await expect(
+    controlPlane.runVmGuestCommand("guest-tools-vm", {
+      command: "echo ready",
+      shell: true,
+      captureOutput: true,
+    }),
+  ).resolves.toMatchObject({
+    exitCode: 0,
+    stdout: "development:guest-tools-vm:echo ready",
+    stderr: "",
+    timedOut: false,
+  });
+
+  await expect(
+    controlPlane.writeVmGuestFile("guest-tools-vm", {
+      path: "/tmp/result.txt",
+      dataBase64: Buffer.from("hello vm", "utf8").toString("base64"),
+      createParents: true,
+    }),
+  ).resolves.toMatchObject({
+    path: "/tmp/result.txt",
+    sizeBytes: 8,
+  });
+
+  await expect(
+    controlPlane.readVmGuestFile("guest-tools-vm", {
+      path: "/tmp/result.txt",
+    }),
+  ).resolves.toMatchObject({
+    path: "/tmp/result.txt",
+    dataBase64: Buffer.from("hello vm", "utf8").toString("base64"),
+    sizeBytes: 8,
+    truncated: false,
+  });
 
   const resized = await controlPlane.resizeDisplay("guest-tools-vm", {
     width: 1920,
@@ -1435,6 +1479,15 @@ test("waits for host console runtime readiness during start", async () => {
       return runtimeState;
     },
     async resizeDisplay() {},
+    async runVmGuestCommand() {
+      throw new Error("not implemented");
+    },
+    async readVmGuestFile() {
+      throw new Error("not implemented");
+    },
+    async writeVmGuestFile() {
+      throw new Error("not implemented");
+    },
   });
   const runtimeState: UnitRuntimeState = {
     unitName: terminalRecord.unitName,
@@ -1917,6 +1970,18 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
   resizeDisplay(...args: Parameters<ComputerRuntimePort["resizeDisplay"]>) {
     return this.methods.resizeDisplay(...args);
   }
+
+  runVmGuestCommand(...args: Parameters<ComputerRuntimePort["runVmGuestCommand"]>) {
+    return this.methods.runVmGuestCommand(...args);
+  }
+
+  readVmGuestFile(...args: Parameters<ComputerRuntimePort["readVmGuestFile"]>) {
+    return this.methods.readVmGuestFile(...args);
+  }
+
+  writeVmGuestFile(...args: Parameters<ComputerRuntimePort["writeVmGuestFile"]>) {
+    return this.methods.writeVmGuestFile(...args);
+  }
 }
 
 function createDelegatingRuntime(methods: RuntimeMethodTable) {
@@ -1926,6 +1991,7 @@ function createDelegatingRuntime(methods: RuntimeMethodTable) {
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
   const displayViewports = new Map<string, { width: number; height: number }>();
+  const vmGuestFiles = new Map<string, Map<string, Buffer>>();
   const vmSnapshots = new Map<
     string,
     Array<{ name: string; createdAt: string; sizeBytes: number }>
@@ -1984,6 +2050,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async deleteVmComputer(computer) {
       states.delete(computer.unitName);
       displayViewports.delete(computer.unitName);
+      vmGuestFiles.delete(computer.name);
       vmSnapshots.delete(computer.name);
       await rm(join(runtimeDirectory, computer.name), { recursive: true, force: true });
     },
@@ -2021,13 +2088,10 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         },
         viewport: {
           width:
-            displayViewports.get(computer.unitName)?.width ??
-            computer.runtime.viewport?.width ??
-            1440,
+            displayViewports.get(computer.unitName)?.width ?? (computer.runtime.viewport?.width ?? 1440),
           height:
             displayViewports.get(computer.unitName)?.height ??
-            computer.runtime.viewport?.height ??
-            900,
+            (computer.runtime.viewport?.height ?? 900),
         },
       };
     },
@@ -2038,10 +2102,8 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
           computer.runtime.viewport ?? { width: 1440, height: 900 },
         );
       } else if (computer.profile === "vm") {
-        displayViewports.set(
-          computer.unitName,
-          computer.runtime.viewport ?? { width: 1440, height: 900 },
-        );
+        displayViewports.set(computer.unitName, computer.runtime.viewport ?? { width: 1440, height: 900 });
+        vmGuestFiles.set(computer.name, new Map());
       }
 
       const state: UnitRuntimeState = {
@@ -2246,6 +2308,41 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     },
     async resizeDisplay(computer, viewport) {
       displayViewports.set(computer.unitName, viewport);
+    },
+    async runVmGuestCommand(computer, input) {
+      return {
+        exitCode: 0,
+        stdout: `development:${computer.name}:${input.command}`,
+        stderr: "",
+        timedOut: false,
+        completedAt: new Date().toISOString(),
+      };
+    },
+    async readVmGuestFile(computer, input) {
+      const files = vmGuestFiles.get(computer.name);
+      const file = files?.get(input.path);
+      if (!file) {
+        throw new Error(`Guest file "${input.path}" was not found for computer "${computer.name}".`);
+      }
+
+      const maxBytes = input.maxBytes ?? file.length;
+      const slice = file.subarray(0, maxBytes);
+      return {
+        path: input.path,
+        dataBase64: slice.toString("base64"),
+        sizeBytes: slice.length,
+        truncated: slice.length < file.length,
+      };
+    },
+    async writeVmGuestFile(computer, input) {
+      const files = vmGuestFiles.get(computer.name) ?? new Map<string, Buffer>();
+      const buffer = Buffer.from(input.dataBase64, "base64");
+      files.set(input.path, buffer);
+      vmGuestFiles.set(computer.name, files);
+      return {
+        path: input.path,
+        sizeBytes: buffer.length,
+      };
     },
   });
 }
