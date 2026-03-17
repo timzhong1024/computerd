@@ -348,6 +348,9 @@ function buildVmExecStart(
     "-display none",
     `-vnc 127.0.0.1:${spec.vncDisplay}`,
     `-serial unix:${spec.serialSocketPath},server=on,wait=off`,
+    `-chardev socket,path=${escapeShellToken(spec.guestAgentSocketPath)},server=on,wait=off,id=qga0`,
+    "-device virtio-serial-pci",
+    "-device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
     `-drive file=${escapeShellToken(spec.diskImagePath)},if=virtio,format=qcow2`,
     installationMediaArg,
     `-netdev bridge,id=net0,br=${escapeShellToken(vmBridge)}`,
@@ -359,6 +362,7 @@ function buildVmExecStart(
     "set -eu",
     `mkdir -p ${escapeShellToken(spec.stateDirectory)} ${escapeShellToken(spec.runtimeDirectory)}`,
     `rm -f ${escapeShellToken(spec.serialSocketPath)}`,
+    `rm -f ${escapeShellToken(spec.guestAgentSocketPath)}`,
     `${qemuArgs}`,
   ].join("; ");
 
@@ -385,7 +389,10 @@ function buildBrowserExecStopPost(
 function buildVmExecStopPost(
   spec: ReturnType<ReturnType<typeof createVmRuntimePaths>["specForComputer"]>,
 ) {
-  const shellScript = [`rm -f ${escapeShellToken(spec.serialSocketPath)}`].join("; ");
+  const shellScript = [
+    `rm -f ${escapeShellToken(spec.serialSocketPath)}`,
+    `rm -f ${escapeShellToken(spec.guestAgentSocketPath)}`,
+  ].join("; ");
   return `/usr/bin/bash -lc ${escapeSystemdExecArg(shellScript)}`;
 }
 

@@ -473,6 +473,7 @@ export const createVmRuntimeSchema = z.object({
   hypervisor: z.literal("qemu"),
   source: createVmRuntimeSourceSchema,
   nics: z.array(createVmNicSchema).min(1),
+  viewport: browserViewportSchema.optional(),
 });
 
 export const vmRuntimeSchema = createVmRuntimeSchema.extend({
@@ -660,7 +661,7 @@ export const createVmComputerInputSchema = createComputerBaseSchema.extend({
   runtime: createVmRuntimeSchema,
 });
 
-export const updateBrowserViewportInputSchema = browserViewportSchema;
+export const resizeDisplayInputSchema = browserViewportSchema;
 
 export const createComputerSnapshotInputSchema = z.object({
   name: z.string().min(1),
@@ -761,6 +762,7 @@ export type CreateContainerComputerInput = z.infer<typeof createContainerCompute
 export type CreateContainerRuntime = z.infer<typeof createContainerRuntimeSchema>;
 export type CreateHostComputerInput = z.infer<typeof createHostComputerInputSchema>;
 export type RestoreComputerInput = z.infer<typeof restoreComputerInputSchema>;
+export type ResizeDisplayInput = z.infer<typeof resizeDisplayInputSchema>;
 export type CreateVmComputerInput = z.infer<typeof createVmComputerInputSchema>;
 export type CreateVmRuntime = z.infer<typeof createVmRuntimeSchema>;
 export type CreateVmRuntimeSource = z.infer<typeof createVmRuntimeSourceSchema>;
@@ -788,7 +790,6 @@ export type VmRuntimeSource = z.infer<typeof vmRuntimeSourceSchema>;
 export type VmImageDetail = z.infer<typeof vmImageDetailSchema>;
 export type VmImageSummary = z.infer<typeof vmImageSummarySchema>;
 export type VmRuntime = z.infer<typeof vmRuntimeSchema>;
-export type UpdateBrowserViewportInput = z.infer<typeof updateBrowserViewportInputSchema>;
 
 export function parseComputerSummaries(value: unknown) {
   return z.array(computerSummarySchema).parse(value);
@@ -866,8 +867,8 @@ export function parseRestoreComputerInput(value: unknown) {
   return restoreComputerInputSchema.parse(value);
 }
 
-export function parseUpdateBrowserViewportInput(value: unknown) {
-  return updateBrowserViewportInputSchema.parse(value);
+export function parseResizeDisplayInput(value: unknown) {
+  return resizeDisplayInputSchema.parse(value);
 }
 
 export function parseHostUnitSummaries(value: unknown) {

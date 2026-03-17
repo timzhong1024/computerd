@@ -32,9 +32,9 @@ import {
   parseNetworkSummaries,
   parseCreateNetworkInput,
   parsePullContainerImageInput,
+  parseResizeDisplayInput,
   parseRestoreComputerInput,
   parseRunDisplayActionsInput,
-  parseUpdateBrowserViewportInput,
 } from "@computerd/core";
 import {
   type BrowserAutomationLease,
@@ -431,19 +431,17 @@ export function createApp(controlPlane: BaseControlPlane, options: CreateAppOpti
         return;
       }
 
-      const browserViewportMatch = /^\/api\/computers\/(?<name>[^/]+)\/viewport$/.exec(
-        url.pathname,
-      );
-      if (request.method === "POST" && browserViewportMatch?.groups?.name) {
-        const name = decodeURIComponent(browserViewportMatch.groups.name);
+      const resizeDisplayMatch = /^\/api\/computers\/(?<name>[^/]+)\/resize$/.exec(url.pathname);
+      if (request.method === "POST" && resizeDisplayMatch?.groups?.name) {
+        const name = decodeURIComponent(resizeDisplayMatch.groups.name);
         const body = await readJsonBody(request);
         sendJson(
           response,
           200,
           parseComputerDetail(
-            await appControlPlane.updateBrowserViewport(
+            await appControlPlane.resizeDisplay(
               name,
-              parseUpdateBrowserViewportInput(body),
+              parseResizeDisplayInput(body),
             ),
           ),
         );

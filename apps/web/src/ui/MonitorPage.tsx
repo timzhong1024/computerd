@@ -3,7 +3,7 @@ import type { ComputerAudioSession, ComputerMonitorSession } from "@computerd/co
 import {
   createAudioSession,
   createMonitorSession,
-  updateBrowserViewport,
+  resizeDisplay,
 } from "../transport/computer-sessions";
 import { connectMonitorClient, type MonitorConnectionState } from "../transport/monitor-client";
 import { formatError } from "../transport/http";
@@ -185,13 +185,21 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
       }
 
       timeoutId = setTimeout(() => {
-        void updateBrowserViewport(computerName, nextViewport)
+        void resizeDisplay(computerName, nextViewport)
           .then((detail) => {
-            if (cancelled || detail.profile !== "browser") {
+            if (cancelled) {
               return;
             }
 
-            const appliedViewport = detail.runtime.display.viewport;
+            const appliedViewport =
+              detail.profile === "browser"
+                ? detail.runtime.display.viewport
+                : detail.profile === "vm"
+                  ? detail.runtime.displayViewport
+                  : null;
+            if (appliedViewport === null) {
+              return;
+            }
             lastViewportRef.current = `${appliedViewport.width}x${appliedViewport.height}`;
           })
           .catch((caughtError) => {
@@ -199,7 +207,7 @@ export function MonitorPage({ computerName }: MonitorPageProps) {
               return;
             }
 
-            console.warn("Failed to update browser viewport.", caughtError);
+            console.warn("Failed to resize display.", caughtError);
           });
       }, 150);
     });

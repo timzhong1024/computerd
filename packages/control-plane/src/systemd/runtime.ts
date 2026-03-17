@@ -11,14 +11,27 @@ import type {
   ComputerSnapshot,
   CreateComputerSnapshotInput,
   DisplayAction,
+  ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
   RestoreComputerInput,
+  VmGuestCommandInput,
+  VmGuestCommandResult,
+  VmGuestFileReadInput,
+  VmGuestFileReadResult,
+  VmGuestFileWriteInput,
+  VmGuestFileWriteResult,
 } from "@computerd/core";
 import { executeDisplayActionsOverVnc } from "../display-actions";
+import { UnsupportedComputerFeatureError } from "../shared";
 import { WebSocket } from "ws";
 import { createBrowserRuntimePaths } from "./browser-runtime";
 import { createPipeWireRuntimeEnvironment, DefaultPipeWireHostManager } from "./pipewire-host";
+import {
+  QemuGuestAgentCommandError,
+  QemuGuestAgentClient,
+  QemuGuestAgentUnavailableError,
+} from "./qemu-guest-agent";
 import {
   createVmRuntimePaths,
   createVmSnapshotImagePath,
@@ -97,10 +110,22 @@ export abstract class SystemdRuntime {
   ): Promise<void>;
   abstract startUnit(unitName: string): Promise<UnitRuntimeState>;
   abstract stopUnit(unitName: string): Promise<UnitRuntimeState>;
-  abstract updateBrowserViewport(
-    computer: PersistedBrowserComputer,
-    viewport: BrowserViewport,
+  abstract resizeDisplay(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    viewport: ResizeDisplayInput,
   ): Promise<void>;
+  abstract runVmGuestCommand(
+    computer: PersistedVmComputer,
+    input: VmGuestCommandInput,
+  ): Promise<VmGuestCommandResult>;
+  abstract readVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileReadInput,
+  ): Promise<VmGuestFileReadResult>;
+  abstract writeVmGuestFile(
+    computer: PersistedVmComputer,
+    input: VmGuestFileWriteInput,
+  ): Promise<VmGuestFileWriteResult>;
 }
 
 export interface CreateSystemdRuntimeOptions {
@@ -456,31 +481,61 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
     await rename(tempDiskImagePath, spec.diskImagePath);
   }
 
-  async updateBrowserViewport(computer: PersistedBrowserComputer, viewport: BrowserViewport) {
-    const spec = this.browserRuntimePaths.specForComputer(computer);
+  async resizeDisplay(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    viewport: ResizeDisplayInput,
+  ) {
+    if (computer.profile === "browser") {
+      await this.resizeBrowserDisplay(computer, viewport);
+      return;
+    }
+
     const runtimeState = await this.resolvedDbusClient.getRuntimeState(computer.unitName);
     if (runtimeState?.activeState !== "active") {
       return;
     }
 
-    await execFileAsync("/usr/bin/bash", [
-      "-lc",
-      [
-        `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
-        `xrandr -display ${quoteShell(spec.xvfbDisplay)} -s ${viewport.width}x${viewport.height}`,
-      ].join(" "),
-    ]).catch(async () => {
-      await execFileAsync("/usr/bin/bash", [
-        "-lc",
-        [
-          `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
-          `xrandr -display ${quoteShell(spec.xvfbDisplay)} --fb ${viewport.width}x${viewport.height}`,
-        ].join(" "),
-      ]);
+    const result = await this.runVmGuestCommand(computer, {
+      command: buildVmResizeCommand(viewport),
+      captureOutput: true,
+      shell: true,
+      timeoutMs: 15_000,
     });
+    if (result.timedOut || result.exitCode !== 0) {
+      throw new UnsupportedComputerFeatureError(
+        result.stderr || result.stdout || `VM "${computer.name}" does not support dynamic resize.`,
+      );
+    }
+  }
 
-    const websocketUrl = await resolveAutomationWebSocketUrl(spec.devtoolsPort);
-    await resizeChromiumWindow(websocketUrl, viewport);
+  async runVmGuestCommand(computer: PersistedVmComputer, input: VmGuestCommandInput) {
+    try {
+      const client = this.createVmGuestAgentClient(computer);
+      await client.waitForReady(input.timeoutMs);
+      return await client.runCommand(input);
+    } catch (error) {
+      throw wrapVmGuestAgentError(computer.name, error);
+    }
+  }
+
+  async readVmGuestFile(computer: PersistedVmComputer, input: VmGuestFileReadInput) {
+    try {
+      const client = this.createVmGuestAgentClient(computer);
+      await client.waitForReady();
+      return await client.readFile(input);
+    } catch (error) {
+      throw wrapVmGuestAgentError(computer.name, error);
+    }
+  }
+
+  async writeVmGuestFile(computer: PersistedVmComputer, input: VmGuestFileWriteInput) {
+    try {
+      const client = this.createVmGuestAgentClient(computer);
+      await client.waitForReady();
+      return await client.writeFile(input);
+    } catch (error) {
+      throw wrapVmGuestAgentError(computer.name, error);
+    }
   }
 
   async createPersistentUnit(computer: PersistedComputer) {
@@ -545,6 +600,41 @@ export class DefaultSystemdRuntime extends SystemdRuntime {
 
   async getHostUnit(unitName: string) {
     return await this.resolvedDbusClient.getHostUnit(unitName);
+  }
+
+  private async resizeBrowserDisplay(
+    computer: PersistedBrowserComputer,
+    viewport: ResizeDisplayInput,
+  ) {
+    const spec = this.browserRuntimePaths.specForComputer(computer);
+    const runtimeState = await this.resolvedDbusClient.getRuntimeState(computer.unitName);
+    if (runtimeState?.activeState !== "active") {
+      return;
+    }
+
+    await execFileAsync("/usr/bin/bash", [
+      "-lc",
+      [
+        `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
+        `xrandr -display ${quoteShell(spec.xvfbDisplay)} -s ${viewport.width}x${viewport.height}`,
+      ].join(" "),
+    ]).catch(async () => {
+      await execFileAsync("/usr/bin/bash", [
+        "-lc",
+        [
+          `DISPLAY=${quoteShell(spec.xvfbDisplay)}`,
+          `xrandr -display ${quoteShell(spec.xvfbDisplay)} --fb ${viewport.width}x${viewport.height}`,
+        ].join(" "),
+      ]);
+    });
+
+    const websocketUrl = await resolveAutomationWebSocketUrl(spec.devtoolsPort);
+    await resizeChromiumWindow(websocketUrl, viewport);
+  }
+
+  private createVmGuestAgentClient(computer: PersistedVmComputer) {
+    const spec = this.vmRuntimePaths.specForComputer(computer);
+    return new QemuGuestAgentClient(spec.guestAgentSocketPath);
   }
 }
 
@@ -1023,6 +1113,37 @@ function readJpegDimensions(buffer: Buffer) {
   }
 
   throw new Error("Could not determine JPEG screenshot dimensions.");
+}
+
+function buildVmResizeCommand(viewport: ResizeDisplayInput) {
+  const size = `${viewport.width}x${viewport.height}`;
+  return [
+    "set -eu",
+    'DISPLAY="${DISPLAY:-:0}"',
+    'target="$(xrandr --query | awk \'/ connected/{print $1; exit}\')"',
+    '[ -n "$target" ]',
+    `xrandr --output "$target" --mode ${quoteShell(size)} || xrandr --output "$target" --auto --mode ${quoteShell(size)} || xrandr --size ${quoteShell(size)}`,
+  ].join("; ");
+}
+
+function wrapVmGuestAgentError(computerName: string, error: unknown) {
+  if (
+    error instanceof UnsupportedComputerFeatureError ||
+    error instanceof QemuGuestAgentUnavailableError ||
+    error instanceof QemuGuestAgentCommandError
+  ) {
+    return new UnsupportedComputerFeatureError(
+      `Computer "${computerName}" guest tools are unavailable: ${error.message}`,
+    );
+  }
+
+  return error instanceof Error
+    ? new UnsupportedComputerFeatureError(
+        `Computer "${computerName}" guest tools failed: ${error.message}`,
+      )
+    : new UnsupportedComputerFeatureError(
+        `Computer "${computerName}" guest tools failed unexpectedly.`,
+      );
 }
 
 function quoteShell(value: string) {

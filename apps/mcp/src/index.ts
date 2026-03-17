@@ -262,10 +262,9 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
   );
 
   server.registerTool(
-    "set_browser_viewport",
+    "resize_display",
     {
-      description:
-        "Update a browser computer viewport and apply it to the running virtual display.",
+      description: "Resize the display surface of a browser or VM computer.",
       inputSchema: {
         name: z.string().min(1),
         width: z.number().int().positive(),
@@ -273,7 +272,7 @@ export function createComputerdMcpServer(controlPlane: BaseControlPlane) {
       },
     },
     async ({ name, width, height }) =>
-      createJsonToolResult(await controlPlane.updateBrowserViewport(name, { width, height })),
+      createJsonToolResult(await controlPlane.resizeDisplay(name, { width, height })),
   );
 
   server.registerTool(

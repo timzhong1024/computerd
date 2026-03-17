@@ -13,6 +13,7 @@ import type {
   CreateBrowserComputerInput,
   CreateContainerComputerInput,
   DisplayAction,
+  ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
 } from "@computerd/core";
@@ -82,9 +83,9 @@ export abstract class DockerRuntime {
   abstract startContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
   abstract stopBrowserComputer(computer: PersistedBrowserComputer): Promise<UnitRuntimeState>;
   abstract stopContainerComputer(computer: PersistedContainerComputer): Promise<UnitRuntimeState>;
-  abstract updateBrowserViewport(
+  abstract resizeDisplay(
     computer: PersistedBrowserComputer,
-    viewport: BrowserViewport,
+    viewport: ResizeDisplayInput,
   ): Promise<void>;
 }
 
@@ -441,7 +442,7 @@ export class DefaultDockerRuntime extends DockerRuntime {
     );
   }
 
-  async updateBrowserViewport(computer: PersistedBrowserComputer, viewport: BrowserViewport) {
+  async resizeDisplay(computer: PersistedBrowserComputer, viewport: ResizeDisplayInput) {
     const spec = this.requireBrowserSpec(computer);
     await requestControlJson<{ appliedViewport: BrowserViewport; restarted: boolean }>(
       spec.controlSocketPath,

@@ -153,6 +153,10 @@ test("does not mount cloud-init media for qcow2 vms with cloud-init disabled", a
   expect(unitFile).toContain("qemu-system-x86_64");
   expect(unitFile).toContain("disk.qcow2',if=virtio,format=qcow2");
   expect(unitFile).not.toContain("cloud-init.iso");
+  expect(unitFile).toContain("virtio-serial-pci");
+  expect(unitFile).toContain("org.qemu.guest_agent.0");
+  expect(unitFile).toContain("qga.sock");
+  expect(unitFile).toContain("rm -f ");
 });
 
 test("uses explicit vm nic mac address in qemu args", async () => {

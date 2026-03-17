@@ -9,7 +9,7 @@ export interface VmRuntimePathsOptions {
 export const DEFAULT_VM_VIEWPORT = {
   width: 1440,
   height: 900,
-} as const;
+};
 
 export function createVmRuntimePaths({
   stateRootDirectory,
@@ -18,7 +18,7 @@ export function createVmRuntimePaths({
   return {
     stateRootDirectory,
     runtimeRootDirectory,
-    specForName(name: string) {
+    specForName(name: string, viewport: { width: number; height: number } = DEFAULT_VM_VIEWPORT) {
       const slug = slugify(name);
       const stateDirectory = join(stateRootDirectory, slug, "vm");
       const runtimeDirectory = join(runtimeRootDirectory, slug, "vm");
@@ -38,13 +38,14 @@ export function createVmRuntimePaths({
         cloudInitNetworkConfigPath: join(stateDirectory, "cloud-init", "network-config"),
         cloudInitImagePath: join(stateDirectory, "cloud-init.iso"),
         serialSocketPath: join(runtimeDirectory, "serial.sock"),
+        guestAgentSocketPath: join(runtimeDirectory, "qga.sock"),
         vncDisplay,
         vncPort: 5900 + vncDisplay,
-        viewport: DEFAULT_VM_VIEWPORT,
+        viewport,
       };
     },
     specForComputer(computer: PersistedVmComputer) {
-      return this.specForName(computer.name);
+      return this.specForName(computer.name, computer.runtime.viewport ?? DEFAULT_VM_VIEWPORT);
     },
   };
 }
@@ -101,6 +102,19 @@ export function withPersistedVmRuntime(
     architecture: "x86_64",
     machine: "q35",
     bridgeName,
+  };
+}
+
+export function withVmViewport(
+  computer: PersistedVmComputer,
+  viewport: PersistedVmComputer["runtime"]["viewport"],
+): PersistedVmComputer {
+  return {
+    ...computer,
+    runtime: {
+      ...computer.runtime,
+      viewport,
+    },
   };
 }
 

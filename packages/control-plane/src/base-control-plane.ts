@@ -11,6 +11,7 @@ import type {
   HostUnitSummary,
   NetworkDetail,
   NetworkSummary,
+  ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
 } from "@computerd/core";
@@ -62,8 +63,8 @@ import {
   type PersistedHostComputer,
   type PersistedVmComputer,
   type RestoreComputerInput,
-  type UpdateBrowserViewportInput,
   withBrowserViewport,
+  withVmViewport,
 } from "./shared";
 import {
   AttachedNetworkDeleteError,
@@ -485,17 +486,20 @@ export abstract class BaseControlPlane {
     return await this.toComputerDetail(updated);
   }
 
-  async updateBrowserViewport(name: string, input: UpdateBrowserViewportInput) {
+  async resizeDisplay(name: string, input: ResizeDisplayInput) {
     const record = await this.requireComputer(name);
-    const browserRecord = requireBrowserRecord(record);
+    const displayRecord = requireMonitorCapableRecord(record);
     this.throwIfBroken(
-      browserRecord,
-      await this.getPersistedComputerRuntimeState(browserRecord),
-      "Viewport updates are not supported for broken computers.",
+      displayRecord,
+      await this.getPersistedComputerRuntimeState(displayRecord),
+      "Display resize is not supported for broken computers.",
     );
-    const updated = withBrowserViewport(browserRecord, input);
+    const updated =
+      displayRecord.profile === "browser"
+        ? withBrowserViewport(displayRecord, input)
+        : withVmViewport(displayRecord, input);
     await this.metadataStore.putComputer(updated);
-    await this.runtime.updateBrowserViewport(updated, input);
+    await this.runtime.resizeDisplay(updated, input);
     return await this.toComputerDetail(updated);
   }
 

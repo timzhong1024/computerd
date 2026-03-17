@@ -634,7 +634,7 @@ test("serves computer and host unit APIs", async () => {
     format: "png",
   });
 
-  const viewportResponse = await fetch(`${baseUrl}/api/computers/research-browser/viewport`, {
+  const viewportResponse = await fetch(`${baseUrl}/api/computers/research-browser/resize`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -768,7 +768,7 @@ test("serves computer and host unit APIs", async () => {
       expect.objectContaining({
         type: "http_request",
         method: "POST",
-        path: "/api/computers/research-browser/viewport",
+        path: "/api/computers/research-browser/resize",
         statusCode: 200,
       }),
       expect.objectContaining({
@@ -970,7 +970,7 @@ test("returns broken computers and blocks broken actions with conflict responses
       getHostUnit: async () => {
         throw new Error("not used");
       },
-      updateBrowserViewport: async () => {
+      resizeDisplay: async () => {
         throw brokenError;
       },
     }),

@@ -1,6 +1,6 @@
 import type {
-  BrowserViewport,
   DisplayAction,
+  ResizeDisplayInput,
   RestoreComputerInput,
   RunDisplayActionsObserve,
 } from "@computerd/core";
@@ -207,7 +207,12 @@ export class CompositeComputerRuntime extends ComputerRuntimePort {
     return this.systemdRuntime.restoreVmComputer(computer, input);
   }
 
-  updateBrowserViewport(computer: PersistedBrowserComputer, viewport: BrowserViewport) {
-    return this.dockerRuntime.updateBrowserViewport(computer, viewport);
+  resizeDisplay(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    viewport: ResizeDisplayInput,
+  ) {
+    return computer.profile === "browser"
+      ? this.dockerRuntime.resizeDisplay(computer, viewport)
+      : this.systemdRuntime.resizeDisplay(computer, viewport);
   }
 }

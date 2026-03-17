@@ -32,8 +32,8 @@ import type {
   HostUnitSummary,
   HostRuntime,
   RestoreComputerInput,
+  ResizeDisplayInput,
   VmRuntime,
-  UpdateBrowserViewportInput,
 } from "@computerd/core";
 import type { PersistedNetworkRecord } from "../networks";
 
@@ -204,9 +204,9 @@ export abstract class ComputerRuntimePort {
     computer: PersistedVmComputer,
     input: RestoreComputerInput,
   ): Promise<void>;
-  abstract updateBrowserViewport(
-    computer: PersistedBrowserComputer,
-    viewport: BrowserViewport,
+  abstract resizeDisplay(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    viewport: ResizeDisplayInput,
   ): Promise<void>;
 }
 
@@ -273,6 +273,6 @@ export type {
   HostUnitDetail,
   HostUnitSummary,
   HostRuntime,
+  ResizeDisplayInput,
   VmRuntime,
-  UpdateBrowserViewportInput,
 };

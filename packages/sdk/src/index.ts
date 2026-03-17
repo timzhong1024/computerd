@@ -6,6 +6,7 @@ import {
   parseComputerDetail,
   parseComputerMonitorSession,
   parseComputerScreenshot,
+  parseResizeDisplayInput,
   parseRunDisplayActionsResult,
   type BrowserComputerDetail,
   type ComputerAutomationSession,
@@ -15,6 +16,7 @@ import {
   type ComputerScreenshot,
   type ComputerSnapshot,
   type ComputerSessionConnect,
+  type ResizeDisplayInput,
   type RunDisplayActionsObserve,
   type RunDisplayActionsResult,
 } from "@computerd/core";
@@ -164,12 +166,10 @@ export function createComputerdClient({
         parseRunDisplayActionsResult,
       );
     },
-    async updateBrowserViewport(
-      name: string,
-      viewport: { width: number; height: number },
-    ): Promise<ComputerDetail> {
+    async resizeDisplay(name: string, viewport: ResizeDisplayInput): Promise<ComputerDetail> {
+      parseResizeDisplayInput(viewport);
       return await postJson(
-        `/api/computers/${encodeURIComponent(name)}/viewport`,
+        `/api/computers/${encodeURIComponent(name)}/resize`,
         viewport,
         parseComputerDetail,
       );
@@ -250,7 +250,7 @@ function formatBrowserInfo(detail: ComputerDetail) {
     `runtime directory: ${detail.runtime.runtimeDirectory}`,
     `automation available: ${detail.runtime.automation.available}`,
     `screenshot available: ${detail.runtime.screenshot.available}`,
-    `viewport update endpoint: /api/computers/${encodeURIComponent(detail.name)}/viewport`,
+    `resize endpoint: /api/computers/${encodeURIComponent(detail.name)}/resize`,
   ];
 
   return `${lines.join("\n")}\n`;

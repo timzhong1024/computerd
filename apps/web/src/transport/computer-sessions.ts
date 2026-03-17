@@ -79,12 +79,12 @@ export async function runDisplayActions(
   );
 }
 
-export async function updateBrowserViewport(
+export async function resizeDisplay(
   name: string,
   viewport: { width: number; height: number },
 ): Promise<ComputerDetail> {
   return await postJson(
-    `/api/computers/${encodeURIComponent(name)}/viewport`,
+    `/api/computers/${encodeURIComponent(name)}/resize`,
     viewport,
     parseComputerDetail,
   );

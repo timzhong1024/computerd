@@ -17,8 +17,8 @@ import {
   parseImportVmImageInput,
   parseRunDisplayActionsInput,
   parseRunDisplayActionsResult,
+  parseResizeDisplayInput,
   parseRestoreComputerInput,
-  parseUpdateBrowserViewportInput,
 } from "./index";
 
 function createHostNetworkSummary(attachedComputerCount = 1) {
@@ -858,9 +858,9 @@ test("parses host unit detail payloads", () => {
   expect(detail.execStart).toContain("dockerd");
 });
 
-test("parses browser viewport updates", () => {
+test("parses display resize input", () => {
   expect(
-    parseUpdateBrowserViewportInput({
+    parseResizeDisplayInput({
       width: 1600,
       height: 1000,
     }),

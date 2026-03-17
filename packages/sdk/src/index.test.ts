@@ -115,7 +115,7 @@ describe("createComputerdClient", () => {
     });
   });
 
-  test("updates browser viewport through the HTTP api", async () => {
+  test("resizes displays through the HTTP api", async () => {
     const client = createComputerdClient({
       baseUrl: "http://computerd.test",
       fetch: vi.fn(async () =>
@@ -184,7 +184,7 @@ describe("createComputerdClient", () => {
     });
 
     await expect(
-      client.updateBrowserViewport("research-browser", {
+      client.resizeDisplay("research-browser", {
         width: 1600,
         height: 1000,
       }),
@@ -200,6 +200,7 @@ describe("createComputerdClient", () => {
       },
     });
   });
+
 
   test("runs display action batches through the HTTP api", async () => {
     const client = createComputerdClient({

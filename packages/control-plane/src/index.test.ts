@@ -426,7 +426,7 @@ test("prepares vm runtime before start and restart", async () => {
     async stopContainerComputer() {
       throw new Error("not implemented");
     },
-    async updateBrowserViewport() {},
+    async resizeDisplay() {},
   });
 
   const controlPlane = new SystemdControlPlane(
@@ -689,7 +689,7 @@ test("rejects duplicate and missing vm snapshots", async () => {
   });
 });
 
-test("updates browser viewport and persists it across detail reads", async () => {
+test("resizes browser display and persists it across detail reads", async () => {
   const metadataStore = createMemoryMetadataStore();
   const runtime = createMemoryRuntime("/tmp/computerd-test-terminals");
   const controlPlane = new SystemdControlPlane(
@@ -711,7 +711,7 @@ test("updates browser viewport and persists it across detail reads", async () =>
     },
   });
 
-  const updated = await controlPlane.updateBrowserViewport("research-browser", {
+  const updated = await controlPlane.resizeDisplay("research-browser", {
     width: 1600,
     height: 1000,
   });
@@ -735,6 +735,65 @@ test("updates browser viewport and persists it across detail reads", async () =>
   expect(detail.runtime.display.viewport).toEqual({
     width: 1600,
     height: 1000,
+  });
+});
+
+test("resizes vm display and persists it across detail reads", async () => {
+  const controlPlane = new DevelopmentControlPlane();
+
+  await controlPlane.createComputer({
+    name: "guest-tools-vm",
+    profile: "vm",
+    runtime: {
+      hypervisor: "qemu",
+      viewport: {
+        width: 1440,
+        height: 900,
+      },
+      nics: [
+        {
+          name: "primary",
+          ipv4: {
+            type: "dhcp",
+          },
+        },
+      ],
+      source: {
+        kind: "qcow2",
+        imageId: "filesystem-vm:dev-qcow2",
+        cloudInit: {
+          user: "ubuntu",
+        },
+      },
+    },
+  });
+
+  await controlPlane.startComputer("guest-tools-vm");
+
+  const resized = await controlPlane.resizeDisplay("guest-tools-vm", {
+    width: 1920,
+    height: 1080,
+  });
+
+  expect(resized.profile).toBe("vm");
+  if (resized.profile !== "vm") {
+    throw new TypeError("Expected vm detail");
+  }
+
+  expect(resized.runtime.displayViewport).toEqual({
+    width: 1920,
+    height: 1080,
+  });
+
+  const detail = await controlPlane.getComputer("guest-tools-vm");
+  expect(detail.profile).toBe("vm");
+  if (detail.profile !== "vm") {
+    throw new TypeError("Expected vm detail");
+  }
+
+  expect(detail.runtime.displayViewport).toEqual({
+    width: 1920,
+    height: 1080,
   });
 });
 
@@ -1375,7 +1434,7 @@ test("waits for host console runtime readiness during start", async () => {
     async stopContainerComputer() {
       return runtimeState;
     },
-    async updateBrowserViewport() {},
+    async resizeDisplay() {},
   });
   const runtimeState: UnitRuntimeState = {
     unitName: terminalRecord.unitName,
@@ -1855,8 +1914,8 @@ class DelegatingComputerRuntime extends ComputerRuntimePort {
     return this.methods.restoreVmComputer(...args);
   }
 
-  updateBrowserViewport(...args: Parameters<ComputerRuntimePort["updateBrowserViewport"]>) {
-    return this.methods.updateBrowserViewport(...args);
+  resizeDisplay(...args: Parameters<ComputerRuntimePort["resizeDisplay"]>) {
+    return this.methods.resizeDisplay(...args);
   }
 }
 
@@ -1866,7 +1925,7 @@ function createDelegatingRuntime(methods: RuntimeMethodTable) {
 
 function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
   const states = new Map<string, UnitRuntimeState>();
-  const browserViewports = new Map<string, { width: number; height: number }>();
+  const displayViewports = new Map<string, { width: number; height: number }>();
   const vmSnapshots = new Map<
     string,
     Array<{ name: string; createdAt: string; sizeBytes: number }>
@@ -1917,12 +1976,14 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
     async deleteBrowserRuntimeIdentity() {},
     async deleteBrowserComputer(computer) {
       states.delete(computer.unitName);
+      displayViewports.delete(computer.unitName);
     },
     async deleteContainerComputer(computer) {
       states.delete(computer.unitName);
     },
     async deleteVmComputer(computer) {
       states.delete(computer.unitName);
+      displayViewports.delete(computer.unitName);
       vmSnapshots.delete(computer.name);
       await rm(join(runtimeDirectory, computer.name), { recursive: true, force: true });
     },
@@ -1960,22 +2021,21 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         },
         viewport: {
           width:
-            browserViewports.get(computer.unitName)?.width ??
-            (computer.profile === "browser" ? (computer.runtime.viewport?.width ?? 1440) : 1440),
+            displayViewports.get(computer.unitName)?.width ?? (computer.runtime.viewport?.width ?? 1440),
           height:
-            browserViewports.get(computer.unitName)?.height ??
-            (computer.profile === "browser" ? (computer.runtime.viewport?.height ?? 900) : 900),
+            displayViewports.get(computer.unitName)?.height ??
+            (computer.runtime.viewport?.height ?? 900),
         },
       };
     },
     async createPersistentUnit(computer) {
       if (computer.profile === "browser") {
-        browserViewports.set(
+        displayViewports.set(
           computer.unitName,
           computer.runtime.viewport ?? { width: 1440, height: 900 },
         );
       } else if (computer.profile === "vm") {
-        browserViewports.set(computer.unitName, { width: 1440, height: 900 });
+        displayViewports.set(computer.unitName, computer.runtime.viewport ?? { width: 1440, height: 900 });
       }
 
       const state: UnitRuntimeState = {
@@ -2001,7 +2061,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       return state;
     },
     async createScreenshot(computer) {
-      const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
+      const viewport = displayViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
       if (computer.profile === "vm") {
         return {
           computerName: computer.name,
@@ -2025,7 +2085,7 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
       };
     },
     async runDisplayActions(computer, ops, observe) {
-      const viewport = browserViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
+      const viewport = displayViewports.get(computer.unitName) ?? { width: 1440, height: 900 };
       const screenshot =
         observe.screenshot === false ? undefined : await this.createScreenshot(computer);
       return {
@@ -2178,8 +2238,8 @@ function createMemoryRuntime(runtimeDirectory: string): ComputerRuntimePort {
         );
       }
     },
-    async updateBrowserViewport(computer, viewport) {
-      browserViewports.set(computer.unitName, viewport);
+    async resizeDisplay(computer, viewport) {
+      displayViewports.set(computer.unitName, viewport);
     },
   });
 }

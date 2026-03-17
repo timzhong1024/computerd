@@ -20,7 +20,7 @@ import {
   type HostUnitDetail,
   type NetworkSummary,
   type RestoreComputerInput,
-  type UpdateBrowserViewportInput,
+  type ResizeDisplayInput,
 } from "@computerd/core";
 import {
   DEFAULT_HOST_NETWORK_ID,
@@ -33,7 +33,7 @@ import {
   withBrowserViewport,
 } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
-import { createVmRuntimePaths, toVmRuntimeDetail } from "./systemd/vm-runtime";
+import { createVmRuntimePaths, toVmRuntimeDetail, withVmViewport } from "./systemd/vm-runtime";
 import { ImageProvider } from "./images";
 import {
   ComputerRuntimePort,
@@ -584,6 +584,7 @@ export function toComputerSummary(
 }
 
 export { withBrowserViewport };
+export { withVmViewport };
 export { ComputerRuntimePort } from "./systemd/types";
 
 export type {
@@ -607,5 +608,5 @@ export type {
   RunDisplayActionsResult,
   RestoreComputerInput,
   UnitRuntimeState,
-  UpdateBrowserViewportInput,
+  ResizeDisplayInput,
 };

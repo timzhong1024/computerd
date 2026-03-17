@@ -4,12 +4,13 @@ import type {
   ComputerSnapshot,
   DisplayAction,
   HostUnitDetail,
+  ResizeDisplayInput,
   RunDisplayActionsObserve,
   RunDisplayActionsResult,
 } from "@computerd/core";
 import { createBrowserRuntimePaths, withBrowserViewport } from "./systemd/browser-runtime";
 import { createConsoleRuntimePaths } from "./systemd/console-runtime";
-import { createVmRuntimePaths, withPersistedVmRuntime } from "./systemd/vm-runtime";
+import { createVmRuntimePaths, withPersistedVmRuntime, withVmViewport } from "./systemd/vm-runtime";
 import {
   ComputerNotFoundError,
   ComputerRuntimePort,
@@ -506,18 +507,29 @@ export class DevelopmentComputerRuntime extends ComputerRuntimePort {
     }
   }
 
-  async updateBrowserViewport(
-    computer: PersistedBrowserComputer,
-    viewport: Parameters<ComputerRuntimePort["updateBrowserViewport"]>[1],
+  async resizeDisplay(
+    computer: PersistedBrowserComputer | PersistedVmComputer,
+    viewport: ResizeDisplayInput,
   ) {
+    if (computer.profile === "browser") {
+      const state = this.options.runtimeStates.get(computer.unitName);
+      if (state?.activeState !== "active") {
+        return;
+      }
+
+      const spec = this.options.browserRuntimePaths.specForComputer(
+        withBrowserViewport(computer, viewport),
+      );
+      await mkdir(spec.runtimeDirectory, { recursive: true });
+      return;
+    }
+
     const state = this.options.runtimeStates.get(computer.unitName);
     if (state?.activeState !== "active") {
       return;
     }
 
-    const spec = this.options.browserRuntimePaths.specForComputer(
-      withBrowserViewport(computer, viewport),
-    );
+    const spec = this.options.vmRuntimePaths.specForComputer(withVmViewport(computer, viewport));
     await mkdir(spec.runtimeDirectory, { recursive: true });
   }
 
