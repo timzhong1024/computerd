@@ -1205,7 +1205,7 @@ export function HomePage() {
                   <span>
                     {computer.name}
                     {computer.managed?.kind === "gateway" ? (
-                      <span className="meta"> {" "}gateway</span>
+                      <span className="meta"> gateway</span>
                     ) : null}
                   </span>
                   <span className="meta">
@@ -1480,7 +1480,7 @@ export function HomePage() {
                 <h2>
                   {selectedComputer.name}
                   {selectedComputer.managed?.kind === "gateway" ? (
-                    <span className="meta"> {" "}gateway</span>
+                    <span className="meta"> gateway</span>
                   ) : null}
                 </h2>
               </div>
@@ -1509,9 +1509,7 @@ export function HomePage() {
                   type="button"
                   data-testid="computer-action-restart"
                   disabled={
-                    isSelectedGatewayComputer ||
-                    !selectedComputer.capabilities.canRestart ||
-                    isBusy
+                    isSelectedGatewayComputer || !selectedComputer.capabilities.canRestart || isBusy
                   }
                   onClick={() => void handleComputerAction("restart")}
                 >

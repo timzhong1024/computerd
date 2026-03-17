@@ -50,15 +50,15 @@ const vmPayload = {
   },
   storage: { rootMode: "persistent" },
   network: { mode: "host" },
-    runtime: {
-      hypervisor: "qemu",
-      source: {
-        kind: "qcow2",
-        imageId: vmImageId,
-        cloudInit: {
-          enabled: true,
-          user: defaults.vmUser,
-          password: defaults.vmPassword,
+  runtime: {
+    hypervisor: "qemu",
+    source: {
+      kind: "qcow2",
+      imageId: vmImageId,
+      cloudInit: {
+        enabled: true,
+        user: defaults.vmUser,
+        password: defaults.vmPassword,
       },
     },
     nics: [

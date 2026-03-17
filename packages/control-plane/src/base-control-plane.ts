@@ -814,7 +814,9 @@ export abstract class BaseControlPlane {
       .map((network) => createGatewayManagedComputerRecord(network));
   }
 
-  protected async getManagedGatewayRecord(name: string): Promise<ManagedGatewayComputerRecord | null> {
+  protected async getManagedGatewayRecord(
+    name: string,
+  ): Promise<ManagedGatewayComputerRecord | null> {
     const records = await this.listManagedGatewayRecords();
     return records.find((record) => record.name === name) ?? null;
   }

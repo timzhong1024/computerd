@@ -1163,31 +1163,31 @@ function createComputerSummary(computer: FakeComputer) {
           ? {
               logs: true,
             }
-        : computer.profile === "vm"
-          ? {
-              console: {
-                mode: "pty",
-                writable: true,
-              },
-              display: {
-                mode: "vnc",
-              },
-              logs: true,
-            }
-          : computer.profile === "container"
+          : computer.profile === "vm"
             ? {
                 console: {
                   mode: "pty",
                   writable: true,
                 },
-                logs: true,
-              }
-            : {
                 display: {
-                  mode: "virtual-display",
+                  mode: "vnc",
                 },
                 logs: true,
-              }),
+              }
+            : computer.profile === "container"
+              ? {
+                  console: {
+                    mode: "pty",
+                    writable: true,
+                  },
+                  logs: true,
+                }
+              : {
+                  display: {
+                    mode: "virtual-display",
+                  },
+                  logs: true,
+                }),
     capabilities: {
       canInspect: true,
       canStart: computer.managed?.kind === "gateway" ? false : computer.state === "stopped",
