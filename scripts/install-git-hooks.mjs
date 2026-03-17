@@ -5,7 +5,7 @@ const hookPath = resolve(process.cwd(), ".git/hooks/pre-push");
 
 try {
   await mkdir(dirname(hookPath), { recursive: true });
-  await writeFile(hookPath, "#!/bin/sh\n\npnpm verify:quick\n", {
+  await writeFile(hookPath, "#!/bin/sh\n\nexec node ./scripts/verify-quick.mjs\n", {
     mode: 0o755,
   });
   console.log("Installed pre-push hook");
