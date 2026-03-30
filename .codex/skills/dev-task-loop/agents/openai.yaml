@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dev Task Loop"
+  short_description: "Own coding tasks from request to GitHub PR follow-up"
+  default_prompt: "Use $dev-task-loop only for an explicitly requested closed-loop development task that should continue through implementation, validation, and PR creation."

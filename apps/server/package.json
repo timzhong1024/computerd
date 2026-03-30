@@ -1,0 +1,28 @@
+{
+  "name": "@computerd/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "dev": "vite-node src/index.ts",
+    "smoke:dist": "node ./scripts/smoke-dist-server.mjs",
+    "test": "vp test run",
+    "test:watch": "vp test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@computerd/control-plane": "workspace:*",
+    "@computerd/core": "workspace:*",
+    "@computerd/mcp": "workspace:*",
+    "@lydell/node-pty": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "dockerode": "^4.0.9",
+    "ws": "^8.19.0",
+    "x11": "^2.3.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

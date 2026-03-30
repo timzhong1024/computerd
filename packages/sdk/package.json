@@ -1,0 +1,26 @@
+{
+  "name": "@computerd/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vp build && tsc -p tsconfig.build.json",
+    "dev": "vp build --watch",
+    "test": "vp test run",
+    "test:watch": "vp test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@computerd/core": "workspace:*",
+    "playwright-core": "^1.58.2"
+  }
+}

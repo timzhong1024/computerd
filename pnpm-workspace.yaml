@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+overrides:
+  "@vitejs/plugin-react>vite": ^8.0.0 # plugin-react must depend on vite@^8.0.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.1.11
+  vitest: npm:@voidzero-dev/vite-plus-test@0.1.11

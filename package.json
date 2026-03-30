@@ -1,0 +1,42 @@
+{
+  "name": "computerd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp run -F './apps/*' -F './packages/*' build",
+    "ci": "pnpm verify",
+    "dev": "node ./scripts/run-dev.mjs",
+    "dev:development": "COMPUTERD_RUNTIME_MODE=development node ./scripts/run-dev.mjs",
+    "dev:server": "node ./scripts/run-dev-server.mjs",
+    "dev:server:development": "COMPUTERD_RUNTIME_MODE=development node ./scripts/run-dev-server.mjs",
+    "dev:server:runtime": "vp run @computerd/server#dev",
+    "dev:web": "vp run @computerd/web#dev",
+    "format": "vp fmt",
+    "format:check": "vp fmt --check",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix",
+    "postinstall": "node ./scripts/install-git-hooks.mjs",
+    "smoke:dev": "node ./scripts/smoke-dev.mjs",
+    "smoke:vm:remote": "node ./scripts/smoke-remote-vm.mjs",
+    "test": "vp run -F './apps/*' -F './packages/*' test",
+    "test:e2e": "node ./scripts/test-e2e.mjs",
+    "test:watch": "vp run -F './apps/*' -F './packages/*' test:watch",
+    "typecheck": "vp run -F './apps/*' -F './packages/*' typecheck",
+    "verify:quick": "node ./scripts/verify-quick.mjs",
+    "verify": "node ./scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.12.0",
+    "typescript": "^5.9.3",
+    "vite-node": "^6.0.0",
+    "vite-plus": "^0.1.11",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@0.1.11"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.25.0"
+}

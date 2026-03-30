@@ -1,0 +1,33 @@
+import { builtinModules } from "node:module";
+import { resolve } from "node:path";
+import { defineConfig } from "vite-plus";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@computerd/core": resolve(import.meta.dirname, "../core/src/index.ts"),
+    },
+  },
+  build: {
+    lib: {
+      entry: resolve(import.meta.dirname, "src/index.ts"),
+      formats: ["es"],
+      fileName: "index",
+    },
+    outDir: "dist",
+    emptyOutDir: false,
+    rollupOptions: {
+      external: [
+        ...builtinModules,
+        ...builtinModules.map((moduleName) => `node:${moduleName}`),
+        "dbus-next",
+        "dockerode",
+      ],
+    },
+    target: "es2023",
+  },
+  test: {
+    environment: "node",
+    globals: true,
+  },
+});

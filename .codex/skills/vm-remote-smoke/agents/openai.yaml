@@ -1,0 +1,4 @@
+interface:
+  display_name: "VM Remote Smoke"
+  short_description: "Validate VM computer end-to-end on a real remote KVM machine"
+  default_prompt: "Use $vm-remote-smoke to run the real-machine VM smoke workflow against a remote Linux host with KVM, bridge networking, and qcow2 cloud-init boot."

@@ -1,0 +1,26 @@
+# Core control-plane and runtime dependencies for computerd on Debian/Ubuntu.
+bash
+curl
+dbus
+dbus-user-session
+dnsmasq
+docker.io
+ffmpeg
+genisoimage
+imagemagick
+iproute2
+iptables
+pipewire
+pipewire-bin
+pipewire-pulse
+qemu-system-x86
+qemu-utils
+systemd
+util-linux
+vncsnapshot
+wireplumber
+x11-xserver-utils
+x11vnc
+xvfb
+cloud-image-utils
+chromium
